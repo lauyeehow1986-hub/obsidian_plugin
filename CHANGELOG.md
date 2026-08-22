@@ -100,6 +100,23 @@ Phase A1: request tracking. The domain layer — pure, Obsidian-free, unit-teste
   50,000 notes the re-index is 191 ms.
 - 62 further tests; 293 in total.
 
+### Added — fixture verification
+- **The shipped `test-vault/` fixtures are now parsed by the real parsers**, not
+  by eye. `tests/fixtures.test.ts` sweeps every note and every workflow spec in
+  the test vault and runs it through `parseRequest`, `parseSavedView`,
+  `parseWorkflowSpec` and `validateQuery`, asserting zero problems. It also
+  holds the fixtures to what they claim to test: a request must name a workflow
+  spec that loads, must sit on a stage that resolves, and one must remain
+  stranded on a stage with no `retired:` mapping — otherwise the migration
+  view's hard path, where a human has to choose a target and type a reason, has
+  quietly stopped being exercised. Proved by breaking each class of fixture in
+  turn and watching it fail. 18 tests; 311 in total.
+- `js-yaml` as a **devDependency**, pinned to `^4.1.0`. Obsidian's `parseYaml`
+  is js-yaml v4 — the shipped app bundle carries its
+  `renamed("safeLoad", "load")` v4 deprecation shim — so matching the library
+  and the major is the point of the exercise. **Bundle cost is zero:** nothing
+  under `src/` imports it, and `main.js` is unchanged at 117.2 KB.
+
 ### Decided — A2
 - **Comparison is kind-directed**, taken from the field catalogue rather than
   guessed from the runtime type of the value. An `sla_days` of `"21"` written as
@@ -113,6 +130,10 @@ Phase A1: request tracking. The domain layer — pure, Obsidian-free, unit-teste
 - **Results are never cached.** Dwell depends on the current time, so a cached
   result is one that is quietly wrong by tomorrow. The benchmark is what makes
   recomputing on every repaint defensible.
+- **A hand-rolled YAML parser was rejected for the fixture guard.** A subset
+  parser would eventually accept a fixture Obsidian rejects, and a guard that is
+  confidently wrong is worse than the documented gap it replaced. That is what
+  justified a dependency here, dev-only and zero-bundle.
 
 ### Fixed
 - **Cards, tabs and inline links were being styled as form controls.** Obsidian's

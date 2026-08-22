@@ -6,6 +6,8 @@ export default defineConfig({
     // no mocks. If a test here ever needs an Obsidian stub, the boundary has
     // been broken and the fix belongs in the source, not the test.
     environment: "node",
-    include: ["src/domain/**/*.test.ts"],
+    // domain tests are pure; tests/ holds the fixture guard, which reads
+    // test-vault/ from disk and runs it through those same pure parsers.
+    include: ["src/domain/**/*.test.ts", "tests/**/*.test.ts"],
   },
 });

@@ -14,7 +14,7 @@ build phases, and the rules that constrain them.
 
 ```bash
 npm install
-npm test          # Vitest over the pure domain layer
+npm test          # Vitest: the pure domain layer, plus the test-vault fixture guard
 npm run dev       # watch build into test-vault/
 npm run build     # typecheck + production build into dist/
 npm run smoke     # load the built bundle against a stubbed Obsidian
