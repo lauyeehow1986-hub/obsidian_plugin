@@ -14,8 +14,15 @@
  *
  * Everything here was read off the shipped app rather than guessed: the view
  * type id `table` is what Bases inserts when a file declares no views, `groupBy`
- * is rejected unless it carries both `property` and `direction`, direction is
- * `ASC`/`DESC`, and property ids are prefixed `note.` / `file.` / `formula.`.
+ * is rejected unless it carries both `property` and `direction`, and direction
+ * is `ASC`/`DESC`.
+ *
+ * Property ids are prefixed `note.` / `file.` / `formula.` in `filters` and in
+ * the `properties` map — but *not* inside a view. Bases accepts `note.stage` in
+ * `order` and `groupBy.property`, then rewrites it to bare `stage` the first
+ * time the user edits the view. Verified against Obsidian 1.12.7 by generating
+ * a file, adding a view in the UI and reading back what Bases wrote. We emit
+ * the bare form so the file on disk does not churn the moment it is touched.
  */
 
 export type BaseFilter =
@@ -79,10 +86,18 @@ function labels(pairs: Record<string, string>): Record<string, Record<string, un
   return out;
 }
 
+/**
+ * Inside a view, properties are named bare — see the note at the top of the
+ * file. `order` and `groupBy.property` therefore take the frontmatter key as
+ * written, while `properties` and `filters` keep their `note.` prefix.
+ */
 function table(name: string, order: string[], groupBy?: BaseViewSpec["groupBy"]): BaseViewSpec {
-  const view: BaseViewSpec = { type: "table", name, order: order.map(note) };
-  if (groupBy) view.groupBy = groupBy;
-  return view;
+  // Key order matters only because `stringifyYaml` preserves it: emitting the
+  // keys in the order Bases itself writes them means a file we generated and a
+  // file Bases has rewritten are textually identical, so nothing diffs.
+  return groupBy
+    ? { type: "table", name, groupBy, order: [...order] }
+    : { type: "table", name, order: [...order] };
 }
 
 /**
@@ -117,7 +132,7 @@ function requestQueue(requestType: string): BaseSpec {
         table(
           "By stage",
           ["id", "title", "blocked_on", "due", "assignee", "priority"],
-          { property: note("stage"), direction: "ASC" },
+          { property: "stage", direction: "ASC" },
         ),
         table("All requests", [
           "id",
@@ -155,7 +170,7 @@ function publications(): BaseSpec {
         table(
           "In flight",
           ["id", "title", "journal", "submitted", "decision_due", "scdb_supported"],
-          { property: note("stage"), direction: "ASC" },
+          { property: "stage", direction: "ASC" },
         ),
       ],
     },
@@ -183,7 +198,7 @@ function correspondence(): BaseSpec {
         table(
           "Open threads",
           ["id", "subject", "with", "last_outbound", "last_inbound", "state"],
-          { property: note("awaiting"), direction: "ASC" },
+          { property: "awaiting", direction: "ASC" },
         ),
       ],
     },
@@ -211,7 +226,7 @@ function catalogue(): BaseSpec {
         table(
           "By domain",
           ["id", "label", "data_type", "units", "version", "identifier"],
-          { property: note("domain"), direction: "ASC" },
+          { property: "domain", direction: "ASC" },
         ),
       ],
     },

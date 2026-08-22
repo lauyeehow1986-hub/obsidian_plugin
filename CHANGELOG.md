@@ -119,13 +119,14 @@ Phase A1: request tracking. The domain layer — pure, Obsidian-free, unit-teste
   disagree is the drift this plugin exists to prevent.
 - `RequestIndex.viewsForPaths` turns a Bases result into the same `RequestView`
   the cockpit boards already take, so both surfaces compute dwell identically.
-- 13 tests and 6 smoke checks; 324 tests in total. Bundle 122.4 KB.
+- 14 tests and 6 smoke checks; 325 tests in total. Bundle 122.7 KB.
 
 ### Decided — A2b
 - **The `.base` schema was read off the shipped app, not guessed.** The view type
   id `table` is what Bases inserts when a file declares no views; `groupBy` is
   rejected outright unless it carries both `property` and `direction`; direction
-  is `ASC`/`DESC`; property ids are prefixed `note.` / `file.` / `formula.`; and
+  is `ASC`/`DESC`; property ids are prefixed `note.` / `file.` / `formula.` in
+  `filters` and `properties` but written bare inside a view; and
   filter values must be quoted or they parse as identifiers. The writer also
   assigns its object to Obsidian's own `BasesConfigFile` interface, so a schema
   change breaks the build instead of filling the vault with unparseable files.
@@ -145,6 +146,37 @@ Phase A1: request tracking. The domain layer — pure, Obsidian-free, unit-teste
   confirmed. Caught by `npm run smoke`, which loads the bundle against an
   Obsidian stub with no Bases; a second stub that *has* Bases proves both view
   types still register.
+- **Generated `.base` files churned the moment Bases touched them.** We wrote
+  `order` and `groupBy.property` as `note.stage`; Bases accepts that, then
+  rewrites it to bare `stage` — and reorders `groupBy` ahead of `order` — the
+  first time the view is edited. Every user who opened a dashboard would have
+  found an unexplained change in their vault. We now emit exactly the form Bases
+  writes back, verified by generating a file, editing the view in the UI and
+  diffing: no change.
+- **The confirmation modal collapsed its file list into a run-on paragraph.**
+  `ConfirmModal` put the whole message in one `<p>`, so the `\n` between entries
+  did nothing. A dialog whose entire purpose is "here is exactly what will be
+  written" has to be legible; `• ` lines now render as a real list, still built
+  with `createEl` so nothing goes near `innerHTML` (§8).
+
+### Verified — A2b in a running Obsidian
+Driven through the real app (Obsidian **1.12.7**, test vault) rather than left
+as an untested claim:
+- Both view types appear in the Bases layout picker with their icons, alongside
+  Table / Cards / List, and both render — holdup grouped by blocking party,
+  ageing with its working "show on-track too" toggle.
+- The generated `Request queue.base` opens as a native Bases table, grouped by
+  stage, with our `displayName` labels applied and wikilinks live.
+- Bases round-trips our custom view id: it serialises back as
+  `type: scdb-holdup`.
+- Re-running the command with the files present writes nothing and says so.
+- **Developer console clean** — no errors or warnings across plugin load,
+  dashboard creation and both boards rendering.
+
+One honest limitation: the native table groups on the raw frontmatter value, so
+its headings read `awaiting-approval`, not `Awaiting approval`. Stage *labels*
+live in the workflow spec, which Bases cannot reach. Our own boards show labels;
+the browse layer shows ids.
 
 ### Added — fixture verification
 - **The shipped `test-vault/` fixtures are now parsed by the real parsers**, not

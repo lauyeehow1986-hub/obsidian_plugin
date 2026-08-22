@@ -413,6 +413,22 @@
   font-size: var(--font-ui-small);
 }
 
+/*
+ * The "here is what will be written" list. Tabular-ish and quiet: it is
+ * evidence for a decision, not the headline.
+ */
+.scdb-modal__list {
+  margin: 0;
+  padding-left: var(--scdb-2);
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+
+.scdb-modal__list li {
+  margin: 0;
+  padding: 2px 0;
+}
+
 .scdb-modal__actions {
   display: flex;
   gap: var(--scdb-1);

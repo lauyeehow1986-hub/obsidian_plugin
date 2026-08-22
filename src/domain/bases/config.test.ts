@@ -37,21 +37,38 @@ describe("view specs Obsidian will accept", () => {
     // would make the whole file unopenable rather than degrade.
     for (const view of views) {
       if (!view.groupBy) continue;
-      expect(view.groupBy.property).toMatch(/^note\./);
+      expect(view.groupBy.property.length).toBeGreaterThan(0);
       expect(["ASC", "DESC"]).toContain(view.groupBy.direction);
     }
   });
 
-  it("prefixes every property id with its source", () => {
+  it("names properties bare inside a view, the way Bases writes them back", () => {
+    // Bases accepts `note.stage` here but rewrites it to `stage` the first time
+    // the view is edited (verified against 1.12.7). Emitting the prefixed form
+    // would mean every generated file changed on disk as soon as it was opened
+    // and touched — pure churn in the user's vault and in git.
     for (const view of views) {
-      for (const property of view.order ?? []) {
-        expect(property).toMatch(/^(note|file|formula)\./);
+      for (const property of [
+        ...(view.order ?? []),
+        ...(view.groupBy ? [view.groupBy.property] : []),
+      ]) {
+        expect(property).not.toMatch(/^(note|file|formula)\./);
       }
     }
   });
 
   it("gives every view a name for the view selector", () => {
     for (const view of views) expect(view.name.length).toBeGreaterThan(0);
+  });
+
+  it("orders view keys the way Bases writes them back", () => {
+    // Same reason as the bare property names: a file Bases has rewritten should
+    // be textually identical to the one we generated, or every user who opens a
+    // dashboard gets a spurious change in their vault.
+    for (const view of views) {
+      const expected = ["type", "name", ...(view.groupBy ? ["groupBy"] : []), "order"];
+      expect(Object.keys(view)).toEqual(expected);
+    }
   });
 });
 
@@ -71,11 +88,13 @@ describe("column labels", () => {
   it("labels every column a view displays, so no raw frontmatter key shows", () => {
     for (const base of BASES) {
       const labelled = new Set(Object.keys(base.config.properties ?? {}));
+      // Views name properties bare; the `properties` map keys them `note.`-
+      // prefixed. Bridge the two so a column can never go unlabelled unnoticed.
       const shown = (base.config.views ?? []).flatMap((view) => [
         ...(view.order ?? []),
         ...(view.groupBy ? [view.groupBy.property] : []),
       ]);
-      const unlabelled = shown.filter((property) => !labelled.has(property));
+      const unlabelled = shown.filter((property) => !labelled.has(`note.${property}`));
       expect({ base: base.name, unlabelled }).toEqual({ base: base.name, unlabelled: [] });
     }
   });
