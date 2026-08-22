@@ -119,7 +119,7 @@ Phase A1: request tracking. The domain layer — pure, Obsidian-free, unit-teste
   disagree is the drift this plugin exists to prevent.
 - `RequestIndex.viewsForPaths` turns a Bases result into the same `RequestView`
   the cockpit boards already take, so both surfaces compute dwell identically.
-- 14 tests and 6 smoke checks; 325 tests in total. Bundle 122.7 KB.
+- 20 tests and 7 smoke checks; 331 tests in total. Bundle 124.0 KB.
 
 ### Decided — A2b
 - **The `.base` schema was read off the shipped app, not guessed.** The view type
@@ -173,10 +173,37 @@ as an untested claim:
 - **Developer console clean** — no errors or warnings across plugin load,
   dashboard creation and both boards rendering.
 
-One honest limitation: the native table groups on the raw frontmatter value, so
-its headings read `awaiting-approval`, not `Awaiting approval`. Stage *labels*
-live in the workflow spec, which Bases cannot reach. Our own boards show labels;
-the browse layer shows ids.
+### Added — stage labels in the browse layer
+The native table groups on the raw frontmatter value, so the queue's headings
+read `awaiting-approval` rather than `Awaiting approval`. Stage labels live in
+the workflow spec, which Bases cannot reach — so they are compiled into the
+generated file as a Bases **formula**:
+
+- `stage_label` is a nested `if()` chain built from the spec, and the queue
+  groups on `formula.stage_label`. Headings now read *Awaiting approval*,
+  *SCDB triage*, *QC*.
+- **Unknown ids fall through to the raw `note.stage`, deliberately.** A request
+  sitting in a stage the spec has dropped keeps showing its raw id, so a
+  stranded note stays visibly odd in the browse layer exactly as it carries a
+  "migrate" chip on our own boards (§5.2).
+- Ids and labels are escaped before they are embedded. They come from a YAML
+  file the user edits, and an unescaped quote would produce an expression Bases
+  cannot parse — and an unparseable `.base` does not degrade, it fails to open.
+- **The copy can go stale, so drift is reported rather than hidden.** We never
+  overwrite an existing file, so renaming a stage would otherwise leave the old
+  label showing indefinitely. `plan()` now compares each file's compiled
+  formulas against the current spec and the command names any that no longer
+  match, with the remedy. Same principle as `last_reconciled` in §5.1: make the
+  drift visible instead of assuming it away.
+
+Read off the shipped app before building on it: Bases string literals accept
+backslash escapes, `if(condition, true, false?)` is a global that nests, and
+formula ids keep their `formula.` prefix inside a view where frontmatter ids are
+written bare — all confirmed with a probe file in Obsidian 1.12.7.
+
+Publication, correspondence and catalogue stages still group by raw value: those
+vocabularies have no spec to read labels from yet, and inventing one here would
+put a second definition somewhere other than the vault contract.
 
 ### Added — fixture verification
 - **The shipped `test-vault/` fixtures are now parsed by the real parsers**, not

@@ -169,6 +169,10 @@ try {
   basesLoadError = error;
 }
 
+// `plan()` reads existing files to spot formulas that have drifted from the
+// workflow spec, so it is async. Resolve it once rather than in each check.
+const basesPlan = (await instance.basesFiles?.plan()) ?? [];
+
 const checks = [
   // Assert behaviour, not the class name: production builds are minified, so
   // the name is whatever esbuild chose.
@@ -211,12 +215,16 @@ const checks = [
           typeof view.factory === "function",
       ),
   ],
-  ["plans the four browse dashboards", instance.basesFiles?.plan().length === 4],
+  ["plans the four browse dashboards", basesPlan.length === 4],
   [
     "every planned base lands in the dashboards folder",
-    (instance.basesFiles?.plan() ?? []).every(
+    basesPlan.every(
       (entry) => entry.path.startsWith("90 Dashboards/") && entry.path.endsWith(".base"),
     ),
+  ],
+  [
+    "reports nothing as stale when there is nothing on disk",
+    basesPlan.every((entry) => entry.stale === false),
   ],
   [
     "no dashboard is written while Bases is absent",

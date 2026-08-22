@@ -1,5 +1,6 @@
 import { Notice, Plugin, TFile, debounce, type WorkspaceLeaf } from "obsidian";
 import { BasesFiles } from "./data/basesFiles.js";
+import { stageLabels } from "./domain/bases/config.js";
 import { NoteIndex } from "./data/noteIndex.js";
 import { REQUEST_TYPE, RequestIndex } from "./data/requestIndex.js";
 import { buildRows, catalogueFor, type RowSourceDeps } from "./data/rows.js";
@@ -89,6 +90,9 @@ export default class ScdbCockpitPlugin extends Plugin {
       this.notes,
       () => this.settings.folders.dashboards,
       REQUEST_TYPE,
+      // The spec is the only source of stage labels, and Bases cannot read it,
+      // so they are compiled into the generated file at write time.
+      () => stageLabels(this.workflows.usable()),
     );
 
     this.registerView(COCKPIT_VIEW_TYPE, (leaf: WorkspaceLeaf) => new CockpitView(leaf, this));
@@ -140,11 +144,30 @@ export default class ScdbCockpitPlugin extends Plugin {
       return;
     }
 
-    const plan = this.basesFiles.plan();
+    const plan = await this.basesFiles.plan();
     const toWrite = plan.filter((entry) => entry.written);
+    const stale = plan.filter((entry) => entry.stale);
+
+    // Stage labels are compiled into the file because Bases cannot read the
+    // workflow spec. We do not overwrite, so a stage rename leaves the old
+    // label showing — say so plainly and name the remedy rather than let a
+    // wrong heading pass for a right one.
+    const drift =
+      stale.length === 0
+        ? ""
+        : `\n\nOut of date with the workflow spec — stage labels will be wrong:\n${stale
+            .map((entry) => `• ${entry.path}`)
+            .join("\n")}\nDelete these and run this command again to regenerate them.`;
 
     if (toWrite.length === 0) {
-      new Notice("Every Bases dashboard already exists. Nothing was changed.", 5000);
+      new Notice(
+        stale.length === 0
+          ? "Every Bases dashboard already exists. Nothing was changed."
+          : `Every Bases dashboard already exists, but ${stale.length} no longer ${
+              stale.length === 1 ? "matches" : "match"
+            } the workflow spec. Delete and regenerate to refresh the stage labels.`,
+        stale.length === 0 ? 5000 : 9000,
+      );
       return;
     }
 
@@ -155,7 +178,7 @@ export default class ScdbCockpitPlugin extends Plugin {
     const detail = skipped > 0 ? `\n\n${skipped} already exist and will be left alone.` : "";
     const ok = await confirm(
       this.app,
-      `Create ${toWrite.length} Bases dashboard${toWrite.length === 1 ? "" : "s"}?\n\n${lines}${detail}`,
+      `Create ${toWrite.length} Bases dashboard${toWrite.length === 1 ? "" : "s"}?\n\n${lines}${detail}${drift}`,
       "Create",
     );
     if (!ok) return;

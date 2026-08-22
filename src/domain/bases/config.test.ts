@@ -1,8 +1,14 @@
 import { dump, load } from "js-yaml";
 import { describe, expect, it } from "vitest";
-import { standardBases, type BaseViewSpec } from "./config";
+import { stageLabelFormula, stageLabels, standardBases, type BaseViewSpec } from "./config";
 
-const BASES = standardBases("scdb-request");
+const STAGES = [
+  { id: "triage", label: "SCDB triage" },
+  { id: "awaiting-approval", label: "Awaiting approval" },
+  { id: "qc", label: "QC" },
+];
+
+const BASES = standardBases("scdb-request", STAGES);
 const views: BaseViewSpec[] = BASES.flatMap((base) => base.config.views ?? []);
 
 describe("the set we generate", () => {
@@ -42,7 +48,7 @@ describe("view specs Obsidian will accept", () => {
     }
   });
 
-  it("names properties bare inside a view, the way Bases writes them back", () => {
+  it("names frontmatter properties bare inside a view, the way Bases writes them back", () => {
     // Bases accepts `note.stage` here but rewrites it to `stage` the first time
     // the view is edited (verified against 1.12.7). Emitting the prefixed form
     // would mean every generated file changed on disk as soon as it was opened
@@ -52,9 +58,15 @@ describe("view specs Obsidian will accept", () => {
         ...(view.order ?? []),
         ...(view.groupBy ? [view.groupBy.property] : []),
       ]) {
-        expect(property).not.toMatch(/^(note|file|formula)\./);
+        if (property.startsWith("formula.")) continue;
+        expect(property).not.toMatch(/^(note|file)\./);
       }
     }
+  });
+
+  it("keeps the `formula.` prefix, because bare names mean frontmatter", () => {
+    const grouped = views.find((view) => view.name === "By stage");
+    expect(grouped?.groupBy?.property).toBe("formula.stage_label");
   });
 
   it("gives every view a name for the view selector", () => {
@@ -69,6 +81,51 @@ describe("view specs Obsidian will accept", () => {
       const expected = ["type", "name", ...(view.groupBy ? ["groupBy"] : []), "order"];
       expect(Object.keys(view)).toEqual(expected);
     }
+  });
+});
+
+describe("the stage-label formula", () => {
+  it("maps every stage id to its spec label", () => {
+    const formula = stageLabelFormula(STAGES);
+    for (const stage of STAGES) {
+      expect(formula).toContain(`note.stage == "${stage.id}"`);
+      expect(formula).toContain(`"${stage.label}"`);
+    }
+  });
+
+  it("falls back to the raw id, so a retired stage stays visibly odd", () => {
+    // Not blank and not a guess: a request sitting in a stage the spec dropped
+    // should look different in the browse layer, the same way it carries a
+    // "migrate" chip on our own boards (§5.2).
+    expect(stageLabelFormula(STAGES).endsWith("note.stage)))")).toBe(true);
+    expect(stageLabelFormula([])).toBe("note.stage");
+  });
+
+  it("nests innermost-last, so the first stage is tested first", () => {
+    expect(stageLabelFormula([{ id: "a", label: "A" }, { id: "b", label: "B" }])).toBe(
+      'if(note.stage == "a", "A", if(note.stage == "b", "B", note.stage))',
+    );
+  });
+
+  it("escapes quotes and backslashes rather than emitting a broken expression", () => {
+    // Ids and labels come from a YAML file the user edits. An unescaped quote
+    // would produce an expression Bases cannot parse, and an unparseable .base
+    // does not degrade — it fails to open.
+    const formula = stageLabelFormula([{ id: 'we"ird', label: 'said "go" \\ done' }]);
+    expect(formula).toBe(
+      'if(note.stage == "we\\"ird", "said \\"go\\" \\\\ done", note.stage)',
+    );
+  });
+
+  it("collects live stages across specs, first definition winning", () => {
+    const labels = stageLabels([
+      { stages: [{ id: "triage", label: "SCDB triage" }] },
+      { stages: [{ id: "triage", label: "Other triage" }, { id: "qc", label: "QC" }] },
+    ]);
+    expect(labels).toEqual([
+      { id: "triage", label: "SCDB triage" },
+      { id: "qc", label: "QC" },
+    ]);
   });
 });
 
@@ -94,7 +151,10 @@ describe("column labels", () => {
         ...(view.order ?? []),
         ...(view.groupBy ? [view.groupBy.property] : []),
       ]);
-      const unlabelled = shown.filter((property) => !labelled.has(`note.${property}`));
+      const unlabelled = shown.filter(
+        (property) =>
+          !labelled.has(property.startsWith("formula.") ? property : `note.${property}`),
+      );
       expect({ base: base.name, unlabelled }).toEqual({ base: base.name, unlabelled: [] });
     }
   });

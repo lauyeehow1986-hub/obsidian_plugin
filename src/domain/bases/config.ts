@@ -64,6 +64,73 @@ function note(property: string): string {
   return `note.${property}`;
 }
 
+/** A stage id and the label the workflow spec gives it (§5.2). */
+export interface StageLabel {
+  id: string;
+  label: string;
+}
+
+/**
+ * Live stages across every usable spec, in spec order, first definition wins.
+ *
+ * A `.base` filters on `type`, not on workflow, so one file can show requests
+ * governed by different specs. Retired ids are deliberately left out — see
+ * `stageLabelFormula`.
+ */
+export function stageLabels(
+  specs: readonly { stages: readonly { id: string; label: string }[] }[],
+): StageLabel[] {
+  const seen = new Set<string>();
+  const out: StageLabel[] = [];
+  for (const spec of specs) {
+    for (const stage of spec.stages) {
+      if (seen.has(stage.id)) continue;
+      seen.add(stage.id);
+      out.push({ id: stage.id, label: stage.label });
+    }
+  }
+  return out;
+}
+
+/**
+ * A Bases string literal.
+ *
+ * Stage ids and labels come out of a YAML file the user edits, so they are
+ * untrusted as *syntax*: an unescaped quote would produce an expression Bases
+ * cannot parse, and a `.base` that fails to parse does not degrade — it fails
+ * to open. Bases string literals accept backslash escapes; verified against
+ * Obsidian 1.12.7 with a probe file containing `"said \"go\""`, which rendered
+ * as `said "go"`.
+ */
+function literal(value: string): string {
+  return `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+}
+
+/**
+ * Stage id → stage label, as a Bases formula.
+ *
+ * Why this exists: a native Bases table groups on the raw frontmatter value, so
+ * without it the queue's group headings read `awaiting-approval`. Labels live in
+ * the workflow spec, which Bases cannot reach — the only way to get them into
+ * the browse layer is to compile them into the file.
+ *
+ * Unknown ids fall through to `note.stage` rather than to blank. That is what
+ * makes the fallback useful rather than merely safe: a request sitting in a
+ * *retired* stage keeps showing its raw id, so a stranded note stays visually
+ * distinct in the browse layer exactly as it does on our own boards (§5.2).
+ *
+ * The copy is compiled in, so it can go stale if the spec is edited later —
+ * `BasesFiles` compares the two and reports the drift rather than pretending.
+ */
+export function stageLabelFormula(stages: readonly StageLabel[]): string {
+  const fallback = note("stage");
+  return stages.reduceRight(
+    (otherwise, stage) =>
+      `if(${fallback} == ${literal(stage.id)}, ${literal(stage.label)}, ${otherwise})`,
+    fallback,
+  );
+}
+
 /**
  * Bases filter expressions are a small expression language, not YAML structure.
  * Quoting the value matters: an unquoted bare word is parsed as an identifier.
@@ -87,6 +154,16 @@ function labels(pairs: Record<string, string>): Record<string, Record<string, un
 }
 
 /**
+ * Label a formula column.
+ *
+ * Without this the heading is the formula's own key — `stage_label` — which is
+ * worse than the raw ids this whole mechanism exists to replace.
+ */
+function formulaLabel(name: string, displayName: string): Record<string, Record<string, unknown>> {
+  return { [`formula.${name}`]: { displayName } };
+}
+
+/**
  * Inside a view, properties are named bare — see the note at the top of the
  * file. `order` and `groupBy.property` therefore take the frontmatter key as
  * written, while `properties` and `filters` keep their `note.` prefix.
@@ -107,14 +184,17 @@ function table(name: string, order: string[], groupBy?: BaseViewSpec["groupBy"])
  * Bases cannot express it. Grouping by stage is the honest thing a native table
  * can do well, and the computed boards stay ours (see `registerBasesView`).
  */
-function requestQueue(requestType: string): BaseSpec {
+function requestQueue(requestType: string, stages: readonly StageLabel[]): BaseSpec {
   return {
     name: "Request queue",
     noteType: requestType,
     purpose: "Every request, grouped by stage — a native, editable table.",
     config: {
       filters: isType(requestType),
-      properties: labels({
+      formulas: { stage_label: stageLabelFormula(stages) },
+      properties: {
+        ...formulaLabel("stage_label", "Stage"),
+        ...labels({
         id: "ID",
         title: "Title",
         stage: "Stage",
@@ -127,12 +207,16 @@ function requestQueue(requestType: string): BaseSpec {
         received: "Received",
         due: "Due",
         external_ref: "External ref",
-      }),
+        }),
+      },
       views: [
         table(
           "By stage",
           ["id", "title", "blocked_on", "due", "assignee", "priority"],
-          { property: "stage", direction: "ASC" },
+          // Group on the formula, not on `stage`: Bases groups by the raw value,
+          // and the raw value is an id. Formula ids keep their prefix inside a
+          // view — bare names resolve to frontmatter.
+          { property: "formula.stage_label", direction: "ASC" },
         ),
         table("All requests", [
           "id",
@@ -241,6 +325,9 @@ function catalogue(): BaseSpec {
  * browse layer can exist before the tooling does. The caller reports how many
  * notes each one currently matches, so an empty table is never a surprise.
  */
-export function standardBases(requestType: string): BaseSpec[] {
-  return [requestQueue(requestType), publications(), correspondence(), catalogue()];
+export function standardBases(
+  requestType: string,
+  stages: readonly StageLabel[] = [],
+): BaseSpec[] {
+  return [requestQueue(requestType, stages), publications(), correspondence(), catalogue()];
 }
