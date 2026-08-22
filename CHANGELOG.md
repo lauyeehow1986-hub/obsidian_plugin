@@ -68,6 +68,52 @@ Phase A1: request tracking. The domain layer — pure, Obsidian-free, unit-teste
   with a `retired:` entry, so the board has something real to show.
 - 24 further tests; 231 in total.
 
+### Added — phase A2, the index and query engine
+- **Note index.** Every note declaring a `type:` is indexed from Obsidian's
+  metadata cache and updated incrementally. `RequestIndex` became a projection
+  over it, so there is one read of the cache and one definition of scope rather
+  than two that can drift.
+- **Query model** (`domain/query/`): an OR/NOT filter tree, multi-key sort,
+  grouping with date buckets, and aggregates (count, distinct, sum, mean, min,
+  max, median, p90). Plain data throughout, so it round-trips through YAML.
+- **Computed fields are first-class.** `domain/request/queryFields.ts` exposes
+  dwell, age, turnaround, bounce count, SLA state, days-to-due and
+  awaiting-migration as ordinary fields. Filtering, sorting, grouping and
+  aggregating work on them without the engine knowing what a request is. This is
+  the half core Bases structurally cannot do, and the reason we own an engine.
+- **Field inference for every other type.** Types without a declared catalogue
+  get one from the frontmatter actually present, so a note type added to the
+  vault contract is queryable before any code knows about it.
+- **Saved views** as `type: scdb-view` notes in `90 Dashboards/`, written with
+  `all:` / `any:` / `not:` so a person can edit one by hand. Loading, saving and
+  a validation pass that names an unknown field instead of failing silently.
+- **Explore board** in the cockpit: type picker, two-level filter builder,
+  column/sort/group controls, aggregates, and a grouped table with per-group and
+  overall totals.
+- **Export to CSV and markdown**, into `95 Exports/`, after a confirmation
+  naming the file and row count, with an `export` entry appended to the audit
+  ledger (§5.6). CSV is RFC 4180 with CRLF and carries a machine-readable
+  duration column beside the human one.
+- `npm run bench` measures the A2 acceptance criterion. On this machine a
+  5,000-note vault re-indexes in **23 ms** against a 1,000 ms budget; building
+  every row and running a filtered, grouped, aggregated query adds 28 ms. At
+  50,000 notes the re-index is 191 ms.
+- 62 further tests; 293 in total.
+
+### Decided — A2
+- **Comparison is kind-directed**, taken from the field catalogue rather than
+  guessed from the runtime type of the value. An `sla_days` of `"21"` written as
+  a string would otherwise sort between 2 and 3.
+- **Missing is never zero.** A request with no `due` is not overdue, a stage with
+  no target is not on track, and neither contributes to a mean. Nulls are
+  excluded from aggregates and sorted last in both directions.
+- **Dates and durations in a saved view stay as written** — `today`, `-14d`,
+  `2w` — and resolve at evaluation, so a view means the same thing next month
+  and the note is readable.
+- **Results are never cached.** Dwell depends on the current time, so a cached
+  result is one that is quietly wrong by tomorrow. The benchmark is what makes
+  recomputing on every repaint defensible.
+
 ### Fixed
 - **Cards, tabs and inline links were being styled as form controls.** Obsidian's
   `app.css` gives every `<button>` a fixed `height: var(--input-height)` (30px)
@@ -79,6 +125,9 @@ Phase A1: request tracking. The domain layer — pure, Obsidian-free, unit-teste
   stylesheet, at full width and at a 320px sidebar.
 - The migration board's stage dropdown truncated its longest option; the column
   now reserves enough width to read it without opening the list.
+- At sidebar width a stacked result row carried its columns' values with no
+  headings — three unexplained durations. Each cell now prefixes its own label
+  in that layout only.
 - **The button reset is now the default rather than a list of exceptions.** The
   first fix named the four classes that needed to opt out, which left every
   future view one forgotten class away from the same collapse. Every button the

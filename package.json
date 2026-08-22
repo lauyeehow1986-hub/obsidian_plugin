@@ -8,6 +8,7 @@
     "build": "tsc --noEmit && node esbuild.config.mjs --prod",
     "package": "npm run build && npm run smoke && node scripts/package.mjs",
     "smoke": "node scripts/smoke.mjs",
+    "bench": "node scripts/bench.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit"

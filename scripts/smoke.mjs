@@ -143,6 +143,19 @@ const checks = [
   ["writer is wired", typeof instance.writer?.create === "function"],
   ["bulk migration is wired", typeof instance.writer?.migrate === "function"],
   ["migration quarantine is reachable", instance.needsMigration({ workflow: "", stage: "x" }) === false],
+  ["note index is wired", instance.notes?.size === 0],
+  ["note index reports no types on an empty vault", instance.notes?.types().length === 0],
+  ["saved view store is wired", Array.isArray(instance.views?.all())],
+  ["exporter is wired", typeof instance.exporter?.write === "function"],
+  [
+    "export path lands in the exports folder",
+    instance.exporter?.plannedPath("queue", "csv").startsWith("95 Exports/queue-"),
+  ],
+  ["query rows build on an empty vault", instance.rowsFor([], Date.now()).length === 0],
+  [
+    "the request catalogue exposes computed fields",
+    instance.catalogueFor(["scdb-request"]).some((field) => field.id === "dwell" && field.computed),
+  ],
 ];
 
 /*

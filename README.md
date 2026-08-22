@@ -4,7 +4,8 @@ An Obsidian plugin for running a clinical data collection facility: data-request
 tracking with governance gates, effort measurement, publications, and the audit
 trail behind all of it. Offline-first, no telemetry, no network calls by default.
 
-**Status: early scaffold (v0.1.0, phase A0).** Nothing user-facing works yet.
+**Status: phase A2.** Request tracking works end to end (A1) and the query
+engine behind the Explore board is in (A2). Not yet released.
 
 The design lives in [CLAUDE.md](CLAUDE.md) — architecture, the vault contract,
 build phases, and the rules that constrain them.
@@ -17,6 +18,7 @@ npm test          # Vitest over the pure domain layer
 npm run dev       # watch build into test-vault/
 npm run build     # typecheck + production build into dist/
 npm run smoke     # load the built bundle against a stubbed Obsidian
+npm run bench     # index + query timings over a synthetic 5,000-note vault
 npm run package   # build + smoke + release zip for transfer
 ```
 

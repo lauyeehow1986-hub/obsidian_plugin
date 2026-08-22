@@ -1,5 +1,8 @@
 import { Notice, Plugin, TFile, debounce, type WorkspaceLeaf } from "obsidian";
+import { NoteIndex } from "./data/noteIndex.js";
 import { RequestIndex } from "./data/requestIndex.js";
+import { buildRows, catalogueFor, type RowSourceDeps } from "./data/rows.js";
+import { SavedViewStore } from "./data/savedViewStore.js";
 import { WorkflowStore } from "./data/workflowStore.js";
 import { requestMetrics } from "./domain/request/dwell.js";
 import { isStranded } from "./domain/request/migration.js";
@@ -8,7 +11,10 @@ import { TransitionRefused } from "./domain/request/transition.js";
 import type { WorkflowSpec } from "./domain/request/workflow.js";
 import { migrateSettings } from "./domain/settings/migrate.js";
 import { defaultSettings, type ScdbSettings } from "./domain/settings/schema.js";
+import type { FieldDef, Query, Row } from "./domain/query/model.js";
+import type { SavedView } from "./domain/query/savedView.js";
 import { AuditLog } from "./services/auditLog.js";
+import { Exporter, type ExportRequest } from "./services/exporter.js";
 import {
   RequestWriter,
   reportError,
@@ -16,6 +22,7 @@ import {
 } from "./services/requestWriter.js";
 import { ScdbSettingsTab } from "./settings/SettingsTab.js";
 import { COCKPIT_VIEW_TYPE, CockpitView, type CockpitTab } from "./ui/CockpitView.js";
+import { confirm } from "./ui/ConfirmModal.js";
 import { IntakeModal } from "./ui/IntakeModal.js";
 import { RequestDetailModal } from "./ui/RequestDetailModal.js";
 import { TransitionModal } from "./ui/TransitionModal.js";
@@ -34,9 +41,13 @@ export default class ScdbCockpitPlugin extends Plugin {
   migrationNotes: string[] = [];
 
   workflows!: WorkflowStore;
+  /** Every typed note. The query engine reads this; A1's boards read `index`. */
+  notes!: NoteIndex;
   index!: RequestIndex;
   audit!: AuditLog;
   writer!: RequestWriter;
+  views!: SavedViewStore;
+  exporter!: Exporter;
 
   /**
    * Core Bases (Obsidian >= 1.10) is a progressive enhancement — never a
@@ -52,13 +63,21 @@ export default class ScdbCockpitPlugin extends Plugin {
     await this.loadSettings();
 
     this.workflows = new WorkflowStore(this.app, () => this.settings.folders.config);
-    this.index = new RequestIndex(this.app, () => this.settings.folders.requests, this.workflows);
+    this.notes = new NoteIndex(this.app);
+    this.index = new RequestIndex(this.app, this.notes, this.workflows);
     this.audit = new AuditLog(this.app, () => this.settings.folders.audit);
     this.writer = new RequestWriter({
       app: this.app,
       index: this.index,
       audit: this.audit,
       requestsFolder: () => this.settings.folders.requests,
+      actor: () => this.settings.actor,
+    });
+    this.views = new SavedViewStore(this.app, this.notes, () => this.settings.folders.dashboards);
+    this.exporter = new Exporter({
+      app: this.app,
+      audit: this.audit,
+      exportsFolder: () => this.settings.folders.exports,
       actor: () => this.settings.actor,
     });
 
@@ -110,6 +129,12 @@ export default class ScdbCockpitPlugin extends Plugin {
     });
 
     this.addCommand({
+      id: "explore",
+      name: "Explore notes with a query",
+      callback: () => void this.activateCockpit("explore"),
+    });
+
+    this.addCommand({
       id: "verify-audit-ledger",
       name: "Verify audit ledger",
       callback: () => void this.verifyLedger(),
@@ -117,7 +142,7 @@ export default class ScdbCockpitPlugin extends Plugin {
 
     this.addCommand({
       id: "reindex",
-      name: "Rebuild the request index",
+      name: "Rebuild the note index",
       callback: () => void this.reindex(true),
     });
   }
@@ -125,20 +150,27 @@ export default class ScdbCockpitPlugin extends Plugin {
   private registerWatchers(): void {
     const refresh = debounce(() => this.refreshViews(), 150, true);
 
+    // Order matters: the request projection reads the note index, so the note
+    // index has to have seen the change first.
     this.registerEvent(
       this.app.metadataCache.on("changed", (file) => {
-        if (this.index.update(file)) refresh();
+        const touched = this.notes.update(file);
+        if (this.index.update(file) || touched) refresh();
       }),
     );
     this.registerEvent(
       this.app.vault.on("delete", (file) => {
-        if (this.index.remove(file.path)) refresh();
+        const touched = this.notes.remove(file.path);
+        if (this.index.remove(file.path) || touched) refresh();
         if (this.workflows.isSpecPath(file.path)) void this.reloadWorkflows();
       }),
     );
     this.registerEvent(
       this.app.vault.on("rename", (file, oldPath) => {
-        if (file instanceof TFile) this.index.rename(oldPath, file);
+        if (file instanceof TFile) {
+          this.notes.rename(oldPath, file);
+          this.index.rename(oldPath, file);
+        }
         if (this.workflows.isSpecPath(file.path) || this.workflows.isSpecPath(oldPath)) {
           void this.reloadWorkflows();
         }
@@ -166,11 +198,14 @@ export default class ScdbCockpitPlugin extends Plugin {
   async reindex(announce = false): Promise<void> {
     const started = performance.now();
     await this.workflows.reload();
+    this.notes.rebuild();
     this.index.rebuild();
     this.refreshViews();
     if (announce) {
       const ms = Math.round(performance.now() - started);
-      new Notice(`SCDB: indexed ${this.index.size} requests in ${ms} ms.`);
+      new Notice(
+        `SCDB: indexed ${this.notes.size} notes (${this.index.size} requests) in ${ms} ms.`,
+      );
     }
   }
 
@@ -320,6 +355,72 @@ export default class ScdbCockpitPlugin extends Plugin {
       parts.push(`${failed.length} refused: ${failed[0]!.error ?? "no reason given"}`);
     }
     new Notice(`SCDB: ${parts.join("; ")}.`, failed.length > 0 ? 0 : 6000);
+  }
+
+  // --- the query surface (§7 A2) ---------------------------------------------
+
+  private queryDeps(): RowSourceDeps {
+    return { notes: this.notes, requests: this.index, workflows: this.workflows };
+  }
+
+  /** Rows for the given note types. Never cached — dwell depends on `now` (§5.1). */
+  rowsFor(types: readonly string[], now: number): Row[] {
+    return buildRows(this.queryDeps(), types, now);
+  }
+
+  catalogueFor(types: readonly string[]): FieldDef[] {
+    return catalogueFor(this.queryDeps(), types);
+  }
+
+  openNote(path: string): void {
+    const entry = this.notes.byPath(path);
+    if (entry) void this.app.workspace.getLeaf(false).openFile(entry.file);
+  }
+
+  /**
+   * Write a saved view, updating the note the board is currently showing or
+   * creating a new one. Returns the path so the board can keep pointing at it.
+   */
+  async saveCurrentView(query: Query, existingPath: string): Promise<string> {
+    const stored = existingPath === "" ? null : this.views.byPath(existingPath);
+    const view: SavedView = stored
+      ? { ...stored.view, query }
+      : {
+          id: "",
+          title: `Saved view ${new Date().toISOString().slice(0, 10)}`,
+          description: "",
+          hat: this.settings.mode,
+          query,
+        };
+    try {
+      const file = await this.views.save(view, stored?.file);
+      new Notice(`SCDB: saved "${view.title}" to ${file.path}.`);
+      return file.path;
+    } catch (error) {
+      reportError(error, "could not save this view.");
+      return existingPath;
+    }
+  }
+
+  /**
+   * Export a result, after confirming it.
+   *
+   * The confirmation names the file and the row count before anything is
+   * written (§7 A3), because an export is the moment vault content becomes a
+   * file that can travel.
+   */
+  async exportQuery(request: ExportRequest): Promise<void> {
+    const planned = this.exporter.plannedPath(request.basename, request.extension);
+    const rows = `${request.rows} row${request.rows === 1 ? "" : "s"}`;
+    const go = await confirm(this.app, `Write ${rows} to ${planned}?`, "Export");
+    if (!go) return;
+
+    try {
+      const result = await this.exporter.write(request);
+      new Notice(`SCDB: exported ${rows} to ${result.path}. Logged to the audit ledger.`, 8000);
+    } catch (error) {
+      reportError(error, "could not write the export.");
+    }
   }
 
   async verifyLedger(): Promise<void> {

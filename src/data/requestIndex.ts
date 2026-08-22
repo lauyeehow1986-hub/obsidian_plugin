@@ -1,15 +1,22 @@
 /**
- * The in-memory request index (CLAUDE.md §7 A2, built early because A1 needs it).
+ * The request projection over the note index (CLAUDE.md §7 A2).
  *
- * Built from Obsidian's metadata cache and updated incrementally on change, so
- * nothing here parses a file itself. Rebuilding a whole vault is a map over
- * cached frontmatter; a single change touches one entry.
+ * `NoteIndex` holds every typed note; this holds the parsed `RequestNote` for
+ * the ones that are requests. Keeping it a projection rather than a second
+ * index means one read of Obsidian's metadata cache and one definition of what
+ * is in scope — the alternative drifts the moment a vault event is handled in
+ * one place and not the other.
+ *
+ * A request filed outside `10 Requests/` still counts: the folder is a
+ * convention, and a note that declares the type should never quietly vanish
+ * from the queue because someone moved it.
  */
 
-import { TFile, type App, type CachedMetadata } from "obsidian";
+import { TFile, type App } from "obsidian";
 import { requestMetrics, type MetricsOptions } from "../domain/request/dwell";
 import type { RequestView } from "../domain/request/holdup";
 import { parseRequest, type RequestNote } from "../domain/request/request";
+import type { NoteIndex } from "./noteIndex";
 import type { WorkflowStore } from "./workflowStore";
 
 export const REQUEST_TYPE = "scdb-request";
@@ -21,30 +28,14 @@ export interface IndexEntry {
   problems: string[];
 }
 
-/** Frontmatter as the metadata cache reports it, minus its own bookkeeping. */
-function cleanFrontmatter(cache: CachedMetadata | null): Record<string, unknown> | null {
-  const frontmatter = cache?.frontmatter;
-  if (!frontmatter) return null;
-  const { position: _position, ...rest } = frontmatter as Record<string, unknown>;
-  return rest;
-}
-
 export class RequestIndex {
   private entries = new Map<string, IndexEntry>();
 
   constructor(
     private readonly app: App,
-    private readonly requestsFolder: () => string,
+    private readonly notes: NoteIndex,
     private readonly workflows: WorkflowStore,
   ) {}
-
-  /** True when a path is somewhere the index cares about. */
-  private inScope(path: string): boolean {
-    const folder = this.requestsFolder();
-    // Notes outside the folder still count if they declare the type — the
-    // folder is a convention, and a request filed elsewhere should not vanish.
-    return path.endsWith(".md") || path.startsWith(`${folder}/`);
-  }
 
   rebuild(): void {
     this.entries.clear();
@@ -53,12 +44,11 @@ export class RequestIndex {
 
   /** Re-read one file. Removes it from the index if it is no longer a request. */
   update(file: TFile): boolean {
-    if (!this.inScope(file.path)) return false;
-    const frontmatter = cleanFrontmatter(this.app.metadataCache.getFileCache(file));
-    if (!frontmatter || frontmatter["type"] !== REQUEST_TYPE) {
+    const entry = this.notes.byPath(file.path);
+    if (!entry || entry.type !== REQUEST_TYPE) {
       return this.entries.delete(file.path);
     }
-    const { request, problems } = parseRequest(frontmatter);
+    const { request, problems } = parseRequest(entry.frontmatter);
     this.entries.set(file.path, { file, request, problems });
     return true;
   }

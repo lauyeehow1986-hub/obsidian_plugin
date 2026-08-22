@@ -574,6 +574,130 @@
   margin-top: var(--scdb-2);
 }
 
+/* --------------------------------------------------------------- explore -- */
+
+.scdb-explore {
+  display: flex;
+  flex-direction: column;
+  gap: var(--scdb-1);
+}
+
+.scdb-explore__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--scdb-1);
+  align-items: center;
+}
+
+.scdb-panel {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+}
+
+.scdb-panel > summary {
+  padding: 6px var(--scdb-1);
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  cursor: pointer;
+}
+
+.scdb-panel__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--scdb-1);
+  padding: var(--scdb-1);
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+.scdb-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px var(--scdb-2);
+}
+
+/* ---------------------------------------------------------------- filter -- */
+
+.scdb-filter {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* Wraps rather than scrolls, so a filter row survives a 300px sidebar (§6). */
+.scdb-filter__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.scdb-filter__row select,
+.scdb-filter__row input[type="text"] {
+  flex: 1 1 140px;
+  min-width: 120px;
+}
+
+.scdb-filter__nested {
+  margin: 0;
+  padding: var(--scdb-1);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+}
+
+.scdb-filter__nested legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--scdb-1);
+  align-items: center;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.scdb-filter__actions {
+  display: flex;
+  gap: var(--scdb-2);
+}
+
+/* --------------------------------------------------------------- results -- */
+
+.scdb-result {
+  display: flex;
+  flex-direction: column;
+  gap: var(--scdb-2);
+}
+
+.scdb-result__heading {
+  display: flex;
+  gap: var(--scdb-1);
+  align-items: baseline;
+  margin: 0 0 4px;
+  font-size: var(--font-ui-small);
+  font-weight: 600;
+  color: var(--text-normal);
+}
+
+/* Marks a column the plugin worked out rather than read from the note. */
+.scdb-result__computed {
+  color: var(--text-faint);
+}
+
+.scdb-result__total {
+  margin-right: var(--scdb-2);
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.scdb-result__footer {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.scdb-result tfoot td {
+  border-bottom: none;
+  padding-top: 6px;
+}
+
 /* ------------------------------------------------------------ responsive -- */
 
 /* Sidebar width: stack rather than scroll horizontally (§6). */
@@ -619,6 +743,53 @@
   .scdb-migration__actions {
     flex-wrap: wrap;
     justify-content: flex-start;
+  }
+
+  /* Same argument as the migration worksheet: stack the result rows into
+   * labelled blocks rather than scrolling a wide table sideways (§6). */
+  .scdb-result .scdb-table,
+  .scdb-result .scdb-table tbody,
+  .scdb-result .scdb-table tr,
+  .scdb-result .scdb-table td {
+    display: block;
+    width: auto;
+  }
+
+  .scdb-result .scdb-table thead {
+    display: none;
+  }
+
+  .scdb-result .scdb-table tbody tr {
+    margin-bottom: 6px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--background-modifier-border);
+  }
+
+  .scdb-result .scdb-table td {
+    display: flex;
+    gap: var(--scdb-1);
+    justify-content: space-between;
+    padding: 1px 0;
+    border: none;
+    text-align: left;
+  }
+
+  /* The header row is hidden in this layout, so each cell carries its own
+   * label — otherwise a stacked row is three unexplained durations. */
+  .scdb-result .scdb-table td::before {
+    content: attr(data-label);
+    flex: none;
+    color: var(--text-muted);
+    font-size: var(--font-ui-smaller);
+  }
+
+  /* The first cell is the note link and reads as the row's title. */
+  .scdb-result .scdb-table td:first-child::before {
+    content: none;
+  }
+
+  .scdb-explore__toolbar > * {
+    flex: 1 1 auto;
   }
 }
 
