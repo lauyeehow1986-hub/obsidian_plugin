@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { check, renderReport, summarise, tally, type DiagnosticsReport } from "./report";
+import {
+  check,
+  renderReport,
+  specProblemStatus,
+  summarise,
+  tally,
+  type DiagnosticsReport,
+} from "./report";
 
 const report = (...sections: DiagnosticsReport["sections"]): DiagnosticsReport => ({
   generatedAt: "2026-08-22T14:03",
@@ -87,5 +94,27 @@ describe("renderReport", () => {
 
   it("says so rather than rendering an empty table", () => {
     expect(renderReport(report({ title: "Empty", checks: [] }))).toContain("Nothing to report.");
+  });
+});
+
+describe("specProblemStatus", () => {
+  const at = (severity: "error" | "warning") => ({ problem: { severity } });
+
+  it("is ok when the spec loaded clean", () => {
+    expect(specProblemStatus([])).toBe("ok");
+  });
+
+  it("is a problem when the spec was refused", () => {
+    // An error means no request governed by that spec can change stage.
+    expect(specProblemStatus([at("error")])).toBe("problem");
+    expect(specProblemStatus([at("warning"), at("error")])).toBe("problem");
+  });
+
+  it("is only a check when every problem is advisory", () => {
+    // A placeholder stage with no SLA target is worth seeing, but the spec
+    // loaded and is in use — calling it a PROBLEM trains the reader to skip
+    // the section, and then the real one goes unread too.
+    expect(specProblemStatus([at("warning")])).toBe("warn");
+    expect(specProblemStatus([at("warning"), at("warning")])).toBe("warn");
   });
 });

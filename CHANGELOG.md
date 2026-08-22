@@ -79,6 +79,13 @@ clearly marked entry (CLAUDE.md §10).
   that nothing was overwritten, and appears in diagnostics as a problem. Where
   we cannot check whether a file is there, it is reported as a first install
   rather than as an alarm we cannot substantiate.
+- **Workflow spec advisories are no longer reported as problems.** The spec
+  loader already grades what it finds — an `error` means the spec was refused
+  and nothing it governs can change stage, a `warning` means it loaded and
+  something is worth a look — and diagnostics flattened both to PROBLEM. That
+  put a placeholder stage with no SLA target on the same footing as an unusable
+  workflow. A report that cries wolf stops being read, and then the real
+  problem goes unread with it.
 
 ### Rules and boundaries
 - `services/backup.ts` is **the only module that touches `fs` or writes outside

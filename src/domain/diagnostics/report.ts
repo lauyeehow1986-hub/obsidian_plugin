@@ -136,3 +136,19 @@ export function check(
 ): Check {
   return next === undefined ? { label, status, detail } : { label, status, detail, next };
 }
+
+/**
+ * Grade a workflow spec's problems the way the spec loader graded them.
+ *
+ * An `error` means the spec was refused and nothing it governs can change
+ * stage; a `warning` means it loaded and something is worth a look. Reporting
+ * both as a problem told the reader that a placeholder stage with no SLA
+ * target was as serious as an unusable workflow, and a report that cries wolf
+ * stops being read.
+ */
+export function specProblemStatus(
+  problems: readonly { problem: { severity: "error" | "warning" } }[],
+): CheckStatus {
+  if (problems.length === 0) return "ok";
+  return problems.some((entry) => entry.problem.severity === "error") ? "problem" : "warn";
+}

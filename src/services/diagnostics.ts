@@ -16,6 +16,7 @@ import { AuditLog } from "./auditLog";
 import { backupAge, formatBytes } from "../domain/backup/snapshots";
 import {
   check,
+  specProblemStatus,
   type Check,
   type DiagnosticsReport,
   type ReportSection,
@@ -155,12 +156,28 @@ async function index(plugin: ScdbCockpitPlugin): Promise<ReportSection> {
           ? "Without a spec no request can change stage. Add one and re-run."
           : undefined,
       ),
+      // The spec loader already grades these: an `error` means the spec was
+      // refused and no request governed by it can move, a `warning` means it
+      // loaded and something is worth a look. Flattening both to PROBLEM told
+      // the reader a placeholder stage with no SLA target was as serious as an
+      // unusable workflow — and a report that cries wolf stops being read.
       check(
         "Spec problems",
-        problems.length === 0 ? "ok" : "problem",
+        specProblemStatus(problems),
         problems.length === 0
           ? "None."
-          : problems.map((entry) => `${entry.path}: ${entry.problem.message}`).join("; "),
+          : problems
+              .map(
+                (entry) =>
+                  `${entry.problem.severity === "error" ? "error" : "advisory"} — ` +
+                  `${entry.path}: ${entry.problem.message}`,
+              )
+              .join("; "),
+        problems.some((entry) => entry.problem.severity === "error")
+          ? "A spec with an error is not loaded; requests governed by it cannot change stage until it is fixed."
+          : problems.length > 0
+            ? "Advisory only — the spec loaded and is in use."
+            : undefined,
       ),
     ],
   };
