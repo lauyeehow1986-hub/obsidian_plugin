@@ -50,17 +50,58 @@ class PluginSettingTab {
     this.plugin = plugin;
   }
 }
+class Modal {
+  constructor(app) {
+    this.app = app;
+  }
+}
+class TAbstractFile {}
+class TFile extends TAbstractFile {}
+class TFolder extends TAbstractFile {}
 
 const stub = {
   Plugin,
   ItemView,
   PluginSettingTab,
   Component,
+  Modal,
+  TAbstractFile,
+  TFile,
+  TFolder,
   Notice: class {},
   Setting: class {},
   App: class {},
   MarkdownRenderer: class {},
+  normalizePath: (path) => path,
+  debounce: (fn) => fn,
+  parseYaml: () => ({}),
+  stringifyYaml: () => "",
 };
+
+/**
+ * The smallest App that lets `onload` run to completion. It exercises the
+ * wiring — view registration, commands, watchers, the first index build —
+ * which is where a broken import or a bad call order actually shows up.
+ */
+function stubApp() {
+  const ref = {};
+  return {
+    workspace: {
+      onLayoutReady: (callback) => callback(),
+      getLeavesOfType: () => [],
+      getActiveFile: () => null,
+      on: () => ref,
+    },
+    vault: {
+      on: () => ref,
+      getFiles: () => [],
+      getMarkdownFiles: () => [],
+      getAbstractFileByPath: () => null,
+    },
+    metadataCache: { on: () => ref, getFileCache: () => null },
+    fileManager: {},
+  };
+}
 
 const originalLoad = Module._load;
 Module._load = function (request, ...rest) {
@@ -76,7 +117,14 @@ if (typeof PluginClass !== "function") {
   process.exit(1);
 }
 
-const instance = new PluginClass({}, { id: "scdb-cockpit", version: "0.0.0" });
+const instance = new PluginClass(stubApp(), { id: "scdb-cockpit", version: "0.0.0" });
+
+let loadError = null;
+try {
+  await instance.onload();
+} catch (error) {
+  loadError = error;
+}
 
 const checks = [
   // Assert behaviour, not the class name: production builds are minified, so
@@ -88,6 +136,11 @@ const checks = [
   ["folder map is populated", instance.settings.folders.requests === "10 Requests"],
   ["Bases probe does not throw", typeof instance.basesAvailable === "boolean"],
   ["Bases absent without the API", instance.basesAvailable === false],
+  ["onload completes", loadError === null || (console.error(loadError), false)],
+  ["workflow store is wired", instance.workflows?.all().length === 0],
+  ["request index is wired", instance.index?.size === 0],
+  ["audit log is wired", typeof instance.audit?.verify === "function"],
+  ["writer is wired", typeof instance.writer?.create === "function"],
 ];
 
 let failed = 0;

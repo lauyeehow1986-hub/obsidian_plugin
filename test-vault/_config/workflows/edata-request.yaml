@@ -34,11 +34,11 @@ gates:
     require: [governance.irb_ref, governance.irb_expiry_in_future]
     message: Cannot approve without a current IRB/DSRB reference.
   - to: extraction
-    require_any: ["governance.identifiers == none", "governance.dua.status == signed"]
+    require_any: ["governance.identifiers == none", "governance.dua_signed == true"]
     message: Identifiable extraction requires a signed DUA.
   - to: delivered
-    require: ["outputs.length > 0"]
-    message: Cannot mark delivered with no recorded output.
+    require: ["outputs.length > 0", "delivery_method"]
+    message: Cannot mark delivered without a recorded output and a delivery method.
 
 # Superseded stage ids keep their mapping so historical dwell maths still
 # resolves after a rename.

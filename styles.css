@@ -1,49 +1,503 @@
 /*
- * All colour and spacing comes from Obsidian's theme variables so the plugin
- * looks native in light, dark and whatever theme the work laptop runs
- * (CLAUDE.md §6). No hardcoded hex values belong in this file.
+ * SCDB Cockpit styles (CLAUDE.md §6).
+ *
+ * Everything resolves through Obsidian's own theme variables so the plugin
+ * looks native in light, dark and whatever theme the work laptop runs. The
+ * semantic palette below is the single place any status colour is decided; the
+ * fallbacks exist only for a theme that omits a variable, and are chosen to
+ * meet WCAG AA against both default backgrounds.
+ *
+ * Status is never colour alone — every state renders a glyph and a word too.
  */
 
+.scdb-root,
+.scdb-modal {
+  --scdb-overdue: var(--text-error, #b3261e);
+  --scdb-at-risk: var(--text-warning, #8a6100);
+  --scdb-on-track: var(--text-success, #1b6b2f);
+  --scdb-blocked: var(--text-accent, #4a5bd4);
+  --scdb-done: var(--text-muted);
+  --scdb-1: 8px;
+  --scdb-2: 16px;
+  --scdb-3: 24px;
+}
+
+/* Container queries need a container; without this the sidebar rules below
+ * silently do nothing. */
+.scdb-root {
+  container-type: inline-size;
+  height: 100%;
+  overflow-y: auto;
+}
+
+/* ---------------------------------------------------------------- shell -- */
+
 .scdb-cockpit {
-  padding: 16px;
-  max-width: 720px;
+  padding: var(--scdb-2);
+}
+
+.scdb-cockpit__header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--scdb-1);
+  align-items: flex-start;
+  justify-content: space-between;
 }
 
 .scdb-cockpit__title {
-  margin: 0 0 4px;
+  margin: 0;
   font-size: var(--font-ui-large);
   color: var(--text-normal);
 }
 
-.scdb-cockpit__muted {
+.scdb-cockpit__summary {
+  margin: 4px 0 0;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  font-variant-numeric: tabular-nums;
+}
+
+.scdb-cockpit__body {
+  margin-top: var(--scdb-2);
+}
+
+.scdb-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: var(--scdb-2);
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.scdb-tab {
+  padding: 6px 12px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  cursor: pointer;
+}
+
+.scdb-tab:hover {
+  color: var(--text-normal);
+  background: var(--background-modifier-hover);
+}
+
+.scdb-tab--active {
+  color: var(--text-normal);
+  border-bottom-color: var(--interactive-accent);
+}
+
+/* ---------------------------------------------------------------- boards -- */
+
+.scdb-columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: var(--scdb-2);
+  align-items: start;
+}
+
+.scdb-column__title,
+.scdb-group__title {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--scdb-1);
+  align-items: baseline;
+  justify-content: space-between;
+  margin: 0;
+  font-size: var(--font-ui-small);
+  font-weight: 600;
+  color: var(--text-normal);
+}
+
+.scdb-column__count {
+  padding: 0 6px;
+  border-radius: 8px;
+  background: var(--background-modifier-border);
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.scdb-column__sub,
+.scdb-group__sub {
+  margin: 2px 0 var(--scdb-1);
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  font-weight: 400;
+}
+
+.scdb-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--scdb-3);
+}
+
+.scdb-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.scdb-card {
+  display: flex;
+  gap: 4px;
+  align-items: stretch;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  background: var(--background-primary-alt);
+}
+
+.scdb-card__main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--scdb-1);
+  border: none;
+  border-radius: 6px 0 0 6px;
+  background: none;
+  box-shadow: none;
+  text-align: left;
+  cursor: pointer;
+}
+
+.scdb-card__main:hover {
+  background: var(--background-modifier-hover);
+}
+
+.scdb-card__id {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  font-variant-numeric: tabular-nums;
+}
+
+.scdb-card__title {
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+  line-height: 1.3;
+}
+
+.scdb-card__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin-top: 2px;
+  font-size: var(--font-ui-smaller);
+}
+
+.scdb-card__action {
+  padding: 0 var(--scdb-1);
+  border: none;
+  border-left: 1px solid var(--background-modifier-border);
+  border-radius: 0 6px 6px 0;
+  background: none;
+  box-shadow: none;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  cursor: pointer;
+}
+
+.scdb-card__action:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+/* ------------------------------------------------------- status and chips -- */
+
+.scdb-state {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.scdb-state--overdue {
+  color: var(--scdb-overdue);
+}
+
+.scdb-state--at-risk {
+  color: var(--scdb-at-risk);
+}
+
+.scdb-state--on-track {
+  color: var(--scdb-on-track);
+}
+
+.scdb-state--none {
+  color: var(--scdb-done);
+}
+
+.scdb-chip {
+  padding: 1px 6px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 10px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.scdb-chip--blocked {
+  border-color: var(--scdb-blocked);
+  color: var(--scdb-blocked);
+}
+
+.scdb-chip--problem {
+  border-color: var(--scdb-at-risk);
+  color: var(--scdb-at-risk);
+}
+
+.scdb-num {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.scdb-muted {
+  color: var(--text-muted);
+}
+
+.scdb-link {
+  padding: 0;
+  border: none;
+  background: none;
+  box-shadow: none;
+  color: var(--text-accent);
+  font-size: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+/* ------------------------------------------------------- tables and lists -- */
+
+.scdb-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--font-ui-small);
+}
+
+.scdb-table th {
+  padding: 4px 8px 4px 0;
+  border-bottom: 1px solid var(--background-modifier-border);
+  color: var(--text-muted);
+  font-weight: 500;
+  text-align: left;
+}
+
+.scdb-table th.scdb-num {
+  text-align: right;
+}
+
+.scdb-table td {
+  padding: 4px 8px 4px 0;
+  border-bottom: 1px solid var(--background-modifier-border);
+  color: var(--text-normal);
+  vertical-align: top;
+}
+
+.scdb-list {
+  margin: var(--scdb-1) 0 0;
+  padding-left: var(--scdb-3);
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+}
+
+.scdb-list li {
+  margin-bottom: 4px;
+}
+
+.scdb-list--problems li {
+  color: var(--scdb-at-risk);
+}
+
+.scdb-empty {
+  margin: var(--scdb-1) 0 0;
+  padding: var(--scdb-2);
+  border: 1px dashed var(--background-modifier-border);
+  border-radius: 6px;
   color: var(--text-muted);
   font-size: var(--font-ui-small);
 }
 
-.scdb-cockpit__facts {
-  display: grid;
-  grid-template-columns: minmax(120px, max-content) 1fr;
-  gap: 8px 16px;
-  margin-top: 16px;
-  padding-top: 16px;
+.scdb-toggle {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+
+/* ---------------------------------------------------------------- modals -- */
+
+.scdb-modal__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--scdb-2);
+}
+
+.scdb-modal__lede {
+  margin: 0;
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+}
+
+.scdb-modal__actions {
+  display: flex;
+  gap: var(--scdb-1);
+  justify-content: flex-end;
+  padding-top: var(--scdb-1);
   border-top: 1px solid var(--background-modifier-border);
 }
 
-.scdb-cockpit__facts dt {
+.scdb-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.scdb-field input[type="text"],
+.scdb-field textarea,
+.scdb-field select {
+  width: 100%;
+}
+
+.scdb-field__label {
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+  font-weight: 500;
+}
+
+.scdb-field__hint {
   color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.scdb-field__error {
+  color: var(--scdb-overdue);
+  font-size: var(--font-ui-smaller);
+}
+
+.scdb-field--override {
+  padding: var(--scdb-1);
+  border: 1px solid var(--scdb-at-risk);
+  border-radius: 6px;
+}
+
+.scdb-facts {
+  display: grid;
+  grid-template-columns: minmax(110px, max-content) 1fr;
+  gap: 6px var(--scdb-2);
+  margin: 0;
   font-size: var(--font-ui-small);
 }
 
-.scdb-cockpit__facts dd {
+.scdb-facts dt {
+  color: var(--text-muted);
+}
+
+.scdb-facts dd {
   margin: 0;
   color: var(--text-normal);
   font-variant-numeric: tabular-nums;
 }
 
+.scdb-section__title {
+  margin: 0 0 4px;
+  font-size: var(--font-ui-small);
+  font-weight: 600;
+  color: var(--text-normal);
+}
+
+.scdb-section--problems .scdb-section__title {
+  color: var(--scdb-at-risk);
+}
+
+/* ----------------------------------------------------------- gate report -- */
+
+.scdb-gatereport {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: var(--scdb-1);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  background: var(--background-primary-alt);
+  font-size: var(--font-ui-small);
+}
+
+.scdb-gatereport__ok {
+  margin: 0;
+  color: var(--scdb-on-track);
+}
+
+.scdb-gatereport__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.scdb-gatereport__item {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+  margin-bottom: 4px;
+}
+
+.scdb-gatereport__badge {
+  flex: none;
+  padding: 0 6px;
+  border-radius: 8px;
+  font-size: var(--font-ui-smaller);
+  font-weight: 600;
+}
+
+.scdb-gatereport__item--gate .scdb-gatereport__badge {
+  border: 1px solid var(--scdb-at-risk);
+  color: var(--scdb-at-risk);
+}
+
+.scdb-gatereport__item--hard .scdb-gatereport__badge {
+  border: 1px solid var(--scdb-overdue);
+  color: var(--scdb-overdue);
+}
+
+.scdb-gatereport__pass {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+.scdb-gatereport__warning {
+  margin: 0;
+  color: var(--scdb-at-risk);
+}
+
+/* ------------------------------------------------------------ responsive -- */
+
 /* Sidebar width: stack rather than scroll horizontally (§6). */
 @container (max-width: 400px) {
-  .scdb-cockpit__facts {
+  .scdb-columns {
+    grid-template-columns: 1fr;
+  }
+
+  .scdb-facts {
     grid-template-columns: 1fr;
     gap: 2px 0;
+  }
+
+  .scdb-cockpit {
+    padding: var(--scdb-1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scdb-tab,
+  .scdb-card__main,
+  .scdb-card__action {
+    transition: none;
   }
 }

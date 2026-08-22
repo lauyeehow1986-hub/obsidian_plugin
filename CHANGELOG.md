@@ -27,6 +27,40 @@ Phase A1: request tracking. The domain layer — pure, Obsidian-free, unit-teste
 - One timestamp parser and one duration formatter for the whole plugin.
 - 176 further tests; 207 in total.
 
+### Added — the vault and UI half
+- Workflow store reading `_config/workflows/*.yaml` through Obsidian's core
+  `parseYaml`, reloading when a spec file changes.
+- In-memory request index built from the metadata cache and updated
+  incrementally on change, rename and delete.
+- Audit ledger writer: monthly files in `82 Audit/`, appends serialised through
+  a queue, chain seeded from the previous month, and
+  `SCDB: Verify audit ledger` reporting the first row that does not reconcile.
+- Cockpit view with four boards — Queue (by stage), Holdup (by blocking
+  person), Ageing, and Health (median dwell per stage, spec problems, notes
+  that need attention).
+- Request detail dialog: dwell, age, bounce count, time per stage, evidence
+  with verbal records marked, and the full history.
+- Stage-change dialog showing every gate live, with the override reason field
+  appearing only when an override is possible and required before the button
+  enables.
+- Intake dialog and `SCDB: New request`; also `SCDB: Move this request to
+  another stage` and `SCDB: Rebuild the request index`.
+- Semantic status palette in `styles.css`, resolved through Obsidian's theme
+  variables. Status is always a glyph and a word as well as a colour.
+- Six synthetic request fixtures in the test vault covering a fresh request, an
+  evidenced identifiable extraction, a bounced request, a completed one and a
+  lapsed-approval case.
+- The smoke test now runs `onload` against a stub App, so wiring errors are
+  caught before a build travels.
+
+### Changed
+- `minAppVersion` raised to 1.6.0: `Vault.process` is used for append-only
+  writes and arrived in that release. Keeping it honest matters more than
+  claiming reach we do not have.
+- The placeholder DUA gate now reads `governance.dua_signed == true` rather
+  than the raw status field, so it actually requires an evidence record.
+- The placeholder delivery gate now also requires `delivery_method`.
+
 ### Governance rules implemented
 - **A gate override requires a typed reason.** Refusing to give one cancels the
   override — enforced in the engine, not only in the UI.
