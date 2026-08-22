@@ -4,8 +4,11 @@ An Obsidian plugin for running a clinical data collection facility: data-request
 tracking with governance gates, effort measurement, publications, and the audit
 trail behind all of it. Offline-first, no telemetry, no network calls by default.
 
-**Status: phase A2.** Request tracking works end to end (A1) and the query
-engine behind the Explore board is in (A2). Not yet released.
+**Status: phase A2b.** Request tracking works end to end (A1), the query engine
+behind the Explore board is in (A2), and core Bases is layered on where it
+exists (A2b) — browsable `.base` dashboards plus two SCDB board view types.
+Bases is never a dependency: on an Obsidian without it, every view still works.
+Not yet released.
 
 The design lives in [CLAUDE.md](CLAUDE.md) — architecture, the vault contract,
 build phases, and the rules that constrain them.

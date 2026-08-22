@@ -1,6 +1,7 @@
 import { Notice, Plugin, TFile, debounce, type WorkspaceLeaf } from "obsidian";
+import { BasesFiles } from "./data/basesFiles.js";
 import { NoteIndex } from "./data/noteIndex.js";
-import { RequestIndex } from "./data/requestIndex.js";
+import { REQUEST_TYPE, RequestIndex } from "./data/requestIndex.js";
 import { buildRows, catalogueFor, type RowSourceDeps } from "./data/rows.js";
 import { SavedViewStore } from "./data/savedViewStore.js";
 import { WorkflowStore } from "./data/workflowStore.js";
@@ -26,6 +27,7 @@ import { confirm } from "./ui/ConfirmModal.js";
 import { IntakeModal } from "./ui/IntakeModal.js";
 import { RequestDetailModal } from "./ui/RequestDetailModal.js";
 import { TransitionModal } from "./ui/TransitionModal.js";
+import { registerRequestBoards } from "./ui/bases/RequestBoards.js";
 
 /** One row of a bulk migration, as the migration board hands it over. */
 export interface MigrationRun {
@@ -48,6 +50,7 @@ export default class ScdbCockpitPlugin extends Plugin {
   writer!: RequestWriter;
   views!: SavedViewStore;
   exporter!: Exporter;
+  basesFiles!: BasesFiles;
 
   /**
    * Core Bases (Obsidian >= 1.10) is a progressive enhancement — never a
@@ -81,7 +84,15 @@ export default class ScdbCockpitPlugin extends Plugin {
       actor: () => this.settings.actor,
     });
 
+    this.basesFiles = new BasesFiles(
+      this.app,
+      this.notes,
+      () => this.settings.folders.dashboards,
+      REQUEST_TYPE,
+    );
+
     this.registerView(COCKPIT_VIEW_TYPE, (leaf: WorkspaceLeaf) => new CockpitView(leaf, this));
+    this.registerBasesViews();
     this.addSettingTab(new ScdbSettingsTab(this.app, this));
     this.registerCommands();
     this.addRibbonIcon("layout-dashboard", "SCDB Cockpit", () => void this.activateCockpit());
@@ -96,6 +107,62 @@ export default class ScdbCockpitPlugin extends Plugin {
     if (this.migrationNotes.length > 0) {
       new Notice("SCDB Cockpit: settings updated. See plugin settings for details.", 8000);
     }
+  }
+
+  /**
+   * Offer our boards as Bases view types, when Bases exists (§7 A2b).
+   *
+   * Two gates, because they fail differently. Before Obsidian 1.10 the method
+   * does not exist and calling it would throw on load; from 1.10 it returns
+   * false when the user has the Bases core plugin switched off. Neither is an
+   * error — the cockpit's own boards are unaffected either way — so this is
+   * silent. Announcing "Bases not found" on every start of an older Obsidian
+   * would be noise about a feature the user never asked for.
+   */
+  private registerBasesViews(): void {
+    if (!this.basesAvailable) return;
+    registerRequestBoards(this);
+  }
+
+  /**
+   * Write the browsable `.base` dashboards.
+   *
+   * A command rather than something that happens on load: these are files in
+   * the user's vault, and rule 12's principle — nothing happens by surprise —
+   * applies to writes as much as to code. Existing files are never overwritten.
+   */
+  async createBasesDashboards(): Promise<void> {
+    if (!this.basesAvailable) {
+      new Notice(
+        "Bases is not available in this Obsidian. The cockpit and Explore views work without it.",
+        6000,
+      );
+      return;
+    }
+
+    const plan = this.basesFiles.plan();
+    const toWrite = plan.filter((entry) => entry.written);
+
+    if (toWrite.length === 0) {
+      new Notice("Every Bases dashboard already exists. Nothing was changed.", 5000);
+      return;
+    }
+
+    const lines = toWrite
+      .map((entry) => `• ${entry.path} — ${entry.matches} note${entry.matches === 1 ? "" : "s"}`)
+      .join("\n");
+    const skipped = plan.length - toWrite.length;
+    const detail = skipped > 0 ? `\n\n${skipped} already exist and will be left alone.` : "";
+    const ok = await confirm(
+      this.app,
+      `Create ${toWrite.length} Bases dashboard${toWrite.length === 1 ? "" : "s"}?\n\n${lines}${detail}`,
+      "Create",
+    );
+    if (!ok) return;
+
+    const results = await this.basesFiles.write();
+    const written = results.filter((entry) => entry.written).length;
+    new Notice(`Created ${written} Bases dashboard${written === 1 ? "" : "s"}.`, 5000);
   }
 
   private registerCommands(): void {
@@ -132,6 +199,12 @@ export default class ScdbCockpitPlugin extends Plugin {
       id: "explore",
       name: "Explore notes with a query",
       callback: () => void this.activateCockpit("explore"),
+    });
+
+    this.addCommand({
+      id: "create-bases-dashboards",
+      name: "Create Bases dashboards",
+      callback: () => void this.createBasesDashboards(),
     });
 
     this.addCommand({

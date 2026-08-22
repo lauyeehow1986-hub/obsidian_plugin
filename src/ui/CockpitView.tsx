@@ -134,7 +134,7 @@ function QueueBoard({ views, plugin }: { views: RequestView[]; plugin: ScdbCockp
   );
 }
 
-function HoldupBoard({ views, plugin }: { views: RequestView[]; plugin: ScdbCockpitPlugin }) {
+export function HoldupBoard({ views, plugin }: { views: RequestView[]; plugin: ScdbCockpitPlugin }) {
   const groups = groupByBlockingParty(views);
   if (groups.length === 0) {
     return (
@@ -167,7 +167,7 @@ function HoldupBoard({ views, plugin }: { views: RequestView[]; plugin: ScdbCock
   );
 }
 
-function AgeingBoard({ views, plugin }: { views: RequestView[]; plugin: ScdbCockpitPlugin }) {
+export function AgeingBoard({ views, plugin }: { views: RequestView[]; plugin: ScdbCockpitPlugin }) {
   const [all, setAll] = useState(false);
   const rows = ageing(views, { includeOnTrack: all });
 

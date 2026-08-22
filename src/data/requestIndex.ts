@@ -104,6 +104,31 @@ export class RequestIndex {
     }));
   }
 
+  /**
+   * Views for a named subset of files, in the order given.
+   *
+   * Core Bases runs its own query and hands back the matching entries; this
+   * turns those into the same RequestView the cockpit boards already take, so
+   * a Bases view and our own view compute dwell identically (§7 A2b).
+   * Files that are not requests are skipped rather than faked.
+   */
+  viewsForPaths(paths: readonly string[], options: MetricsOptions): RequestView[] {
+    const views: RequestView[] = [];
+    for (const path of paths) {
+      const entry = this.entries.get(path);
+      if (!entry) continue;
+      views.push({
+        request: entry.request,
+        metrics: requestMetrics(
+          entry.request,
+          this.workflows.forRequest(entry.request.workflow),
+          options,
+        ),
+      });
+    }
+    return views;
+  }
+
   /** The index entry behind a view, for opening the note. */
   fileFor(request: RequestNote): TFile | null {
     return this.all().find((e) => e.request.uid === request.uid)?.file ?? null;

@@ -38,6 +38,20 @@ class Plugin extends Component {
   }
   async saveData() {}
 }
+/**
+ * A stand-in for Obsidian >= 1.10's BasesView.
+ *
+ * Only used by the second instance below. The first one deliberately loads
+ * against a stub with no Bases at all, which is what caught `class extends
+ * undefined` failing the entire plugin on an older Obsidian.
+ */
+class BasesView extends Component {
+  constructor(controller) {
+    super();
+    this.controller = controller;
+  }
+  onunload() {}
+}
 class ItemView extends Component {
   constructor(leaf) {
     super();
@@ -64,6 +78,7 @@ const stub = {
   ItemView,
   PluginSettingTab,
   Component,
+  BasesView,
   Modal,
   TAbstractFile,
   TFile,
@@ -83,6 +98,8 @@ const stub = {
  * wiring — view registration, commands, watchers, the first index build —
  * which is where a broken import or a bad call order actually shows up.
  */
+const created = [];
+
 function stubApp() {
   const ref = {};
   return {
@@ -97,6 +114,11 @@ function stubApp() {
       getFiles: () => [],
       getMarkdownFiles: () => [],
       getAbstractFileByPath: () => null,
+      create: (path, data) => {
+        created.push({ path, data });
+        return Promise.resolve({ path });
+      },
+      createFolder: () => Promise.resolve(),
     },
     metadataCache: { on: () => ref, getFileCache: () => null },
     fileManager: {},
@@ -126,6 +148,27 @@ try {
   loadError = error;
 }
 
+/**
+ * A second load, this time against an Obsidian that HAS Bases.
+ *
+ * `registerBasesView` is an own property, which is exactly what the plugin
+ * probes for. This is as close as we get to the A2b acceptance criterion
+ * without launching Obsidian: it proves both boards are offered as view types,
+ * and that defining classes derived from BasesView does not throw.
+ */
+const withBases = new PluginClass(stubApp(), { id: "scdb-cockpit", version: "0.0.0" });
+const registeredViews = [];
+withBases.registerBasesView = (id, registration) => {
+  registeredViews.push({ id, ...registration });
+  return true;
+};
+let basesLoadError = null;
+try {
+  await withBases.onload();
+} catch (error) {
+  basesLoadError = error;
+}
+
 const checks = [
   // Assert behaviour, not the class name: production builds are minified, so
   // the name is whatever esbuild chose.
@@ -147,6 +190,48 @@ const checks = [
   ["note index reports no types on an empty vault", instance.notes?.types().length === 0],
   ["saved view store is wired", Array.isArray(instance.views?.all())],
   ["exporter is wired", typeof instance.exporter?.write === "function"],
+  ["bases file writer is wired", typeof instance.basesFiles?.plan === "function"],
+  [
+    "loads against an Obsidian that has Bases",
+    basesLoadError === null || (console.error(basesLoadError), false),
+  ],
+  ["Bases detected when the API is present", withBases.basesAvailable === true],
+  [
+    "registers both SCDB board view types",
+    registeredViews.map((view) => view.id).sort().join(",") === "scdb-ageing,scdb-holdup",
+  ],
+  [
+    "every registered board has a name, icon and factory",
+    registeredViews.length > 0 &&
+      registeredViews.every(
+        (view) =>
+          typeof view.name === "string" &&
+          view.name.length > 0 &&
+          typeof view.icon === "string" &&
+          typeof view.factory === "function",
+      ),
+  ],
+  ["plans the four browse dashboards", instance.basesFiles?.plan().length === 4],
+  [
+    "every planned base lands in the dashboards folder",
+    (instance.basesFiles?.plan() ?? []).every(
+      (entry) => entry.path.startsWith("90 Dashboards/") && entry.path.endsWith(".base"),
+    ),
+  ],
+  [
+    "no dashboard is written while Bases is absent",
+    (await (async () => {
+      // The command must be a no-op, not a throw, on an Obsidian without Bases.
+      let threw = false;
+      const before = created.length;
+      try {
+        await instance.createBasesDashboards();
+      } catch {
+        threw = true;
+      }
+      return !threw && created.length === before;
+    })()),
+  ],
   [
     "export path lands in the exports folder",
     instance.exporter?.plannedPath("queue", "csv").startsWith("95 Exports/queue-"),

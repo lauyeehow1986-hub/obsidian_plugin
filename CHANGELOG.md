@@ -100,6 +100,52 @@ Phase A1: request tracking. The domain layer — pure, Obsidian-free, unit-teste
   50,000 notes the re-index is 191 ms.
 - 62 further tests; 293 in total.
 
+### Added — phase A2b, Bases integration
+- **Core Bases is layered on where it is present, and never depended on.**
+  Obsidian 1.10+ ships Bases; our `minAppVersion` is deliberately lower, so every
+  part of this is behind a runtime probe and its absence costs nothing.
+- **`Create Bases dashboards`** writes four browsable `.base` files into
+  `90 Dashboards/` — request queue, publications, correspondence, catalogue —
+  giving native, editable, mobile-friendly tables without a line of grid code in
+  our bundle. A confirmation names every file and how many notes it currently
+  matches, so an empty table is never a surprise. **Existing files are never
+  overwritten**: they are ordinary notes the user may have reordered or extended,
+  and regenerating over the top would discard that (rule 8).
+- **Two SCDB boards registered as first-class Bases view types** — `SCDB holdup`
+  and `SCDB ageing`. Bases owns the query and the toolbar; we own the arithmetic
+  it structurally cannot do — dwell from `history`, who is blocking, SLA state,
+  bounce counts. They render the *same* components as the cockpit's own boards,
+  deliberately: two implementations of "how long has this been stuck" that could
+  disagree is the drift this plugin exists to prevent.
+- `RequestIndex.viewsForPaths` turns a Bases result into the same `RequestView`
+  the cockpit boards already take, so both surfaces compute dwell identically.
+- 13 tests and 6 smoke checks; 324 tests in total. Bundle 122.4 KB.
+
+### Decided — A2b
+- **The `.base` schema was read off the shipped app, not guessed.** The view type
+  id `table` is what Bases inserts when a file declares no views; `groupBy` is
+  rejected outright unless it carries both `property` and `direction`; direction
+  is `ASC`/`DESC`; property ids are prefixed `note.` / `file.` / `formula.`; and
+  filter values must be quoted or they parse as identifiers. The writer also
+  assigns its object to Obsidian's own `BasesConfigFile` interface, so a schema
+  change breaks the build instead of filling the vault with unparseable files.
+- **Generating dashboards is a command, not something that happens on load.**
+  These are writes into the user's vault, and the principle behind rule 12 —
+  nothing happens by surprise — applies to writes as much as to code.
+- **No ledger entry for creating dashboards.** It is not in the §5.6 list, nothing
+  is destroyed and nothing leaves the vault. An audit trail padded with routine
+  events is one nobody reads (§5.12).
+
+### Fixed
+- **A plugin-wide load failure on any Obsidian older than 1.10.** `class X extends
+  BasesView` is evaluated when the module loads, not when the class is used, so
+  on a build where `BasesView` does not exist it threw `Class extends value
+  undefined` — taking down the *entire* plugin, not just the Bases part. The
+  class definitions are now deferred into a function called only after the API is
+  confirmed. Caught by `npm run smoke`, which loads the bundle against an
+  Obsidian stub with no Bases; a second stub that *has* Bases proves both view
+  types still register.
+
 ### Added — fixture verification
 - **The shipped `test-vault/` fixtures are now parsed by the real parsers**, not
   by eye. `tests/fixtures.test.ts` sweeps every note and every workflow spec in
