@@ -111,6 +111,14 @@ Phase A1: request tracking. The domain layer — pure, Obsidian-free, unit-teste
   rewritten.** It is listed, with the reason, and left alone.
 
 ### Notes
+- **Verified end to end on Obsidian 1.12.7**, against a real vault: both
+  stranded fixtures migrated, the ledger chain recomputed from genesis and
+  reconciled, tampering with a written row was detected, and the migrated
+  request kept its 26-day dwell rather than resetting to zero.
+- `processFrontMatter` leaves bare dates alone — `received: 2026-07-20` does not
+  come back as `2026-07-20T00:00:00.000Z`. It does re-serialise `history` from
+  flow style to block style on first write; no data is lost and the note stays
+  hand-readable, so this is accepted rather than worked around.
 - A migration relabels the occupancy a request is already in rather than
   starting a new one, so renaming a stage does not reset a dwell clock, invent
   a segment in the median-dwell statistics, or register as a bounce.

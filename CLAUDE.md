@@ -1043,7 +1043,11 @@ so we get the benefit via core Bases without the dependency).
   change would put a live Obsidian object on the sandbox side of the boundary, it is wrong.
 - Frontmatter writes go through `app.fileManager.processFrontMatter`; body edits through
   `vault.process`. Read via the metadata cache; do not parse files yourself.
-- Commands are prefixed `SCDB: ` and keyboard-reachable. Views have stable `viewType` ids.
+- Command names carry **no prefix of their own** — Obsidian prepends the plugin name
+  from `manifest.json`, so `name: "Verify audit ledger"` shows in the palette as
+  *SCDB Cockpit: Verify audit ledger*. Adding our own `SCDB: ` would render it twice.
+  Name the action, not the product; commands stay keyboard-reachable and views keep
+  stable `viewType` ids.
 - Settings carry a `schemaVersion`; every schema change ships a migration. An upgrade must
   never lose settings or rewrite a vault.
 - Errors reach the user as plain language plus a suggested next action. Silent failure is a bug.

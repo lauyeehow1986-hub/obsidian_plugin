@@ -215,12 +215,14 @@ export class RequestWriter {
   /**
    * Merge a patch into frontmatter without disturbing anything else in it.
    *
-   * One thing to watch on a real vault: `processFrontMatter` re-serialises the
-   * whole block, and Obsidian's YAML parser turns an unquoted `2026-07-14` into
-   * a Date, which can come back out as `2026-07-14T00:00:00.000Z`. Nothing
-   * breaks — `parseTimestamp` reads both to the same instant, and there is a
-   * test pinning that — but the note gets noisier than it was written. If it
-   * turns out to churn dates in practice, this is where to fix it.
+   * Verified against a real vault on Obsidian 1.12.7: bare dates survive
+   * untouched — `received: 2026-07-20` does *not* come back as
+   * `2026-07-20T00:00:00.000Z`, which had been the worry. What
+   * `processFrontMatter` does do is re-serialise the whole block, so a
+   * `history` written in flow style (`- { at: …, to: … }`) comes back in block
+   * style. No data is lost and the note stays hand-readable; the cost is that
+   * the first write to a note produces a whole-array diff. Preserving flow
+   * style would mean hand-serialising YAML ourselves, which is the worse trade.
    */
   private async applyPatch(file: TFile, patch: FrontmatterPatch): Promise<void> {
     await this.ctx.app.fileManager.processFrontMatter(file, (frontmatter) => {
