@@ -14,6 +14,7 @@
  */
 
 import { parseTimestamp } from "../time/dates";
+import { partiesIn, type Party } from "../comms/party";
 
 export const PUBLICATION_TYPE = "publication";
 
@@ -53,6 +54,12 @@ export interface PublicationNote {
   decisionDue: number | null;
   /** "Papers this facility made possible" — the number an HOD needs (§5.4). */
   scdbSupported: boolean;
+  /**
+   * Co-authors as §5.4 writes them, normalised so one person's several
+   * spellings group together. Needed by the meeting agenda (B1), which asks
+   * "what is this person holding up" across requests, threads and manuscripts.
+   */
+  authors: Party[];
   /** Plain-English notes on what could not be read. Surfaced, never swallowed. */
   problems: string[];
 }
@@ -86,6 +93,7 @@ export function parsePublication(
     submitted: parseTimestamp(raw["submitted"]),
     decisionDue,
     scdbSupported: raw["scdb_supported"] === true,
+    authors: partiesIn(raw["authors"]),
     problems,
   };
 }
