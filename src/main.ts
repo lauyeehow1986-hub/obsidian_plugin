@@ -40,6 +40,8 @@ import type { FieldDef, Query, Row } from "./domain/query/model.js";
 import type { SavedView } from "./domain/query/savedView.js";
 import { AuditLog } from "./services/auditLog.js";
 import { BackupService } from "./services/backup.js";
+import { collectDiagnostics } from "./services/diagnostics.js";
+import { applyRepairs, collectIntegrityFindings } from "./services/integrity.js";
 import { Exporter, type ExportRequest } from "./services/exporter.js";
 import {
   RequestWriter,
@@ -49,6 +51,8 @@ import {
 import { ScdbSettingsTab } from "./settings/SettingsTab.js";
 import { COCKPIT_VIEW_TYPE, CockpitView, type CockpitTab } from "./ui/CockpitView.js";
 import { askPassphrase, pickSnapshot } from "./ui/BackupModals.js";
+import { DiagnosticsModal } from "./ui/DiagnosticsModal.js";
+import { IntegrityModal } from "./ui/IntegrityModal.js";
 import { confirm } from "./ui/ConfirmModal.js";
 import { IntakeModal } from "./ui/IntakeModal.js";
 import { RequestDetailModal } from "./ui/RequestDetailModal.js";
@@ -306,6 +310,18 @@ export default class ScdbCockpitPlugin extends Plugin {
       id: "restore-backup",
       name: "Restore from a backup snapshot",
       callback: () => void this.restoreSnapshot(),
+    });
+
+    this.addCommand({
+      id: "diagnostics",
+      name: "Run diagnostics self-test",
+      callback: () => void this.runDiagnostics(),
+    });
+
+    this.addCommand({
+      id: "integrity",
+      name: "Check link and reference integrity",
+      callback: () => void this.checkIntegrity(),
     });
 
     // CLAUDE.md §7 A3 asks for Ctrl+1/2/3. Obsidian core already binds Ctrl+1..8
@@ -1009,6 +1025,86 @@ export default class ScdbCockpitPlugin extends Plugin {
       );
     } catch (error) {
       reportError(error, "could not finish the restore.");
+    }
+  }
+
+  /**
+   * Run the self-test and show it (§7 A4).
+   *
+   * It rebuilds the index, walks the ledger chain and renders a Mermaid
+   * diagram, so it is slow enough to need a notice while it works — and slow
+   * for the right reason: none of those answers would mean anything if they
+   * were read from a cache instead of measured.
+   */
+  async runDiagnostics(): Promise<void> {
+    const working = new Notice("SCDB: running diagnostics…", 0);
+    try {
+      const report = await collectDiagnostics(this);
+      new DiagnosticsModal(this.app, report, {
+        onSave: async (markdown, checks) => {
+          await this.exportDocument({
+            basename: "Diagnostics",
+            extension: "md",
+            content: markdown,
+            subject: "DIAGNOSTICS",
+            rows: checks,
+          });
+        },
+      }).open();
+    } catch (error) {
+      reportError(error, "could not finish the diagnostics run.");
+    } finally {
+      working.hide();
+    }
+  }
+
+  /**
+   * Reconcile the two naming systems (§7 A4).
+   *
+   * §5.2 has machine references pointing at `uid` and human links staying
+   * ordinary wikilinks, on purpose — this is the check that says where the two
+   * have drifted. Reports everything; the only thing it offers to change is
+   * creating a note that something already links to.
+   */
+  async checkIntegrity(): Promise<void> {
+    const working = new Notice("SCDB: checking links and references…", 0);
+    try {
+      let subjects: string[] = [];
+      try {
+        subjects = await this.audit.subjects();
+      } catch (error) {
+        // A ledger we cannot read is a finding of its own, reported by the
+        // diagnostics command. It must not stop the link check running.
+        new Notice(
+          `SCDB: could not read the audit ledger, so its entries were not reconciled. ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+          8000,
+        );
+      }
+
+      const findings = collectIntegrityFindings(this, subjects);
+      new IntegrityModal(this.app, findings, {
+        onOpenNote: (path) => this.openNote(path),
+        onRepair: async (repairs) => {
+          const outcome = await applyRepairs(this.app, repairs, (path) =>
+            path.startsWith(`${this.settings.folders.people}/`)
+              ? "people"
+              : path.startsWith(`${this.settings.folders.studies}/`)
+                ? "studies"
+                : "",
+          );
+          await this.reindex();
+          const parts = [`created ${outcome.created.length}`];
+          if (outcome.skipped.length > 0) parts.push(`${outcome.skipped.length} already existed`);
+          if (outcome.failed.length > 0) parts.push(`${outcome.failed.length} failed`);
+          new Notice(`SCDB: ${parts.join(", ")}.`, 8000);
+        },
+      }).open();
+    } catch (error) {
+      reportError(error, "could not finish the integrity check.");
+    } finally {
+      working.hide();
     }
   }
 

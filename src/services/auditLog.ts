@@ -128,6 +128,23 @@ export class AuditLog {
     return this.queue as Promise<void>;
   }
 
+  /**
+   * Every distinct `subject` the ledger has ever recorded, oldest month first.
+   *
+   * For A4's reference-integrity check: the ledger names requests by their
+   * human `id`, so it drifts from the vault whenever one is renamed or deleted.
+   * Reading it here rather than exposing rows keeps the ledger append-only by
+   * construction — nothing outside this class can hold a row and be tempted to
+   * write it back.
+   */
+  async subjects(): Promise<string[]> {
+    const seen = new Set<string>();
+    for (const month of this.months()) {
+      for (const row of (await this.read(month)).rows) seen.add(row.subject);
+    }
+    return [...seen];
+  }
+
   /** Walk every month as one chain and report the first row that does not reconcile. */
   async verify(): Promise<LedgerVerification> {
     const months = this.months();

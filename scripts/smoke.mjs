@@ -132,6 +132,7 @@ const stub = {
   Setting: class {},
   App: class {},
   MarkdownRenderer: class {},
+  apiVersion: "1.6.0",
   normalizePath: (path) => path,
   debounce: (fn) => fn,
   parseYaml: () => ({}),
@@ -286,6 +287,12 @@ const checks = [
       instance.settings.backup.destination = "";
       return typeof problem === "string" && problem.includes("full path");
     })(),
+  ],
+  [
+    // A4: the two unglamorous commands. On a laptop with no dev tools these are
+    // the difference between a bug you can describe and one you cannot.
+    "diagnostics and integrity each have a command",
+    ["diagnostics", "integrity"].every((id) => commands.includes(id)),
   ],
   [
     // Node builtins must stay external or the bundle stops loading in Obsidian

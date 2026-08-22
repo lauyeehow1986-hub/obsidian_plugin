@@ -1195,6 +1195,36 @@
   font-size: var(--font-ui-smaller);
 }
 
+/* --- diagnostics (7 A4) ---------------------------------------------------
+ *
+ * The report is shown as the markdown that will be pasted, not as a prettier
+ * rendering of it: the acceptance criterion is that what is on screen is what
+ * lands on the clipboard.
+ */
+
+.scdb-modal--wide {
+  width: min(900px, 92vw);
+}
+
+.scdb-diagnostics {
+  max-height: 55vh;
+  overflow: auto;
+  padding: var(--scdb-1);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  background: var(--background-secondary);
+  font-size: var(--font-ui-smaller);
+  /* Wrap rather than scroll sideways: a diagnostics table is read, not aimed at. */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* The integrity check names every note it would create, before the button. */
+.scdb-repairs {
+  margin: var(--scdb-2) 0 0;
+  overflow-wrap: anywhere;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .scdb-tab,
   .scdb-card__main,

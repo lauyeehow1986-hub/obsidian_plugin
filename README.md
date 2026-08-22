@@ -6,9 +6,10 @@ trail behind all of it. Offline-first, no telemetry, no network calls by default
 
 **Status: phase A4 (in progress).** Request tracking works end to end (A1), the
 query engine behind the Explore board is in (A2), core Bases is layered on where
-it exists (A2b), the cockpit and its analytics are in (A3), and encrypted backup
-with restore and verification has landed (A4). Bases is never a dependency: on
-an Obsidian without it, every view still works. Not yet released.
+it exists (A2b), the cockpit and its analytics are in (A3), and A4 has landed —
+encrypted backup with restore and verification, a diagnostics self-test, and a
+link and reference integrity check. Bases is never a dependency: on an Obsidian
+without it, every view still works. Not yet released.
 
 The design lives in [CLAUDE.md](CLAUDE.md) — architecture, the vault contract,
 build phases, and the rules that constrain them.
@@ -79,6 +80,19 @@ To restore into a fresh vault:
 exactly as it is and reported as skipped, so running it against a live vault
 fills gaps and can never overwrite work done since the snapshot. To roll a note
 back to a snapshot version, move the current one aside first.
+
+## When something looks wrong
+
+**Run diagnostics self-test** produces one page of markdown covering versions,
+index health and re-index time, notes that fail validation, the audit-ledger
+chain, backup age, and each risky integration — probed rather than assumed.
+Copy it straight into a message.
+
+**Check link and reference integrity** reconciles the two identifiers §5.2 keeps
+apart: the immutable `uid` that machine references point at, and the ordinary
+wikilinks people write. It reports duplicated uids, dangling references, audit
+entries naming notes that are gone, and links to notes that do not exist. The
+only change it offers to make is creating a note something already links to.
 
 ## A note on data
 

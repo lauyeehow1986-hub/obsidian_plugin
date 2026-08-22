@@ -34,6 +34,34 @@ clearly marked entry (CLAUDE.md §10).
 - Settings schema **v3** with a migration: adds the backup block, repaired field
   by field so a destination typed once is never lost to a bad number elsewhere.
 
+### Added — A4, diagnostics and reference integrity
+- **Run diagnostics self-test**: one command, one page of markdown, built to be
+  pasted into a message. The production laptop has no dev tools, so this is the
+  difference between a bug that can be described and one that cannot.
+- Everything in it is **probed, not asserted**. The index is actually rebuilt
+  and timed, the ledger chain actually walked, and core Mermaid actually asked
+  to render a flowchart — because "we call a documented API" is not evidence
+  that the API works on the Obsidian in front of you. The clipboard image API
+  is checked for existence but deliberately *not* exercised: a self-test has no
+  business destroying what you had copied.
+- A check that cannot be run reports `n/a` and says why, never `ok`. Protocol
+  handlers (B1) and interpreters (F1) are named as not-built-yet rather than
+  quietly omitted, each pointing at the open question in §11 it depends on.
+- The report warns, in its own header, that it names notes and folder paths —
+  it carries no note content (rule 7), but it is still a file that travels.
+- **Check link and reference integrity**: reconciles the two naming systems §5.2
+  deliberately keeps apart. Reports notes sharing a `uid`, requests with none,
+  references to a `uid` nothing carries, notes sharing an `id`, audit entries
+  naming notes that are gone, and frontmatter wikilinks that resolve to nothing.
+- **One repair, and only ever additive**: creating a note that something already
+  links to, in the folder the linking field implies, with every path named
+  before the button is pressed. Which of two notes claiming one `uid` is the
+  impostor is not a question code can answer, so those are reported with the
+  remedy in words instead. Nothing is ever deleted or rewritten.
+- Findings are one per missing note rather than one per link to it — a request
+  naming the same person in `requester`, `blocked_on`, an evidence record and
+  two history entries is one gap, not five.
+
 ### Rules and boundaries
 - `services/backup.ts` is **the only module that touches `fs` or writes outside
   the vault**, and it is documented as the deliberate, confined exception to
