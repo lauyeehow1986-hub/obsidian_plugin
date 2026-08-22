@@ -63,6 +63,30 @@ import { IntakeModal } from "./ui/IntakeModal.js";
 import { RequestDetailModal } from "./ui/RequestDetailModal.js";
 import { TransitionModal } from "./ui/TransitionModal.js";
 import { registerRequestBoards } from "./ui/bases/RequestBoards.js";
+import { AgendaModal, type AgendaSend } from "./ui/AgendaModal.js";
+import { CaptureModal, captureFailed } from "./ui/CaptureModal.js";
+import { PersonPicker } from "./ui/PersonPicker.js";
+import { RhythmWriter } from "./services/rhythmWriter.js";
+import { copyToClipboard, launchUri, reportLaunch } from "./services/protocol.js";
+import {
+  agendaCandidates,
+  type AgendaInput,
+  type AgendaNote,
+} from "./domain/comms/agenda.js";
+import {
+  DEFAULT_CHASE_TEMPLATE,
+  readTemplate,
+  type MessageTemplate,
+} from "./domain/comms/message.js";
+import { buildMailto, buildTeamsChat } from "./domain/comms/uri.js";
+import {
+  agedOutreach,
+  CORRESPONDENCE_TYPE,
+  type AgedThread,
+  type Thread,
+} from "./domain/comms/thread.js";
+import { markAnswered, threadToContinue } from "./domain/comms/threadUpdate.js";
+import { briefingDue } from "./domain/briefing/briefing.js";
 
 /** One row of a bulk migration, as the migration board hands it over. */
 export interface MigrationRun {
@@ -89,6 +113,8 @@ export default class ScdbCockpitPlugin extends Plugin {
   exporter!: Exporter;
   basesFiles!: BasesFiles;
   backup!: BackupService;
+  /** Captures, correspondence threads and the daily briefing (§7 B1). */
+  rhythm!: RhythmWriter;
 
   /** The mode HUD (§7 A3). Null until `onload` has run. */
   private statusBar: HTMLElement | null = null;
@@ -135,6 +161,14 @@ export default class ScdbCockpitPlugin extends Plugin {
       pluginVersion: () => this.manifest.version,
     });
 
+    this.rhythm = new RhythmWriter({
+      app: this.app,
+      notes: this.notes,
+      audit: this.audit,
+      folder: (key) => this.settings.folders[key],
+      actor: () => this.settings.actor,
+    });
+
     this.basesFiles = new BasesFiles(
       this.app,
       this.notes,
@@ -156,7 +190,9 @@ export default class ScdbCockpitPlugin extends Plugin {
 
     // The metadata cache is not populated until layout is ready; indexing
     // before that produces an empty board on every startup.
-    this.app.workspace.onLayoutReady(() => void this.reindex());
+    this.app.workspace.onLayoutReady(() =>
+      void this.reindex().then(() => this.maybeWriteBriefing()),
+    );
     this.registerWatchers();
 
     // Migration notes are shown once on load. On the work laptop there is no
@@ -329,6 +365,53 @@ export default class ScdbCockpitPlugin extends Plugin {
       id: "integrity",
       name: "Check link and reference integrity",
       callback: () => void this.checkIntegrity(),
+    });
+
+    // §7 B1 asks for one global hotkey for capture. Mod+Shift+C is free in
+    // Obsidian core; if the host binds it, the hotkeys pane reassigns it in
+    // two clicks. Numeric defaults are the ones that lose silently to core
+    // bindings, which is why the mode commands sit on Mod+Shift.
+    this.addCommand({
+      id: "quick-capture",
+      name: "Capture a note to the inbox",
+      hotkeys: [{ modifiers: ["Mod", "Shift"], key: "C" }],
+      callback: () => this.quickCapture(),
+    });
+
+    this.addCommand({
+      id: "daily-briefing",
+      name: "Write today's briefing",
+      callback: () => void this.writeBriefing(true),
+    });
+
+    this.addCommand({
+      id: "meeting-agenda",
+      name: "Build a meeting agenda for someone",
+      callback: () => void this.openAgenda(),
+    });
+
+    this.addCommand({
+      id: "chase-request",
+      name: "Chase up whoever this request is waiting on",
+      checkCallback: (checking) => {
+        const blockedOn = this.activeRequestHoldup();
+        if (blockedOn === null) return false;
+        if (!checking) void this.openAgenda(blockedOn);
+        return true;
+      },
+    });
+
+    this.addCommand({
+      id: "thread-answered",
+      name: "Mark this correspondence thread answered",
+      checkCallback: (checking) => {
+        const file = this.app.workspace.getActiveFile();
+        if (file === null || this.notes.byPath(file.path)?.type !== CORRESPONDENCE_TYPE) {
+          return false;
+        }
+        if (!checking) void this.markThreadAnswered(file);
+        return true;
+      },
     });
 
     // CLAUDE.md §7 A3 asks for Ctrl+1/2/3. Obsidian core already binds Ctrl+1..8
@@ -709,8 +792,27 @@ export default class ScdbCockpitPlugin extends Plugin {
       governanceRisk(views, spec, now).blocked.map((view) => view.request.uid),
     );
 
+    const { dated, publications } = this.noteSources();
+
+    return buildOverview(views, dated, publications, {
+      now,
+      withinDays: this.settings.briefing.horizonDays,
+      stranded: (view) => this.needsMigration(view.request),
+      governanceBlocked: (view) => blocked.has(view.request.uid),
+    });
+  }
+
+  /**
+   * Every non-request note, plus the publications parsed out of them.
+   *
+   * One walk of the index shared by the overview and the agenda. `DatedNote`
+   * and `AgendaNote` are the same three fields, so a second walk would only be
+   * a second chance for the two to disagree about what the vault holds.
+   */
+  private noteSources(): { dated: DatedNote[]; publications: PublicationNote[] } {
     const dated: DatedNote[] = [];
     const publications: PublicationNote[] = [];
+
     for (const entry of this.notes.all()) {
       if (entry.type === REQUEST_TYPE) continue;
       if (entry.type === PUBLICATION_TYPE) {
@@ -719,11 +821,308 @@ export default class ScdbCockpitPlugin extends Plugin {
       dated.push({ path: entry.file.path, type: entry.type, frontmatter: entry.frontmatter });
     }
 
-    return buildOverview(views, dated, publications, {
+    return { dated, publications };
+  }
+
+  // --- the daily rhythm (§7 B1) ---------------------------------------------
+
+  /** Every correspondence thread the vault holds (§5.10). */
+  threads(): Thread[] {
+    return this.rhythm.threads().map((entry) => entry.thread);
+  }
+
+  /** Outreach with no reply recorded, past the configured chase interval. */
+  agedThreads(now = Date.now()): AgedThread[] {
+    return agedOutreach(this.threads(), { now, chaseDays: this.settings.comms.chaseDays });
+  }
+
+  /** Everything the agenda joins over, gathered once. */
+  private agendaSources(now: number): Omit<AgendaInput, "party"> {
+    const { dated, publications } = this.noteSources();
+    return {
       now,
-      stranded: (view) => this.needsMigration(view.request),
-      governanceBlocked: (view) => blocked.has(view.request.uid),
-    });
+      views: this.index.views({ now }),
+      threads: this.threads(),
+      publications,
+      notes: dated as AgendaNote[],
+      chaseDays: this.settings.comms.chaseDays,
+    };
+  }
+
+  /**
+   * Quick capture: one line, into the inbox, no second question.
+   *
+   * The write is deliberately not awaited by the dialog — it closes on Enter
+   * and the note lands a moment later. A failure reports itself in a notice
+   * carrying the typed line back, so nothing is lost silently (§8).
+   */
+  quickCapture(): void {
+    new CaptureModal(this.app, this.settings.mode, (text) => {
+      void (async () => {
+        try {
+          const file = await this.rhythm.capture({
+            text,
+            now: Date.now(),
+            mode: this.settings.mode,
+          });
+          new Notice(`Captured to ${file.path}`, 4000);
+        } catch (error) {
+          captureFailed(text, error);
+        }
+      })();
+    }).open();
+  }
+
+  /** Write today's briefing if it is not already there. */
+  async writeBriefing(manual: boolean): Promise<void> {
+    const now = Date.now();
+    const views = this.index.views({ now });
+
+    try {
+      const result = await this.rhythm.briefing({
+        now,
+        actor: this.settings.actor,
+        mode: this.settings.mode,
+        overview: this.overview(views),
+        outreach: this.agedThreads(now),
+        views,
+      });
+
+      // Recorded whether or not we wrote it: the point of the date is "today
+      // has been handled", and a briefing already on disk handles today.
+      if (this.settings.briefing.lastDate !== result.file.basename) {
+        this.settings.briefing.lastDate = result.file.basename;
+        await this.saveSettings();
+      }
+
+      if (manual) {
+        await this.app.workspace.getLeaf(false).openFile(result.file);
+        if (!result.created) {
+          new Notice("Today's briefing already exists; opened it rather than overwriting.", 6000);
+        }
+      } else if (result.created && !result.quiet) {
+        new Notice(`SCDB: today's briefing is ready — ${result.file.path}`, 8000);
+      }
+    } catch (error) {
+      reportError(error, "could not write today's briefing.");
+    }
+  }
+
+  /** The automatic path: only when asked for, and only once a day. */
+  private maybeWriteBriefing(): void {
+    if (!this.settings.briefing.onOpen) return;
+    if (!briefingDue(this.settings.briefing.lastDate, Date.now())) return;
+    void this.writeBriefing(false);
+  }
+
+  /** `blocked_on` for the request in the active note, or null. */
+  private activeRequestHoldup(): string | null {
+    const file = this.app.workspace.getActiveFile();
+    if (file === null) return null;
+    const entry = this.index.byPath(file.path);
+    const blockedOn = entry?.request.blockedOn ?? null;
+    return blockedOn === null || blockedOn.trim() === "" ? null : blockedOn;
+  }
+
+  /**
+   * The meeting agenda, and the chase-up composed from it.
+   *
+   * Without a person, the picker opens first; the counts it shows come from
+   * the same single pass the agenda itself will use, so the number in the list
+   * and the number of rows behind it cannot disagree.
+   */
+  async openAgenda(party?: string): Promise<void> {
+    const now = Date.now();
+    const sources = this.agendaSources(now);
+
+    if (party === undefined) {
+      const candidates = agendaCandidates(sources);
+      if (candidates.length === 0) {
+        new Notice(
+          "Nobody is recorded as holding anything up. Set `blocked_on` when you move a request, and this becomes the list.",
+          8000,
+        );
+        return;
+      }
+      new PersonPicker(
+        this.app,
+        candidates.map((entry) => ({
+          party: entry.party,
+          count: entry.count,
+          detail: entry.detail,
+        })),
+        (choice) => void this.openAgenda(choice.party.raw),
+      ).open();
+      return;
+    }
+
+    new AgendaModal(this.app, {
+      input: { ...sources, party },
+      template: await this.chaseTemplate(),
+      actor: this.settings.actor,
+      ceiling: this.settings.comms.uriCeiling,
+      knownAddress: this.addressFor(party),
+      onSend: (send) => this.sendChase(send),
+      onCopyAgenda: async (markdown) => {
+        new Notice(
+          (await copyToClipboard(markdown))
+            ? "Agenda copied."
+            : "SCDB: the clipboard could not be written to.",
+          4000,
+        );
+      },
+    }).open();
+  }
+
+  /**
+   * The chase-up template from `_config/messages/`, or the built-in one.
+   *
+   * §5.11 rule 7: tone and signature are the user's. A missing file is the
+   * ordinary case rather than an error, so it falls back silently.
+   */
+  private async chaseTemplate(): Promise<MessageTemplate> {
+    const path = `${this.settings.folders.config}/messages/chase-up.md`;
+    const file = this.app.vault.getAbstractFileByPath(path);
+    if (!(file instanceof TFile)) return DEFAULT_CHASE_TEMPLATE;
+
+    try {
+      const text = await this.app.vault.read(file);
+      const cache = this.app.metadataCache.getFileCache(file);
+      const end = cache?.frontmatterPosition?.end.offset ?? 0;
+      return readTemplate("chase-up", cache?.frontmatter ?? {}, text.slice(end));
+    } catch {
+      return DEFAULT_CHASE_TEMPLATE;
+    }
+  }
+
+  /**
+   * An address already recorded for this person, if the vault holds one.
+   *
+   * Read from a person note's `email`, matched on the wikilink target. Never
+   * guessed from a name: a wrong address on a chase-up about a data request is
+   * a disclosure, not a typo.
+   */
+  private addressFor(party: string): string {
+    const name = party.trim().replace(/^\[\[|\]\]$/g, "").split("|")[0] ?? party;
+    const basename = (name.split("/").pop() ?? name).trim().toLowerCase();
+
+    for (const entry of this.notes.all()) {
+      if (entry.file.basename.trim().toLowerCase() !== basename) continue;
+      const email = entry.frontmatter["email"];
+      if (typeof email === "string" && email.trim() !== "") return email.trim();
+    }
+    return "";
+  }
+
+  /**
+   * Hand the draft to the OS, then record what actually happened.
+   *
+   * The order matters. The thread is written *after* the launch, and records
+   * the outcome the launch reported — `via: clipboard` when it went to the
+   * clipboard, `via: mailto` when a handler opened it. Writing first would
+   * claim a composition that never happened; §5.11 rule 6 already forbids
+   * claiming it was sent, and claiming it was even composed would be the same
+   * mistake one step earlier.
+   */
+  private async sendChase(send: AgendaSend): Promise<void> {
+    const now = Date.now();
+    const plainText = `${send.draft.subject}\n\n${send.draft.body}`;
+
+    let via: string;
+    if (send.channel === "clipboard") {
+      if (!(await copyToClipboard(plainText))) {
+        new Notice("SCDB: the clipboard could not be written to. Nothing was recorded.", 8000);
+        return;
+      }
+      new Notice("Message copied. Nothing has been sent.", 5000);
+      via = "clipboard";
+    } else {
+      const built =
+        send.channel === "teams"
+          ? buildTeamsChat({ users: send.addresses, message: plainText })
+          : buildMailto({
+              to: send.addresses,
+              subject: send.draft.subject,
+              body: send.draft.body,
+            });
+
+      if (!built.ok) {
+        // Refused addresses are named so they can be fixed in the note they
+        // came from. Nothing was opened and nothing is recorded.
+        new Notice(`SCDB: ${built.problems.join(" ")}`, 12000);
+        return;
+      }
+
+      const outcome = await launchUri(built.uri, {
+        ceiling: this.settings.comms.uriCeiling,
+        plainText,
+      });
+      reportLaunch(outcome);
+      if (!outcome.ok) return;
+      via = outcome.how === "copied" ? "clipboard" : send.channel === "teams" ? "teams" : "mailto";
+    }
+
+    try {
+      const requests = send.agenda.items
+        .filter((item) => item.kind === "request")
+        .map((item) => item.link);
+      const file = await this.rhythm.recordComposed(
+        {
+          now,
+          channel: send.channel === "teams" ? "teams" : "email",
+          with: [send.agenda.party.raw],
+          requests,
+          subject: send.draft.subject,
+          via,
+          summary: send.summary,
+        },
+        threadToContinue(this.threads(), [send.agenda.party.raw], requests),
+      );
+      this.refreshViews();
+      new Notice(`Recorded on ${file.basename}. It will age until you mark it answered.`, 6000);
+    } catch (error) {
+      reportError(error, "the draft was prepared but could not be recorded on a thread.");
+    }
+  }
+
+  /** The note behind a thread, resolved on uid rather than on the human label (§5.2). */
+  private threadFile(thread: Thread): TFile | null {
+    const match = this.rhythm
+      .threads()
+      .find((entry) =>
+        thread.uid === "" ? entry.thread.id === thread.id : entry.thread.uid === thread.uid,
+      );
+    return match?.file ?? null;
+  }
+
+  async openThreadNote(thread: Thread): Promise<void> {
+    const file = this.threadFile(thread);
+    if (file === null) {
+      new Notice(`SCDB: ${thread.id} is no longer in the index. Rebuild it and try again.`, 8000);
+      return;
+    }
+    await this.app.workspace.getLeaf(false).openFile(file);
+  }
+
+  /** Close the loop from the board rather than from inside the note. */
+  async answerThread(thread: Thread): Promise<void> {
+    const file = this.threadFile(thread);
+    if (file === null) {
+      new Notice(`SCDB: ${thread.id} is no longer in the index. Rebuild it and try again.`, 8000);
+      return;
+    }
+    await this.markThreadAnswered(file);
+  }
+
+  /** Close the loop on a thread — one click, per §5.10. */
+  async markThreadAnswered(file: TFile): Promise<void> {
+    try {
+      await this.rhythm.applyThreadPatch(file, markAnswered({ now: Date.now() }));
+      this.refreshViews();
+      new Notice(`${file.basename} marked answered.`, 4000);
+    } catch (error) {
+      reportError(error, "could not mark that thread answered.");
+    }
   }
 
   // --- the query surface (§7 A2) ---------------------------------------------

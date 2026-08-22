@@ -5,7 +5,7 @@
  * An upgrade must never lose settings (CLAUDE.md §10).
  */
 
-export const CURRENT_SETTINGS_VERSION = 3;
+export const CURRENT_SETTINGS_VERSION = 4;
 
 /** The three hats. Mode is the organising metaphor, not a cosmetic filter (§7 A3). */
 export const MODES = ["biostat", "hod", "research-core"] as const;
@@ -29,6 +29,7 @@ export const FOLDER_KEYS = [
   "forms",
   "diagrams",
   "dashboards",
+  "briefings",
   "apps",
   "runs",
   "exports",
@@ -52,8 +53,52 @@ export interface ScdbSettings {
    */
   hatFilter: "mode" | "all";
   backup: BackupConfig;
+  comms: CommsConfig;
+  briefing: BriefingConfig;
   /** Unrecognised keys are preserved verbatim — see rule 8, never destroy data. */
   [extra: string]: unknown;
+}
+
+/**
+ * Composing messages (§5.11) and ageing what was composed (§5.10).
+ *
+ * Nothing here sends anything or reaches a network. The plugin builds a URI and
+ * hands it to the OS shell; the user presses send.
+ */
+export interface CommsConfig {
+  /**
+   * Longest URI we will hand to a protocol handler.
+   *
+   * Handlers truncate somewhere around 2,000 characters and the exact figure
+   * varies by handler and Windows build — §11 lists measuring it on the target
+   * machine as an open question. Over this, the draft goes to the clipboard
+   * whole rather than being launched cut off.
+   */
+  uriCeiling: number;
+  /** Days before unanswered outreach is worth chasing. */
+  chaseDays: number;
+  /** What the composer opens by default. Clipboard is always offered too. */
+  channel: "email" | "teams" | "clipboard";
+}
+
+export interface BriefingConfig {
+  /** Generate on the first vault open of the day. Off until you ask for it. */
+  onOpen: boolean;
+  /** `YYYY-MM-DD` of the last one written; empty means never. */
+  lastDate: string;
+  /** How far ahead the "coming up" section looks. */
+  horizonDays: number;
+}
+
+export function defaultComms(): CommsConfig {
+  return { uriCeiling: 1800, chaseDays: 7, channel: "email" };
+}
+
+export function defaultBriefing(): BriefingConfig {
+  // `onOpen` is false on a fresh install for the same reason nothing else is
+  // enabled (rule 3): a plugin that writes a note into your vault the first
+  // time you open it has made a decision that was yours to make.
+  return { onOpen: false, lastDate: "", horizonDays: 60 };
 }
 
 /**
@@ -102,6 +147,11 @@ export const DEFAULT_FOLDERS: Record<FolderKey, string> = {
   forms: "88 Forms",
   diagrams: "89 Diagrams",
   dashboards: "90 Dashboards",
+  // B1's daily briefing has to land somewhere, and §5 names no folder for it.
+  // Under Dashboards rather than beside them: a briefing is a dated record of
+  // one morning, not a saved view, and a year of them would swamp the folder
+  // the saved views live in.
+  briefings: "90 Dashboards/Briefings",
   apps: "92 Apps",
   runs: "94 Runs",
   exports: "95 Exports",
@@ -117,6 +167,8 @@ export function defaultSettings(): ScdbSettings {
     bases: "auto",
     hatFilter: "mode",
     backup: defaultBackup(),
+    comms: defaultComms(),
+    briefing: defaultBriefing(),
   };
 }
 

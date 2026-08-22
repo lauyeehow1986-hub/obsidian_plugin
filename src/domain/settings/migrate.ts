@@ -12,9 +12,13 @@ import {
   CURRENT_SETTINGS_VERSION,
   DEFAULT_FOLDERS,
   defaultBackup,
+  defaultBriefing,
+  defaultComms,
   defaultSettings,
   isMode,
   type BackupConfig,
+  type BriefingConfig,
+  type CommsConfig,
   type FolderKey,
   type ScdbSettings,
 } from "./schema.js";
@@ -160,6 +164,9 @@ export function migrateSettings(raw: unknown): MigrationResult {
   const backup = repairBackup(merged.backup, notes);
   merged.backup = backup;
 
+  merged.comms = repairComms(merged.comms, notes);
+  merged.briefing = repairBriefing(merged.briefing, notes);
+
   // Folders: fill gaps, keep customised values, drop nothing.
   const folders: Record<string, unknown> = isRecord(merged.folders) ? { ...merged.folders } : {};
   const missing: string[] = [];
@@ -193,6 +200,14 @@ export function migrateSettings(raw: unknown): MigrationResult {
     );
   }
 
+  if (storedVersion > 0 && storedVersion < 4) {
+    notes.push(
+      "Migrated v3 -> v4: added message composition and the daily briefing. " +
+        "The briefing is off until you turn it on, and nothing is ever sent — " +
+        "the plugin composes a draft and hands it to Outlook or Teams.",
+    );
+  }
+
   merged.schemaVersion = CURRENT_SETTINGS_VERSION;
 
   const changed = JSON.stringify(raw) !== JSON.stringify(merged);
@@ -212,6 +227,64 @@ export function migrateSettings(raw: unknown): MigrationResult {
  * validating that it exists is the service's job, and this module cannot see a
  * filesystem.
  */
+/**
+ * Clamp the composer's numbers rather than resetting them.
+ *
+ * The URI ceiling is the one that matters: too high and a chase-up arrives
+ * truncated, too low and nothing can be composed at all. §11 says the real
+ * figure has to be measured on the target machine, so the bounds here are
+ * deliberately wide and the default deliberately conservative.
+ */
+function repairComms(value: unknown, notes: string[]): CommsConfig {
+  const base = defaultComms();
+  if (!isRecord(value)) {
+    if (value !== undefined) notes.push("Message settings were not readable; reset to defaults.");
+    return base;
+  }
+
+  const clamp = (key: "uriCeiling" | "chaseDays", min: number, max: number): number => {
+    const raw = value[key];
+    if (typeof raw !== "number" || !Number.isFinite(raw)) return base[key];
+    const clamped = Math.min(max, Math.max(min, Math.round(raw)));
+    if (clamped !== raw) notes.push(`Message ${key} was ${raw}; using ${clamped}.`);
+    return clamped;
+  };
+
+  const channel = value["channel"];
+  const known = channel === "email" || channel === "teams" || channel === "clipboard";
+  if (channel !== undefined && !known) {
+    notes.push(`Unknown message channel ${JSON.stringify(channel)}; reset to "email".`);
+  }
+
+  return {
+    uriCeiling: clamp("uriCeiling", 200, 8000),
+    chaseDays: clamp("chaseDays", 1, 365),
+    channel: known ? channel : base.channel,
+  };
+}
+
+function repairBriefing(value: unknown, notes: string[]): BriefingConfig {
+  const base = defaultBriefing();
+  if (!isRecord(value)) {
+    if (value !== undefined) notes.push("Briefing settings were not readable; reset to defaults.");
+    return base;
+  }
+
+  const horizon = value["horizonDays"];
+  const lastDate = value["lastDate"];
+
+  return {
+    onOpen: value["onOpen"] === true,
+    // Kept verbatim when it is a string: it is a record of what happened, and
+    // repairing it would make today's briefing regenerate over yesterday's.
+    lastDate: typeof lastDate === "string" ? lastDate : base.lastDate,
+    horizonDays:
+      typeof horizon === "number" && Number.isFinite(horizon)
+        ? Math.min(730, Math.max(1, Math.round(horizon)))
+        : base.horizonDays,
+  };
+}
+
 function repairBackup(value: unknown, notes: string[]): BackupConfig {
   const base = defaultBackup();
   if (!isRecord(value)) {

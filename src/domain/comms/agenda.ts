@@ -122,93 +122,164 @@ export interface AgendaInput {
   chaseDays?: number;
 }
 
+/** One agenda item, tagged with whose it is. The internal currency of this module. */
+interface Entry {
+  party: Party;
+  item: AgendaItem;
+}
+
 /**
- * Everything one person is holding up, most pressing first.
+ * Every open item in the vault, tagged with the person it is waiting on.
  *
- * Ordered urgent-first and then longest-wait-first, which is the order the
- * conversation should take: the thing that has already breached gets said while
- * you still have their attention.
+ * One pass, whoever is asking. The person picker needs a count for everybody,
+ * and building a whole agenda per candidate would walk the note list once per
+ * name — fine at ten people and a thousand notes, not fine at the sizes A2
+ * budgets for.
  */
-export function buildAgenda(input: AgendaInput): Agenda {
-  const party = parseParty(input.party);
-  const items: AgendaItem[] = [];
+function allEntries(input: Omit<AgendaInput, "party">): Entry[] {
+  return [
+    ...requestEntries(input.views ?? []),
+    ...outreachEntries(input.threads ?? [], input.now, input.chaseDays),
+    ...publicationEntries(input.publications ?? []),
+    ...noteEntries(input.notes ?? [], input.now),
+  ];
+}
 
-  if (party.key !== "") {
-    items.push(...requestItems(party, input.views ?? []));
-    items.push(...outreachItems(party, input.threads ?? [], input.now, input.chaseDays));
-    items.push(...publicationItems(party, input.publications ?? []));
-    items.push(...noteItems(party, input.notes ?? [], input.now));
-  }
+/**
+ * Urgent first, then longest wait — the order the conversation should take:
+ * the thing that has already breached gets said while you still have their
+ * attention.
+ */
+function byPressure(a: AgendaItem, b: AgendaItem): number {
+  if (a.urgent !== b.urgent) return a.urgent ? -1 : 1;
+  return (b.waitedMs ?? -1) - (a.waitedMs ?? -1);
+}
 
-  items.sort((a, b) => {
-    if (a.urgent !== b.urgent) return a.urgent ? -1 : 1;
-    return (b.waitedMs ?? -1) - (a.waitedMs ?? -1);
-  });
-
+function assemble(party: Party, items: AgendaItem[]): Agenda {
+  const sorted = [...items].sort(byPressure);
   return {
     party,
-    items,
-    longestWaitMs: items.reduce<number | null>(
+    items: sorted,
+    longestWaitMs: sorted.reduce<number | null>(
       (worst, item) => (item.waitedMs === null ? worst : Math.max(worst ?? 0, item.waitedMs)),
       null,
     ),
-    urgentCount: items.filter((item) => item.urgent).length,
+    urgentCount: sorted.filter((item) => item.urgent).length,
   };
+}
+
+/** Everything one person is holding up, most pressing first. */
+export function buildAgenda(input: AgendaInput): Agenda {
+  const party = parseParty(input.party);
+  if (party.key === "") return assemble(party, []);
+
+  return assemble(
+    party,
+    allEntries(input)
+      .filter((entry) => entry.party.key === party.key)
+      .map((entry) => entry.item),
+  );
+}
+
+export interface AgendaCandidate {
+  party: Party;
+  count: number;
+  urgentCount: number;
+  /** "4 requests, 1 unanswered message" — enough to pick from a list. */
+  detail: string;
+}
+
+/**
+ * Everyone with something open, busiest first.
+ *
+ * The list for the person picker. Ordered by what is waiting rather than
+ * alphabetically, because the person holding up nine things is the one you are
+ * looking for.
+ */
+export function agendaCandidates(input: Omit<AgendaInput, "party">): AgendaCandidate[] {
+  const byKey = new Map<string, { party: Party; items: AgendaItem[] }>();
+
+  for (const entry of allEntries(input)) {
+    const group = byKey.get(entry.party.key) ?? { party: entry.party, items: [] };
+    group.items.push(entry.item);
+    byKey.set(entry.party.key, group);
+  }
+
+  return [...byKey.values()]
+    .map((group) => {
+      const agenda = assemble(group.party, group.items);
+      return {
+        party: group.party,
+        count: agenda.items.length,
+        urgentCount: agenda.urgentCount,
+        detail: summariseAgenda(agenda),
+      };
+    })
+    .sort(
+      (a, b) =>
+        b.urgentCount - a.urgentCount ||
+        b.count - a.count ||
+        a.party.name.localeCompare(b.party.name),
+    );
 }
 
 /* -------------------------------------------------------------- requests -- */
 
-function requestItems(party: Party, views: readonly RequestView[]): AgendaItem[] {
-  const items: AgendaItem[] = [];
+function requestEntries(views: readonly RequestView[]): Entry[] {
+  const entries: Entry[] = [];
 
   for (const view of views) {
     if (view.metrics.completed) continue;
     const blockedOn = view.metrics.blockedOn;
-    if (blockedOn === null || parseParty(blockedOn).key !== party.key) continue;
+    if (blockedOn === null || blockedOn === "") continue;
 
-    const state = rowState(view);
-    items.push({
-      kind: "request",
-      link: view.request.id || view.request.uid,
-      title: view.request.title,
-      ask: `Waiting on them at the ${view.request.stage} stage.`,
-      context: `Blocked ${days(view.metrics.blockedForMs)}; ${days(
-        view.metrics.totalAgeMs,
-      )} old in total.`,
-      waitedMs: view.metrics.blockedForMs,
-      urgent: state === "breached",
+    entries.push({
+      party: parseParty(blockedOn),
+      item: {
+        kind: "request",
+        link: view.request.id || view.request.uid,
+        title: view.request.title,
+        ask: `Waiting on them at the ${view.request.stage} stage.`,
+        context: `Blocked ${days(view.metrics.blockedForMs)}; ${days(
+          view.metrics.totalAgeMs,
+        )} old in total.`,
+        waitedMs: view.metrics.blockedForMs,
+        urgent: rowState(view) === "breached",
+      },
     });
   }
 
-  return items;
+  return entries;
 }
 
 /* -------------------------------------------------------------- outreach -- */
 
-function outreachItems(
-  party: Party,
+function outreachEntries(
   threads: readonly Thread[],
   now: number,
   chaseDays: number | undefined,
-): AgendaItem[] {
+): Entry[] {
   const aged = agedOutreach(threads, {
     now,
     ...(chaseDays === undefined ? {} : { chaseDays }),
   });
 
-  return aged
-    .filter((entry) => entry.thread.with.some((person) => person.key === party.key))
-    .map((entry) => ({
-      kind: "outreach" as const,
-      link: entry.thread.id,
-      title: entry.thread.subject,
-      // "Composed" rather than "sent" — §5.11 rule 6 holds here too, and this
-      // line is read aloud to the person it is about.
-      ask: "No reply recorded since we last wrote.",
-      context: `${entry.thread.channel}, composed ${days(entry.waitingMs)} ago.`,
-      waitedMs: entry.waitingMs,
-      urgent: entry.overdue,
-    }));
+  return aged.flatMap((entry) =>
+    entry.thread.with.map((party) => ({
+      party,
+      item: {
+        kind: "outreach" as const,
+        link: entry.thread.id,
+        title: entry.thread.subject,
+        // "Recorded" rather than "received" — §5.11 rule 6 holds here too, and
+        // this line is read aloud to the person it is about.
+        ask: "No reply recorded since we last wrote.",
+        context: `${entry.thread.channel}, composed ${days(entry.waitingMs)} ago.`,
+        waitedMs: entry.waitingMs,
+        urgent: entry.overdue,
+      },
+    })),
+  );
 }
 
 /* ---------------------------------------------------------- publications -- */
@@ -222,42 +293,44 @@ function outreachItems(
  * it on a co-author's agenda would be asking them for something they cannot
  * give.
  */
-function publicationItems(party: Party, publications: readonly PublicationNote[]): AgendaItem[] {
+function publicationEntries(publications: readonly PublicationNote[]): Entry[] {
   return publications
-    .filter(
-      (publication) =>
-        inFlight(publication) &&
-        publication.stage === "internal-review" &&
-        publication.authors.some((author) => author.key === party.key),
-    )
-    .map((publication) => ({
-      kind: "publication" as const,
-      link: publication.id === "" ? basename(publication.path) : publication.id,
-      title: publication.title,
-      ask: "Awaiting their comments on the draft.",
-      context: publication.journal === "" ? "Internal review." : `For ${publication.journal}.`,
-      waitedMs: null,
-      urgent: false,
-    }));
+    .filter((publication) => inFlight(publication) && publication.stage === "internal-review")
+    .flatMap((publication) =>
+      publication.authors.map((party) => ({
+        party,
+        item: {
+          kind: "publication" as const,
+          link: publication.id === "" ? basename(publication.path) : publication.id,
+          title: publication.title,
+          ask: "Awaiting their comments on the draft.",
+          context: publication.journal === "" ? "Internal review." : `For ${publication.journal}.`,
+          waitedMs: null,
+          urgent: false,
+        },
+      })),
+    );
 }
 
 /* ------------------------------------------------------- everything else -- */
 
-function noteItems(
-  party: Party,
-  notes: readonly AgendaNote[],
-  now: number,
-): AgendaItem[] {
-  const items: AgendaItem[] = [];
+function noteEntries(notes: readonly AgendaNote[], now: number): Entry[] {
+  const entries: Entry[] = [];
 
   for (const note of notes) {
     if (HANDLED_ELSEWHERE.has(note.type)) continue;
     if (isSettled(note.frontmatter)) continue;
 
-    const field = RESPONSIBILITY_FIELDS.find((key) =>
-      partiesIn(note.frontmatter[key]).some((person) => person.key === party.key),
-    );
-    if (field === undefined) continue;
+    // One entry per person per note, under the first field that names them: a
+    // note listing somebody as both `owner` and `assignee` is one thing to
+    // raise, not two.
+    const first = new Map<string, { party: Party; field: string }>();
+    for (const key of RESPONSIBILITY_FIELDS) {
+      for (const party of partiesIn(note.frontmatter[key])) {
+        if (!first.has(party.key)) first.set(party.key, { party, field: key });
+      }
+    }
+    if (first.size === 0) continue;
 
     const dueMs = parseTimestamp(note.frontmatter["due"]);
     const overdue = dueMs !== null && dueMs < now;
@@ -266,22 +339,27 @@ function noteItems(
     // reminder that does not say gets ignored. Carry it through verbatim.
     const consequence = text(note.frontmatter["consequence"]);
 
-    items.push({
-      kind: note.type === "obligation" ? "obligation" : "other",
-      link: label(note.frontmatter, note.path),
-      title: text(note.frontmatter["title"]) || basename(note.path),
-      ask: `They are the ${field.replace(/_/g, " ")} on this.`,
-      context:
-        (dueMs === null
-          ? "No due date."
-          : `Due ${toVaultDate(dueMs)}${overdue ? " — passed" : ""}.`) +
-        (consequence === "" ? "" : ` ${consequence}`),
-      waitedMs: overdue && dueMs !== null ? now - dueMs : null,
-      urgent: overdue,
-    });
+    for (const { party, field } of first.values()) {
+      entries.push({
+        party,
+        item: {
+          kind: note.type === "obligation" ? "obligation" : "other",
+          link: label(note.frontmatter, note.path),
+          title: text(note.frontmatter["title"]) || basename(note.path),
+          ask: `They are the ${field.replace(/_/g, " ")} on this.`,
+          context:
+            (dueMs === null
+              ? "No due date."
+              : `Due ${toVaultDate(dueMs)}${overdue ? " — passed" : ""}.`) +
+            (consequence === "" ? "" : ` ${consequence}`),
+          waitedMs: overdue && dueMs !== null ? now - dueMs : null,
+          urgent: overdue,
+        },
+      });
+    }
   }
 
-  return items;
+  return entries;
 }
 
 /** "3 requests, 1 manuscript" — the one-line summary above an agenda. */

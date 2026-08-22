@@ -1225,6 +1225,152 @@
   overflow-wrap: anywhere;
 }
 
+/* ------------------------------------------------ B1: the daily rhythm -- */
+
+/* Quick capture: one line and a hint, and deliberately nothing else. Every
+ * control added here is a thing the eye skips past during a two-second
+ * interaction. */
+.scdb-modal--capture {
+  width: min(560px, 92vw);
+}
+
+.scdb-capture__input {
+  width: 100%;
+  font-size: var(--font-ui-medium);
+}
+
+.scdb-capture__hint {
+  margin-top: var(--scdb-1);
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+/* The chase-up button sits in the group heading, which is already a
+ * space-between flex row, so it lands hard right beside the counts. */
+.scdb-group__action {
+  flex: none;
+  font-size: var(--font-ui-smaller);
+}
+
+/* --- the meeting agenda ------------------------------------------------- */
+
+.scdb-agenda__list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 34vh;
+  margin: 0 0 var(--scdb-2);
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.scdb-agenda__item {
+  padding: var(--scdb-1);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  background: var(--background-primary-alt);
+}
+
+/* A left rule as well as the word "Overdue" on the row — colour is never the
+ * only signal (§6), and the rule survives a theme that flattens our palette. */
+.scdb-agenda__item--urgent {
+  border-left: 3px solid var(--scdb-overdue);
+}
+
+.scdb-agenda__head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: baseline;
+}
+
+.scdb-agenda__kind {
+  padding: 1px 6px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 10px;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.scdb-agenda__link {
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.scdb-agenda__title {
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+  overflow-wrap: anywhere;
+}
+
+/* Right-aligned tabular figures, per §6. */
+.scdb-agenda__age {
+  margin-left: auto;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  font-variant-numeric: tabular-nums;
+}
+
+.scdb-agenda__detail {
+  margin-top: 2px;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.scdb-agenda .scdb-state {
+  font-size: var(--font-ui-smaller);
+  font-weight: 600;
+}
+
+.scdb-subhead {
+  margin: var(--scdb-2) 0 var(--scdb-1);
+  font-size: var(--font-ui-small);
+}
+
+.scdb-rule {
+  margin: var(--scdb-2) 0;
+  border: none;
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+.scdb-note {
+  margin: 0 0 var(--scdb-1);
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+/* Not `--scdb-overdue`: this is "read before you press", not "something has
+ * broken", and borrowing the breach colour would devalue it. */
+.scdb-warning {
+  margin: 0 0 var(--scdb-1);
+  padding: var(--scdb-1);
+  border-left: 3px solid var(--scdb-at-risk);
+  background: var(--background-secondary);
+  color: var(--text-normal);
+  font-size: var(--font-ui-smaller);
+}
+
+/* --- the person picker -------------------------------------------------- */
+
+.scdb-suggest__title {
+  color: var(--text-normal);
+}
+
+.scdb-suggest__sub {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+/* At sidebar width the agenda rows stack rather than scrolling sideways. */
+@media (max-width: 420px) {
+  .scdb-agenda__age {
+    margin-left: 0;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .scdb-tab,
   .scdb-card__main,

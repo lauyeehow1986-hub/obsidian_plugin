@@ -216,4 +216,68 @@ describe("migrateSettings", () => {
       expect(message).toMatch(/repair or delete/i);
     });
   });
+
+  describe("v3 -> v4: messages and the briefing", () => {
+    it("adds the new blocks to a v3 file without touching what was there", () => {
+      const result = migrateSettings({
+        schemaVersion: 3,
+        actor: "yh",
+        backup: { destination: "D:\snapshots", keep: 5, intervalDays: 7, lastAt: "", lastName: "" },
+      });
+      expect(result.settings.comms.uriCeiling).toBe(1800);
+      expect(result.settings.comms.chaseDays).toBe(7);
+      expect(result.settings.briefing.onOpen).toBe(false);
+      expect(result.settings.actor).toBe("yh");
+      expect(result.settings.backup.destination).toBe("D:\snapshots");
+      expect(result.notes.join(" ")).toContain("v3 -> v4");
+    });
+
+    it("leaves the briefing off on a fresh install", () => {
+      // Rule 3, applied to the vault: writing a note into someone's vault the
+      // first time they open it is a decision that was theirs to make.
+      expect(migrateSettings(null).settings.briefing.onOpen).toBe(false);
+    });
+
+    it("adds the briefings folder without disturbing customised paths", () => {
+      const result = migrateSettings({
+        schemaVersion: 3,
+        folders: { requests: "Requests", dashboards: "Boards" },
+      });
+      expect(result.settings.folders.briefings).toBe("90 Dashboards/Briefings");
+      expect(result.settings.folders.requests).toBe("Requests");
+      expect(result.settings.folders.dashboards).toBe("Boards");
+    });
+
+    it("clamps a URI ceiling rather than resetting it, and says so", () => {
+      // Too low and nothing composes; too high and a chase-up arrives cut off.
+      const low = migrateSettings({ schemaVersion: 4, comms: { uriCeiling: 5 } });
+      expect(low.settings.comms.uriCeiling).toBe(200);
+      expect(low.notes.join(" ")).toContain("uriCeiling was 5");
+
+      expect(
+        migrateSettings({ schemaVersion: 4, comms: { uriCeiling: 99999 } }).settings.comms
+          .uriCeiling,
+      ).toBe(8000);
+    });
+
+    it("resets an unknown channel and keeps the rest of the block", () => {
+      const result = migrateSettings({
+        schemaVersion: 4,
+        comms: { channel: "carrier pigeon", chaseDays: 14 },
+      });
+      expect(result.settings.comms.channel).toBe("email");
+      expect(result.settings.comms.chaseDays).toBe(14);
+      expect(result.notes.join(" ")).toContain("carrier pigeon");
+    });
+
+    it("keeps lastDate verbatim, because repairing it would regenerate over yesterday", () => {
+      const result = migrateSettings({
+        schemaVersion: 4,
+        briefing: { onOpen: true, lastDate: "2026-08-22", horizonDays: 30 },
+      });
+      expect(result.settings.briefing.lastDate).toBe("2026-08-22");
+      expect(result.settings.briefing.onOpen).toBe(true);
+      expect(result.settings.briefing.horizonDays).toBe(30);
+    });
+  });
 });

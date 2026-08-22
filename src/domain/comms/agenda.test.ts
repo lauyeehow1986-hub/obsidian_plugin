@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildAgenda, summariseAgenda, type AgendaNote } from "./agenda";
+import { agendaCandidates, buildAgenda, summariseAgenda, type AgendaNote } from "./agenda";
 import {
   composeMessage,
   DEFAULT_CHASE_TEMPLATE,
@@ -322,5 +322,79 @@ describe("draftSummary", () => {
     });
     expect(draftSummary(agenda)).toBe("Chased 1 request");
     expect(draftSummary(buildAgenda({ party: "[[X]]", now: NOW }))).toContain("nothing open");
+  });
+});
+
+describe("agendaCandidates", () => {
+  it("lists everyone with something open, busiest first", () => {
+    const candidates = agendaCandidates({
+      now: NOW,
+      views: [
+        view({ id: "R1", blockedOn: "[[Dr A Tan]]" }),
+        view({ id: "R2", blockedOn: "[[Dr A Tan]]" }),
+        view({ id: "R3", blockedOn: "[[Dr B Lim]]" }),
+      ],
+    });
+    expect(candidates.map((c) => c.party.name)).toEqual(["Dr A Tan", "Dr B Lim"]);
+    expect(candidates[0]?.count).toBe(2);
+    expect(candidates[0]?.detail).toBe("2 requests");
+  });
+
+  it("puts whoever is holding up something overdue at the top", () => {
+    const candidates = agendaCandidates({
+      now: NOW,
+      views: [
+        view({ id: "R1", blockedOn: "[[Busy]]" }),
+        view({ id: "R2", blockedOn: "[[Busy]]" }),
+        view({ id: "R3", blockedOn: "[[Busy]]" }),
+        view({ id: "R4", blockedOn: "[[Late]]", breached: true }),
+      ],
+    });
+    expect(candidates.map((c) => c.party.name)).toEqual(["Late", "Busy"]);
+  });
+
+  it("merges the spellings of one person into one row", () => {
+    const candidates = agendaCandidates({
+      now: NOW,
+      views: [
+        view({ id: "R1", blockedOn: "[[Dr A Tan]]" }),
+        view({ id: "R2", blockedOn: "[[30 People/Dr A Tan|Tan]]" }),
+      ],
+    });
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0]?.count).toBe(2);
+  });
+
+  it("agrees with the agenda it will produce", () => {
+    // The count in the picker and the list behind it come from one pass, so
+    // they cannot drift apart.
+    const input = {
+      now: NOW,
+      views: [view({ id: "R1", blockedOn: "[[Dr A Tan]]" })],
+      threads: [thread()],
+    };
+    const candidate = agendaCandidates(input)[0]!;
+    expect(buildAgenda({ ...input, party: candidate.party.raw }).items).toHaveLength(
+      candidate.count,
+    );
+  });
+
+  it("counts one note naming a person twice as one item", () => {
+    const candidates = agendaCandidates({
+      now: NOW,
+      notes: [
+        {
+          path: "60 Events/E.md",
+          type: "obligation",
+          frontmatter: { id: "OBL-1", owner: "[[Dr A Tan]]", assignee: "[[Dr A Tan]]" },
+        },
+      ],
+    });
+    expect(candidates[0]?.count).toBe(1);
+    expect(candidates[0]?.detail).toBe("1 obligation");
+  });
+
+  it("is empty when nothing is waiting on anybody", () => {
+    expect(agendaCandidates({ now: NOW })).toEqual([]);
   });
 });

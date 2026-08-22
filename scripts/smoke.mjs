@@ -70,7 +70,7 @@ class Plugin extends Component {
     this.manifest = manifest;
   }
   addCommand(command) {
-    registeredCommands.push(command.id);
+    registeredCommands.push(command);
   }
   addRibbonIcon() {}
   addStatusBarItem() {
@@ -114,6 +114,11 @@ class Modal {
     this.app = app;
   }
 }
+/** The person picker extends this; without it the bundle throws at load. */
+class SuggestModal extends Modal {
+  setPlaceholder() {}
+}
+class FuzzySuggestModal extends SuggestModal {}
 class TAbstractFile {}
 class TFile extends TAbstractFile {}
 class TFolder extends TAbstractFile {}
@@ -125,6 +130,8 @@ const stub = {
   Component,
   BasesView,
   Modal,
+  SuggestModal,
+  FuzzySuggestModal,
   TAbstractFile,
   TFile,
   TFolder,
@@ -220,7 +227,8 @@ try {
 // workflow spec, so it is async. Resolve it once rather than in each check.
 const basesPlan = (await instance.basesFiles?.plan()) ?? [];
 // Both instances register the same commands, so dedupe before counting.
-const commands = [...new Set(registeredCommands)];
+const commands = [...new Set(registeredCommands.map((command) => command.id))];
+const commandSpec = (id) => registeredCommands.find((command) => command.id === id);
 
 const checks = [
   // Assert behaviour, not the class name: production builds are minified, so
@@ -228,7 +236,10 @@ const checks = [
   ["extends Obsidian's Plugin", instance instanceof Plugin],
   ["implements onload", typeof instance.onload === "function"],
   ["settings default to a known mode", instance.settings.mode === "hod"],
-  ["settings carry a schema version", instance.settings.schemaVersion === 3],
+  // Pinned deliberately: this line failing means the schema moved, which is
+  // the moment to check a migration step went with it (§10 — an upgrade must
+  // never lose settings). Bump it only after writing that step.
+  ["settings carry a schema version", instance.settings.schemaVersion === 4],
   ["the hat filter defaults to the mode you are wearing", instance.settings.hatFilter === "mode"],
   [
     // Mode is the organising metaphor (§7 A3): every hat needs a command, or
@@ -345,6 +356,60 @@ const checks = [
     // the difference between a bug you can describe and one you cannot.
     "diagnostics and integrity each have a command",
     ["diagnostics", "integrity"].every((id) => commands.includes(id)),
+  ],
+  [
+    // B1 ships five surfaces; four reach the palette and the fifth (the
+    // chase-up itself) is a button inside the agenda dialog.
+    "the daily rhythm commands are registered",
+    ["quick-capture", "daily-briefing", "meeting-agenda", "chase-request", "thread-answered"].every(
+      (id) => commands.includes(id),
+    ),
+  ],
+  [
+    // §7 B1 asks for one global hotkey. Left unbound it is a command nobody
+    // reaches in the two seconds this feature exists to fit inside.
+    "quick capture ships with a hotkey bound",
+    (commandSpec("quick-capture")?.hotkeys ?? []).length === 1,
+  ],
+  [
+    // Numeric hotkeys lose silently to Obsidian's own "go to tab #N" — learned
+    // the hard way on the mode commands. Nothing here may take one.
+    "no plugin hotkey is a bare number",
+    registeredCommands
+      .flatMap((command) => command.hotkeys ?? [])
+      .every((hotkey) => !/^[1-9]$/.test(hotkey.key) || hotkey.modifiers.includes("Shift")),
+  ],
+  [
+    // Rule 3 applied to the vault: a plugin that writes a note into somebody's
+    // vault the first time they open it has made a decision that was theirs.
+    "the briefing is off on a fresh install",
+    instance.settings.briefing.onOpen === false && instance.settings.briefing.lastDate === "",
+  ],
+  [
+    // §5.11 rule 1: the shipped ceiling sits under the ~2,000 where handlers cut.
+    "the URI ceiling ships conservative",
+    instance.settings.comms.uriCeiling > 0 && instance.settings.comms.uriCeiling <= 2000,
+  ],
+  [
+    "the rhythm writer is wired",
+    typeof instance.rhythm?.capture === "function" &&
+      typeof instance.rhythm?.recordComposed === "function" &&
+      Array.isArray(instance.threads()),
+  ],
+  ["outreach ageing runs on an empty vault", instance.agedThreads(Date.now()).length === 0],
+  [
+    // §5.11 rule 1, asserted on what actually ships: there must be no code path
+    // that shortens a URI. Over the ceiling it is copied whole.
+    "the bundle never truncates a URI",
+    !/\buri\.(slice|substring|substr)\(/.test(readFileSync(bundle, "utf8")),
+  ],
+  [
+    // Rule 4's allowlist has to survive minification — if the host name were
+    // dropped, an https URL from anywhere would pass.
+    "the scheme allowlist is in the bundle",
+    ["mailto:", "msteams:", "teams.microsoft.com"].every((token) =>
+      readFileSync(bundle, "utf8").includes(token),
+    ),
   ],
   [
     // Node builtins must stay external or the bundle stops loading in Obsidian

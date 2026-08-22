@@ -5,6 +5,107 @@ clearly marked entry (CLAUDE.md §10).
 
 ## Unreleased
 
+### Added — B1, the daily rhythm pack
+
+Five features that share the A2 query engine and, together, are what make the
+plugin worth opening in the morning.
+
+- **Quick capture** — `Ctrl+Shift+C`, one line, straight into `00 Inbox/` with
+  the hat you are wearing recorded. It asks no second question: there is a test
+  asserting the frontmatter has no field you could leave blank. The dialog
+  closes before the write completes, and a failed write hands the typed line
+  back in a notice rather than losing it.
+- **Daily briefing** — a dated markdown note: what could not be read, what is
+  due today, what is against target, what is stuck and with whom, what outreach
+  is unanswered, which decisions are awaited, what is coming up. Markdown rather
+  than a view, so a morning is still legible in six months and survives the
+  plugin being uninstalled. It never overwrites one that already exists — the
+  note is a record of a morning and may have been annotated by lunchtime.
+  **Off by default** (rule 3 applied to the vault) and available on demand from
+  the palette.
+- **Meeting agenda** — pick a person, get everything they are holding up:
+  requests awaiting them, manuscripts awaiting their review, obligations they
+  own, and outreach they have not answered, urgent first with dwell attached.
+  The value is the *join* — those four live in four folders under four
+  differently-named fields, and one forgotten is another fortnight of dwell on
+  a request nobody mentioned. It carries no judgement about whether the person
+  is slow; a tool that generates accusations gets used once.
+- **Chase-up composer** — the same agenda rendered into a draft and handed to
+  Outlook or Teams. Clipboard is an equal option, not only a fallback. The draft
+  is always shown and editable before anything opens.
+- **Outreach ageing (email Tier 0)** — every composed message opens or updates a
+  correspondence thread, so unanswered outreach ages into the **same** holdup
+  board as blocked requests rather than a board of its own. One click marks a
+  thread answered. No mailbox access of any kind: the plugin knows what it
+  composed, which turns out to be enough.
+
+### Rules and boundaries — B1
+
+- **Nothing is ever sent.** The plugin composes a URI and hands it to the OS
+  shell; you press send. Every message is recorded as `composed_only: true` and
+  every ledger entry says `message-composed` — never `message-sent`, because we
+  cannot know that and an audit trail claiming otherwise is worse than none
+  (§5.11 rule 6). The briefing and the agenda say "no reply **recorded**" for
+  the same reason.
+- **Addresses containing a CR or LF are refused, not escaped** (§5.11 rule 3).
+  `a@b.com<CRLF>bcc:attacker@example.com` would silently blind-copy a message
+  about a clinical data request; encoding the body does not help, so an address
+  we cannot vouch for is rejected and named. Commas, quotes, brackets, control
+  characters and non-ASCII go the same way, and one bad address refuses the
+  whole draft rather than quietly dropping a recipient.
+- **The scheme allowlist is applied to the built string, one line above
+  `openExternal`** (§5.11 rule 4). `mailto:`, `msteams:`, and `https:` only for
+  one hardcoded host. A URL from note content never reaches the launcher.
+- **No code path shortens a URI** (§5.11 rule 1). Over the configured ceiling
+  the draft goes to the clipboard whole, with both numbers in the message. The
+  ceiling defaults to 1,800 — deliberately under the ~2,000 where handlers start
+  to cut — and §11's open question about the real figure now has a **"Test
+  mailto:" and "Test Teams" button in settings** that answers it in ten seconds
+  on the machine that matters.
+- **§5.11 rule 5 is enforced by construction, not by filtering.** A message
+  template can interpolate exactly six variables — `{{name}}`, `{{date}}`,
+  `{{count}}`, `{{summary}}`, `{{items}}`, `{{actor}}` — and there is no
+  `{{body}}` or `{{note}}` among them, so no template can reach note prose into
+  a string that passes through the OS shell and into system logs.
+- **Ledger entries count recipients rather than naming them.** A clinician's
+  name in a governance ledger is exactly the indirectly identifying material
+  §2 warns the vault may hold.
+- **Marking a thread answered is deliberately not logged.** §5.6 lists what a
+  consequential action is and a human replying to a human is none of them;
+  logging every such click would bury the entries that matter.
+- **A message body is never stored on a thread note** — a one-line summary
+  goes in, because thread notes are read back into briefings and exports.
+
+### Vault contract — B1
+
+- New folder `90 Dashboards/Briefings/` (configurable). §5 names no home for a
+  briefing; it sits under Dashboards rather than beside them because a briefing
+  is a dated record of one morning, not a saved view, and a year of them would
+  swamp the folder the saved views live in.
+- New note types in use: `correspondence` (§5.10) and `capture` (§5.14).
+- `authors` on a publication is now parsed (§5.4), which is what lets the agenda
+  find manuscripts awaiting somebody's review.
+- Message templates live in `_config/messages/chase-up.md`, so tone and
+  signature are yours (§5.11 rule 7). A missing one falls back silently.
+- Settings schema **v4** with a migration: adds the message and briefing blocks,
+  clamping numbers rather than resetting them, and keeps `lastDate` verbatim so
+  repairing settings cannot regenerate today's briefing over yesterday's.
+
+### Changed — B1
+
+- The **holdup board** now shows unanswered outreach alongside blocked requests,
+  grouped by the same person, with a "Chase up" button on each group. Same
+  board, deliberately: "Dr Tan owes me a signature and has not replied to the
+  email asking for it" is one situation, and splitting it across two screens is
+  how the second half gets forgotten.
+- Diagnostics no longer reports protocol handlers as "not built yet". It now
+  probes whether Electron's shell is reachable at all — without opening
+  anything, because a self-test that opens a mail window every run is a
+  self-test people stop running — and points at the settings buttons for the
+  part only the machine can answer.
+- The overview's look-ahead window is now the configured briefing horizon rather
+  than a hardcoded 60 days.
+
 ### Added — A4, encrypted backup, restore and verification
 - **Encrypted vault snapshots.** One AES-256-GCM file per snapshot, key derived
   with scrypt (N=32768, r=8), gzip inside the encryption, written to a folder

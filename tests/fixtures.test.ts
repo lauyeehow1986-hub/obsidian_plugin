@@ -22,6 +22,8 @@
  */
 
 import { load } from "js-yaml";
+import { agedOutreach, CORRESPONDENCE_TYPE, parseThread } from "../src/domain/comms/thread";
+import { CAPTURE_TYPE } from "../src/domain/capture/capture";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -107,7 +109,13 @@ describe("the test vault is discoverable at all", () => {
   });
 
   it("gives every note a type, because type is what every view selects on", () => {
-    const untyped = notes.filter((note) => typeof note.front["type"] !== "string");
+    // `_config/` is configuration, not content. A workflow spec is YAML and a
+    // message template is markdown the composer reads by path, and neither is
+    // a note the index should be selecting on — a `type:` there would put the
+    // plugin's own plumbing into the user's Explore board.
+    const untyped = notes.filter(
+      (note) => typeof note.front["type"] !== "string" && !note.rel.startsWith("_config/"),
+    );
     expect(untyped.map((note) => note.rel)).toEqual([]);
   });
 });
@@ -211,5 +219,99 @@ describe("saved views", () => {
     // targets a type that has its own declared fields.
     expect(view.query.types).toEqual([REQUEST_ROW_TYPE]);
     expect(validateQuery(view.query, REQUEST_FIELDS)).toEqual([]);
+  });
+});
+
+describe("correspondence threads", () => {
+  const threads = typed(CORRESPONDENCE_TYPE);
+  const NOW = Date.parse("2026-08-23T09:00:00Z");
+
+  const parsed = () =>
+    threads.map((note) => ({
+      rel: note.rel,
+      ...parseThread(note.front, note.rel.split("/").pop()!.replace(/\.md$/, "")),
+    }));
+
+  it.each(threads.map((note) => note.rel))("%s parses with no problems", (rel) => {
+    expect(parsed().find((entry) => entry.rel === rel)!.problems).toEqual([]);
+  });
+
+  it("ships one that ages and one that must not", () => {
+    // Both halves matter. Without the answered thread the ageing filter could
+    // be returning everything and the fixture would still look right.
+    const aged = agedOutreach(
+      parsed().map((entry) => entry.thread),
+      { now: NOW },
+    );
+    expect(aged.length).toBe(1);
+    expect(threads.length).toBeGreaterThan(1);
+  });
+
+  it("records every outbound message as composed, never as sent (§5.11 rule 6)", () => {
+    for (const entry of parsed()) {
+      for (const message of entry.thread.messages) {
+        if (message.dir !== "outbound") continue;
+        expect(message.composedOnly, `${entry.rel} ${message.summary}`).toBe(true);
+      }
+    }
+  });
+
+  it("stores a summary per message and never a body", () => {
+    // A thread note is read back into briefings and exports; a message body in
+    // there is content that would travel with them (rule 7).
+    for (const note of threads) {
+      for (const message of (note.front["messages"] as Record<string, unknown>[]) ?? []) {
+        expect(Object.keys(message)).not.toContain("body");
+        expect(typeof message["summary"]).toBe("string");
+      }
+    }
+  });
+
+  it("names people who have a note in the vault", () => {
+    const basenames = new Set(
+      notes.map((note) => note.rel.split("/").pop()!.replace(/\.md$/, "").toLowerCase()),
+    );
+    for (const entry of parsed()) {
+      for (const party of entry.thread.with) {
+        expect(basenames.has(party.name.toLowerCase()), `${entry.rel} → ${party.name}`).toBe(true);
+      }
+    }
+  });
+});
+
+describe("person notes", () => {
+  const people = typed("person");
+
+  it("ships one with an address and one without", () => {
+    // The composer must cope with a person it cannot address — the To field
+    // opens empty rather than guessing. A wrong address on a chase-up about a
+    // data request is a disclosure, not a typo.
+    const withEmail = people.filter((note) => typeof note.front["email"] === "string");
+    expect(withEmail.length).toBeGreaterThan(0);
+    expect(people.length).toBeGreaterThan(withEmail.length);
+  });
+
+  it("uses only reserved example addresses, so a mis-click reaches nobody", () => {
+    // RFC 2606 reserves example.com for exactly this. Rule 1: nothing real
+    // enters a public repository, and an address is something real.
+    const outside = people
+      .map((note) => note.front["email"])
+      .filter((email): email is string => typeof email === "string")
+      .filter((email) => !/@(example\.(com|org|net)|.*\.example)$/.test(email));
+    expect(outside).toEqual([]);
+  });
+});
+
+describe("captures", () => {
+  it("ships one, untriaged, so the inbox path is exercised", () => {
+    const captures = typed(CAPTURE_TYPE);
+    expect(captures.length).toBeGreaterThan(0);
+    for (const note of captures) {
+      expect(note.rel.startsWith("00 Inbox/")).toBe(true);
+      // Explicitly false rather than absent: "what is still untriaged" must be
+      // answerable without inferring from a missing key.
+      expect(note.front["triaged"]).toBe(false);
+      expect(typeof note.front["mode"]).toBe("string");
+    }
   });
 });

@@ -369,12 +369,7 @@ async function integrations(plugin: ScdbCockpitPlugin): Promise<ReportSection> {
     checks: [
       await mermaidProbe(plugin),
       clipboardProbe(),
-      check(
-        "Protocol handlers (mailto:, msteams:)",
-        "unavailable",
-        "Not built yet — the chase-up composer is phase B1.",
-        "CLAUDE.md §11 asks whether Outlook is the registered mailto: handler on this machine; a test button ships with B1.",
-      ),
+      protocolCheck(plugin),
       check(
         "R and Python interpreters",
         "unavailable",
@@ -388,6 +383,43 @@ async function integrations(plugin: ScdbCockpitPlugin): Promise<ReportSection> {
       ),
     ],
   };
+}
+
+/**
+ * Whether a draft can be handed to the OS at all.
+ *
+ * Deliberately **not** a launch. §7 A4's rule is probe-don't-assume, but a
+ * self-test that opens a mail window every time it runs is a self-test people
+ * stop running. What can be established without side effects is whether
+ * Electron's shell is reachable at all; whether *Outlook specifically* is
+ * registered for `mailto:` is a question only the machine can answer, and
+ * settings carries the button that asks it (CLAUDE.md §11).
+ */
+function protocolCheck(plugin: ScdbCockpitPlugin): Check {
+  const reachable = shellReachable();
+  const ceiling = plugin.settings.comms.uriCeiling;
+
+  return check(
+    "Protocol handlers (mailto:, Teams)",
+    reachable ? "ok" : "problem",
+    reachable
+      ? `Electron's shell is reachable; drafts longer than ${ceiling} characters go to the clipboard instead of being opened.`
+      : "Electron's shell is not reachable, so no draft can be opened. Every message falls back to the clipboard.",
+    reachable
+      ? 'Whether Outlook is the registered mailto: handler is a question only this machine can answer — "Test mailto:" in settings opens a throwaway draft so you can see.'
+      : "Nothing is lost: the composer still copies. This is expected on anything that is not desktop Obsidian.",
+  );
+}
+
+/** The same reach `services/protocol` uses, without opening anything. */
+function shellReachable(): boolean {
+  try {
+    const electron = (globalThis as { require?: (id: string) => unknown }).require?.("electron");
+    const shell = (electron as { shell?: { openExternal?: unknown } } | undefined)?.shell;
+    return typeof shell?.openExternal === "function";
+  } catch {
+    return false;
+  }
 }
 
 /**
