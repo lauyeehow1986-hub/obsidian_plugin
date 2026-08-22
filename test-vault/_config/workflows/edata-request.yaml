@@ -6,7 +6,7 @@
 # pass — not a code change.
 
 id: edata-request
-version: 1
+version: 2
 label: eData request
 
 stages:
@@ -42,4 +42,10 @@ gates:
 
 # Superseded stage ids keep their mapping so historical dwell maths still
 # resolves after a rename.
-retired: {}
+#
+# v1 -> v2 renamed `pending-approval` to `awaiting-approval`. REQ-2026-007 was
+# left behind by that change on purpose, so the Migration board has something
+# real to show. REQ-2026-008 sits in `scoping`, a stage that was dropped without
+# a mapping — the plugin proposes nothing for it and asks you to decide.
+retired:
+  pending-approval: awaiting-approval

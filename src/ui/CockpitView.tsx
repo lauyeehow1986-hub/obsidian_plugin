@@ -1,6 +1,6 @@
 import { ItemView, type WorkspaceLeaf } from "obsidian";
 import { render } from "preact";
-import { useState } from "preact/hooks";
+import { useEffect, useState } from "preact/hooks";
 import { stageDwellStats } from "../domain/request/dwell";
 import {
   ageing,
@@ -13,15 +13,17 @@ import {
 import { resolveStage } from "../domain/request/workflow";
 import type ScdbCockpitPlugin from "../main.js";
 import { count, displayName, duration, presentState } from "./format";
+import { MigrationBoard, strandedCount } from "./MigrationBoard";
 
 export const COCKPIT_VIEW_TYPE = "scdb-cockpit-view";
 
-type Tab = "queue" | "holdup" | "ageing" | "health";
+export type CockpitTab = "queue" | "holdup" | "ageing" | "migration" | "health";
 
-const TABS: { id: Tab; label: string }[] = [
+const TABS: { id: CockpitTab; label: string }[] = [
   { id: "queue", label: "Queue" },
   { id: "holdup", label: "Holdup" },
   { id: "ageing", label: "Ageing" },
+  { id: "migration", label: "Migration" },
   { id: "health", label: "Health" },
 ];
 
@@ -63,6 +65,14 @@ function RequestCard({ view, plugin }: { view: RequestView; plugin: ScdbCockpitP
           {metrics.problems.length > 0 && (
             <span class="scdb-chip scdb-chip--problem" title={metrics.problems.join("\n")}>
               needs attention
+            </span>
+          )}
+          {plugin.needsMigration(request) && (
+            <span
+              class="scdb-chip scdb-chip--problem"
+              title="On an older workflow version; it cannot change stage until it is migrated."
+            >
+              migrate
             </span>
           )}
         </span>
@@ -284,10 +294,27 @@ function HealthBoard({ views, plugin }: { views: RequestView[]; plugin: ScdbCock
   );
 }
 
-export function CockpitPanel({ plugin }: { plugin: ScdbCockpitPlugin }) {
-  const [tab, setTab] = useState<Tab>("queue");
+/** A tab the view has been asked to show. `token` changes on every request. */
+export interface TabFocus {
+  tab: CockpitTab;
+  token: number;
+}
+
+export function CockpitPanel({
+  plugin,
+  focus,
+}: {
+  plugin: ScdbCockpitPlugin;
+  focus: TabFocus;
+}) {
+  const [tab, setTab] = useState<CockpitTab>(focus.tab);
   const views = plugin.index.views({ now: Date.now() });
   const summary = summarise(views);
+  const stranded = strandedCount(plugin);
+
+  // A command may ask for a tab the user has since navigated away from, so the
+  // token — not the tab id — is what makes a repeat request take effect.
+  useEffect(() => setTab(focus.tab), [focus.token]);
 
   return (
     <div class="scdb-cockpit">
@@ -299,6 +326,7 @@ export function CockpitPanel({ plugin }: { plugin: ScdbCockpitPlugin }) {
             {summary.atRisk} at risk · {summary.blocked} waiting on someone
             {summary.bounced > 0 && ` · ${summary.bounced} bounced`}
             {summary.completed > 0 && ` · ${summary.completed} complete`}
+            {stranded > 0 && ` · ${stranded} awaiting migration`}
           </p>
         </div>
         <button type="button" class="mod-cta" onClick={() => plugin.startIntake()}>
@@ -317,6 +345,9 @@ export function CockpitPanel({ plugin }: { plugin: ScdbCockpitPlugin }) {
             onClick={() => setTab(entry.id)}
           >
             {entry.label}
+            {entry.id === "migration" && stranded > 0 && (
+              <span class="scdb-tab__count">{stranded}</span>
+            )}
           </button>
         ))}
       </nav>
@@ -325,6 +356,7 @@ export function CockpitPanel({ plugin }: { plugin: ScdbCockpitPlugin }) {
         {tab === "queue" && <QueueBoard views={views} plugin={plugin} />}
         {tab === "holdup" && <HoldupBoard views={views} plugin={plugin} />}
         {tab === "ageing" && <AgeingBoard views={views} plugin={plugin} />}
+        {tab === "migration" && <MigrationBoard plugin={plugin} />}
         {tab === "health" && <HealthBoard views={views} plugin={plugin} />}
       </div>
     </div>
@@ -351,9 +383,17 @@ export class CockpitView extends ItemView {
     return "layout-dashboard";
   }
 
+  private focus: TabFocus = { tab: "queue", token: 0 };
+
   /** Re-render in place. Preact diffs, so tab and scroll state survive. */
   refresh(): void {
-    render(<CockpitPanel plugin={this.plugin} />, this.contentEl);
+    render(<CockpitPanel plugin={this.plugin} focus={this.focus} />, this.contentEl);
+  }
+
+  /** Show one tab — used by the commands that open the cockpit at a board. */
+  focusTab(tab: CockpitTab): void {
+    this.focus = { tab, token: this.focus.token + 1 };
+    this.refresh();
   }
 
   override async onOpen(): Promise<void> {

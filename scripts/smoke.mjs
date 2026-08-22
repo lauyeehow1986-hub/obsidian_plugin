@@ -141,6 +141,8 @@ const checks = [
   ["request index is wired", instance.index?.size === 0],
   ["audit log is wired", typeof instance.audit?.verify === "function"],
   ["writer is wired", typeof instance.writer?.create === "function"],
+  ["bulk migration is wired", typeof instance.writer?.migrate === "function"],
+  ["migration quarantine is reachable", instance.needsMigration({ workflow: "", stage: "x" }) === false],
 ];
 
 let failed = 0;

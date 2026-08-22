@@ -162,8 +162,12 @@ export interface FrontmatterPatch {
   set: Record<string, unknown>;
   /** Keys to remove — used when a holdup clears. */
   unset: string[];
-  /** Appended to `history`; existing entries are never touched. */
-  appendHistory: Record<string, unknown>;
+  /**
+   * Appended to `history`; existing entries are never touched. Omitted when a
+   * change writes no history at all — a workflow migration that only bumps
+   * `workflow_version` did not move the request anywhere.
+   */
+  appendHistory?: Record<string, unknown>;
 }
 
 export interface TransitionEffect {

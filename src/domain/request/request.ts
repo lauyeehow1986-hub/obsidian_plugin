@@ -55,6 +55,15 @@ export interface HistoryEntry {
   to: string;
   by: string;
   blockedOn: string | null;
+  /**
+   * True for a workflow-migration relabel (§5.2) rather than a real move.
+   * A migration renames the occupancy the request is already sitting in, so
+   * `dwell.ts` folds these entries away before measuring anything — renaming a
+   * stage must not reset a request's dwell clock or count as a bounce.
+   */
+  migration: boolean;
+  /** The stage id a migration entry replaced. Null on ordinary entries. */
+  from: string | null;
 }
 
 export interface RequestNote {
@@ -180,7 +189,15 @@ function parseHistory(raw: unknown, problems: string[]): HistoryEntry[] {
       return;
     }
     const blockedOn = str(entry["blocked_on"]);
-    entries.push({ at, to, by: str(entry["by"]), blockedOn: blockedOn === "" ? null : blockedOn });
+    const from = str(entry["from"]);
+    entries.push({
+      at,
+      to,
+      by: str(entry["by"]),
+      blockedOn: blockedOn === "" ? null : blockedOn,
+      migration: entry["migration"] === true,
+      from: from === "" ? null : from,
+    });
   });
 
   // History is read chronologically regardless of how it is written, because

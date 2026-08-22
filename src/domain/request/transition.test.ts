@@ -172,7 +172,8 @@ describe("applyTransition", () => {
       blocked_on: "[[Coordinator B]]",
       blocked_since: "2026-07-28",
     });
-    expect(blocked.patch.appendHistory["blocked_on"]).toBe("[[Coordinator B]]");
+    // A real move always writes history; only a migration may leave it out.
+    expect(blocked.patch.appendHistory).toMatchObject({ blocked_on: "[[Coordinator B]]" });
 
     const cleared = applyTransition({
       ...command,

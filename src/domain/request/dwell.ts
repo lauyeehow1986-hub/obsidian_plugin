@@ -13,7 +13,7 @@
  */
 
 import { DAY_MS } from "../time/dates";
-import type { RequestNote } from "./request";
+import type { HistoryEntry, RequestNote } from "./request";
 import { isBackwardMove, resolveStage, type WorkflowSpec } from "./workflow";
 
 export type SlaState = "no-target" | "on-track" | "at-risk" | "breached";
@@ -88,13 +88,40 @@ function startedAt(request: RequestNote): number | null {
   return request.history[0]?.at ?? null;
 }
 
+/**
+ * Fold migration entries into the occupancy they relabel (§5.2).
+ *
+ * A migration renames the stage a request is *already* in. Treated as an
+ * ordinary history entry it would close the open occupancy and start a fresh
+ * one, which would reset the dwell clock, invent a segment in the median-dwell
+ * statistics, and — when the new stage sits earlier in the spec — count as a
+ * bounce. All three would be lies about the request: nothing happened to it,
+ * we renamed a stage. So the entry rewrites the previous entry's `to` and
+ * contributes no boundary of its own.
+ *
+ * A migration entry with nothing before it is kept as a real entry; there is no
+ * occupancy to relabel, so it is the first one.
+ */
+export function effectiveHistory(history: readonly HistoryEntry[]): HistoryEntry[] {
+  const folded: HistoryEntry[] = [];
+  for (const entry of history) {
+    const previous = folded[folded.length - 1];
+    if (entry.migration && previous !== undefined) {
+      folded[folded.length - 1] = { ...previous, to: entry.to };
+    } else {
+      folded.push(entry);
+    }
+  }
+  return folded;
+}
+
 /** Split the history into stage occupancies. */
 export function stageSegments(
   request: RequestNote,
   spec: WorkflowSpec | null,
   now: number,
 ): StageSegment[] {
-  const history = request.history;
+  const history = effectiveHistory(request.history);
   if (history.length === 0) return [];
 
   const segments: StageSegment[] = [];
@@ -152,7 +179,7 @@ export function requestMetrics(
   const problems: string[] = [];
 
   const segments = stageSegments(request, spec, now);
-  const history = request.history;
+  const history = effectiveHistory(request.history);
 
   if (history.length === 0) {
     problems.push("No history entries, so dwell time cannot be measured.");

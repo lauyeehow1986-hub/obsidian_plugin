@@ -91,6 +91,16 @@
   border-bottom-color: var(--interactive-accent);
 }
 
+.scdb-tab__count {
+  margin-left: 6px;
+  padding: 0 6px;
+  border-radius: 8px;
+  background: var(--scdb-at-risk);
+  color: var(--background-primary);
+  font-size: var(--font-ui-smaller);
+  font-variant-numeric: tabular-nums;
+}
+
 /* ---------------------------------------------------------------- boards -- */
 
 .scdb-columns {
@@ -476,6 +486,33 @@
   color: var(--scdb-at-risk);
 }
 
+/* ------------------------------------------------------------- migration -- */
+
+.scdb-migration__lede {
+  max-width: 70ch;
+  margin: 0 0 var(--scdb-1);
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+
+.scdb-migration__pick {
+  width: 1%;
+  white-space: nowrap;
+}
+
+.scdb-migration .scdb-table select {
+  width: 100%;
+  min-width: 12ch;
+}
+
+.scdb-migration__actions {
+  display: flex;
+  gap: var(--scdb-2);
+  align-items: center;
+  justify-content: flex-end;
+  margin-top: var(--scdb-2);
+}
+
 /* ------------------------------------------------------------ responsive -- */
 
 /* Sidebar width: stack rather than scroll horizontally (§6). */
@@ -491,6 +528,36 @@
 
   .scdb-cockpit {
     padding: var(--scdb-1);
+  }
+
+  /* A five-column worksheet cannot be read in a sidebar. Stack each row into a
+   * labelled block rather than scrolling it sideways (§6). */
+  .scdb-migration .scdb-table,
+  .scdb-migration .scdb-table tbody,
+  .scdb-migration .scdb-table tr,
+  .scdb-migration .scdb-table td {
+    display: block;
+    width: auto;
+  }
+
+  .scdb-migration .scdb-table thead {
+    display: none;
+  }
+
+  .scdb-migration .scdb-table tr {
+    margin-bottom: var(--scdb-1);
+    padding-bottom: var(--scdb-1);
+    border-bottom: 1px solid var(--background-modifier-border);
+  }
+
+  .scdb-migration .scdb-table td {
+    padding: 2px 0;
+    border: none;
+  }
+
+  .scdb-migration__actions {
+    flex-wrap: wrap;
+    justify-content: flex-start;
   }
 }
 

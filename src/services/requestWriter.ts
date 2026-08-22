@@ -21,6 +21,7 @@ import {
   nextRequestId,
   type NewRequestInput,
 } from "../domain/request/create";
+import { applyMigration, type MigrationItem } from "../domain/request/migration";
 import type { RequestNote } from "../domain/request/request";
 import {
   applyTransition,
@@ -39,6 +40,27 @@ export interface WriterContext {
   audit: AuditLog;
   requestsFolder: () => string;
   actor: () => string;
+}
+
+export interface MigrateRequestInput {
+  file: TFile;
+  request: RequestNote;
+  spec: WorkflowSpec;
+  /** The live stage id the note will carry afterwards. */
+  toStage: string;
+  /** Required when this is not the stage the spec proposed. */
+  reason?: string;
+  now?: number;
+}
+
+export interface MigrationOutcome {
+  request: RequestNote;
+  ok: boolean;
+  /** Present when `ok` is false. Plain language, already user-facing. */
+  error?: string;
+  /** Present when `ok` is true. */
+  item?: MigrationItem;
+  remapped?: boolean;
 }
 
 export interface TransitionRequestInput {
@@ -149,6 +171,48 @@ export class RequestWriter {
   }
 
   /**
+   * Migrate stranded requests onto the current workflow version (§5.2).
+   *
+   * Bulk, but not atomic, and deliberately so: each note is logged and written
+   * independently, so one unwritable file does not silently abandon the other
+   * eleven. The caller gets an outcome per note and reports what actually
+   * happened.
+   */
+  async migrate(inputs: readonly MigrateRequestInput[]): Promise<MigrationOutcome[]> {
+    const actor = this.actorOrThrow();
+    const outcomes: MigrationOutcome[] = [];
+
+    for (const input of inputs) {
+      const { request } = input;
+      try {
+        const effect = applyMigration({
+          spec: input.spec,
+          request,
+          toStage: input.toStage,
+          actor,
+          now: input.now ?? Date.now(),
+          ...(input.reason === undefined ? {} : { reason: input.reason }),
+        });
+
+        await this.logThen(effect.audit, request.id || request.uid, async () => {
+          await this.applyPatch(input.file, effect.patch);
+        });
+
+        this.ctx.index.update(input.file);
+        outcomes.push({ request, ok: true, item: effect.item, remapped: effect.remapped });
+      } catch (error) {
+        outcomes.push({
+          request,
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+
+    return outcomes;
+  }
+
+  /**
    * Merge a patch into frontmatter without disturbing anything else in it.
    *
    * One thing to watch on a real vault: `processFrontMatter` re-serialises the
@@ -163,8 +227,10 @@ export class RequestWriter {
       Object.assign(frontmatter, patch.set);
       for (const key of patch.unset) delete frontmatter[key];
 
-      const history: unknown = frontmatter["history"];
-      frontmatter["history"] = [...(Array.isArray(history) ? history : []), patch.appendHistory];
+      if (patch.appendHistory !== undefined) {
+        const history: unknown = frontmatter["history"];
+        frontmatter["history"] = [...(Array.isArray(history) ? history : []), patch.appendHistory];
+      }
     });
   }
 }

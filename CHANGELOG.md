@@ -53,6 +53,21 @@ Phase A1: request tracking. The domain layer — pure, Obsidian-free, unit-teste
 - The smoke test now runs `onload` against a stub App, so wiring errors are
   caught before a build travels.
 
+### Added — the migration view
+- **Migration board** (§5.2), completing A1. Any request whose
+  `workflow_version` is behind its spec, or whose stage the spec no longer
+  lists, is quarantined from stage actions and listed here: old stage →
+  proposed new stage, every proposal editable, applied in bulk, nothing written
+  until Apply. `SCDB: Migrate requests to the current workflow version` opens
+  the cockpit on it, and a stranded request carries a "migrate" chip on every
+  board so it is visible where the work happens.
+- A migration entry is written to `history` marked `migration: true`, and
+  `schema-migration` to the audit ledger naming both versions and the mapping.
+- Two further synthetic fixtures: one stranded by a stage rename, one sitting
+  in a stage the spec dropped without a mapping. The test-vault spec is now v2
+  with a `retired:` entry, so the board has something real to show.
+- 24 further tests; 231 in total.
+
 ### Changed
 - `minAppVersion` raised to 1.6.0: `Vault.process` is used for append-only
   writes and arrived in that release. Keeping it honest matters more than
@@ -72,8 +87,21 @@ Phase A1: request tracking. The domain layer — pure, Obsidian-free, unit-teste
   field never passes.
 - **A request behind the workflow spec version is quarantined** from stage
   changes until it is migrated.
+- **Migration never silently remaps.** The spec proposes a target only when the
+  stage id is still live or `retired:` maps it. Any other target — including
+  every choice for a stage the spec dropped — requires a typed reason, which is
+  written to the ledger against each request in the batch.
+- **Migration does not evaluate governance gates**, deliberately: a gate guards
+  entry to a stage as a governance decision, while a migration relabels a stage
+  the request is already in. Running gates would strand a request permanently
+  whenever a gate was added after it arrived.
+- **A note recording a spec version newer than the installed one is never
+  rewritten.** It is listed, with the reason, and left alone.
 
 ### Notes
+- A migration relabels the occupancy a request is already in rather than
+  starting a new one, so renaming a stage does not reset a dwell clock, invent
+  a segment in the median-dwell statistics, or register as a bounce.
 - SLA targets are counted in **calendar days**. Whether the institutional eData
   SLAs are working days is an open question (CLAUDE.md §11); `daysBetween` is
   the single place to change it.

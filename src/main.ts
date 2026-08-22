@@ -2,17 +2,31 @@ import { Notice, Plugin, TFile, debounce, type WorkspaceLeaf } from "obsidian";
 import { RequestIndex } from "./data/requestIndex.js";
 import { WorkflowStore } from "./data/workflowStore.js";
 import { requestMetrics } from "./domain/request/dwell.js";
+import { isStranded } from "./domain/request/migration.js";
 import type { RequestNote } from "./domain/request/request.js";
 import { TransitionRefused } from "./domain/request/transition.js";
+import type { WorkflowSpec } from "./domain/request/workflow.js";
 import { migrateSettings } from "./domain/settings/migrate.js";
 import { defaultSettings, type ScdbSettings } from "./domain/settings/schema.js";
 import { AuditLog } from "./services/auditLog.js";
-import { RequestWriter, reportError } from "./services/requestWriter.js";
+import {
+  RequestWriter,
+  reportError,
+  type MigrateRequestInput,
+} from "./services/requestWriter.js";
 import { ScdbSettingsTab } from "./settings/SettingsTab.js";
-import { COCKPIT_VIEW_TYPE, CockpitView } from "./ui/CockpitView.js";
+import { COCKPIT_VIEW_TYPE, CockpitView, type CockpitTab } from "./ui/CockpitView.js";
 import { IntakeModal } from "./ui/IntakeModal.js";
 import { RequestDetailModal } from "./ui/RequestDetailModal.js";
 import { TransitionModal } from "./ui/TransitionModal.js";
+
+/** One row of a bulk migration, as the migration board hands it over. */
+export interface MigrationRun {
+  request: RequestNote;
+  spec: WorkflowSpec;
+  toStage: string;
+  reason?: string;
+}
 
 export default class ScdbCockpitPlugin extends Plugin {
   // `Plugin` declares `settings?: unknown`; we narrow it to our schema.
@@ -87,6 +101,12 @@ export default class ScdbCockpitPlugin extends Plugin {
         if (entry) this.moveRequest(entry.request);
         return true;
       },
+    });
+
+    this.addCommand({
+      id: "migrate-requests",
+      name: "Migrate requests to the current workflow version",
+      callback: () => void this.activateCockpit("migration"),
     });
 
     this.addCommand({
@@ -251,6 +271,57 @@ export default class ScdbCockpitPlugin extends Plugin {
     }).open();
   }
 
+  /**
+   * True when a request is quarantined from stage actions by §5.2. The queue
+   * boards flag these so a stranded note is visible where the work happens,
+   * not only on the migration board.
+   */
+  needsMigration(request: RequestNote): boolean {
+    const spec = this.workflows.forRequest(request.workflow);
+    return spec !== null && isStranded(request, spec);
+  }
+
+  /** Apply a batch from the migration board and report what actually happened. */
+  async migrateRequests(runs: readonly MigrationRun[]): Promise<void> {
+    const inputs: MigrateRequestInput[] = [];
+    const missing: string[] = [];
+
+    for (const run of runs) {
+      const entry = this.index.byUid(run.request.uid);
+      if (entry === null) {
+        missing.push(run.request.id || run.request.uid);
+        continue;
+      }
+      inputs.push({
+        file: entry.file,
+        request: run.request,
+        spec: run.spec,
+        toStage: run.toStage,
+        ...(run.reason === undefined ? {} : { reason: run.reason }),
+      });
+    }
+
+    let outcomes;
+    try {
+      outcomes = await this.writer.migrate(inputs);
+    } catch (error) {
+      // Thrown before any note was touched — a missing actor, for instance.
+      reportError(error, "could not migrate these requests.");
+      return;
+    }
+
+    this.refreshViews();
+
+    const migrated = outcomes.filter((o) => o.ok);
+    const failed = outcomes.filter((o) => !o.ok);
+    const parts = [`migrated ${migrated.length} of ${outcomes.length}`];
+    if (missing.length > 0) parts.push(`${missing.length} no longer in the index`);
+    if (failed.length > 0) {
+      parts.push(`${failed.length} refused: ${failed[0]!.error ?? "no reason given"}`);
+    }
+    new Notice(`SCDB: ${parts.join("; ")}.`, failed.length > 0 ? 0 : 6000);
+  }
+
   async verifyLedger(): Promise<void> {
     try {
       const result = await this.audit.verify();
@@ -260,18 +331,21 @@ export default class ScdbCockpitPlugin extends Plugin {
     }
   }
 
-  async activateCockpit(): Promise<void> {
+  async activateCockpit(tab?: CockpitTab): Promise<void> {
     const { workspace } = this.app;
     const existing = workspace.getLeavesOfType(COCKPIT_VIEW_TYPE);
 
     if (existing.length > 0) {
-      await workspace.revealLeaf(existing[0]!);
+      const leaf = existing[0]!;
+      await workspace.revealLeaf(leaf);
+      if (tab && leaf.view instanceof CockpitView) leaf.view.focusTab(tab);
       return;
     }
 
     const leaf = workspace.getLeaf("tab");
     await leaf.setViewState({ type: COCKPIT_VIEW_TYPE, active: true });
     await workspace.revealLeaf(leaf);
+    if (tab && leaf.view instanceof CockpitView) leaf.view.focusTab(tab);
   }
 
   async loadSettings(): Promise<void> {
