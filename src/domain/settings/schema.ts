@@ -5,7 +5,7 @@
  * An upgrade must never lose settings (CLAUDE.md §10).
  */
 
-export const CURRENT_SETTINGS_VERSION = 2;
+export const CURRENT_SETTINGS_VERSION = 3;
 
 /** The three hats. Mode is the organising metaphor, not a cosmetic filter (§7 A3). */
 export const MODES = ["biostat", "hod", "research-core"] as const;
@@ -51,8 +51,37 @@ export interface ScdbSettings {
    * cannot be turned off is a filter that hides an overdue request from you.
    */
   hatFilter: "mode" | "all";
+  backup: BackupConfig;
   /** Unrecognised keys are preserved verbatim — see rule 8, never destroy data. */
   [extra: string]: unknown;
+}
+
+/**
+ * Encrypted snapshots (§7 A4).
+ *
+ * `destination` is empty until the user sets it, and every backup command
+ * refuses until then. Guessing a folder would mean the plugin writing the whole
+ * vault to a path nobody chose — the opposite of rule 3's "nothing is enabled
+ * on first install", applied to the filesystem rather than the network.
+ *
+ * The passphrase is **not here and never will be**. It is asked for on every
+ * operation and held only for the length of one call.
+ */
+export interface BackupConfig {
+  /** Absolute path to a folder OUTSIDE the vault. Empty means not configured. */
+  destination: string;
+  /** How many snapshots to keep. Only files this plugin named are ever removed. */
+  keep: number;
+  /** Days before the status bar starts saying the backup is old. */
+  intervalDays: number;
+  /** ISO 8601 UTC of the last successful snapshot; empty means never. */
+  lastAt: string;
+  /** File name of the last snapshot, for the diagnostics report. No path. */
+  lastName: string;
+}
+
+export function defaultBackup(): BackupConfig {
+  return { destination: "", keep: 7, intervalDays: 7, lastAt: "", lastName: "" };
 }
 
 export const DEFAULT_FOLDERS: Record<FolderKey, string> = {
@@ -87,6 +116,7 @@ export function defaultSettings(): ScdbSettings {
     folders: { ...DEFAULT_FOLDERS },
     bases: "auto",
     hatFilter: "mode",
+    backup: defaultBackup(),
   };
 }
 

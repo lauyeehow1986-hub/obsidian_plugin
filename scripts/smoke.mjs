@@ -51,6 +51,15 @@ function fakeEl() {
     },
     addEventListener() {},
     setAttribute() {},
+    // The backup nag hides itself when there is nothing to nag about, so a
+    // status-bar stand-in has to answer these or `onload` throws (§7 A4).
+    hide() {
+      el.hidden = true;
+    },
+    show() {
+      el.hidden = false;
+    },
+    hidden: false,
   };
   return el;
 }
@@ -218,7 +227,7 @@ const checks = [
   ["extends Obsidian's Plugin", instance instanceof Plugin],
   ["implements onload", typeof instance.onload === "function"],
   ["settings default to a known mode", instance.settings.mode === "hod"],
-  ["settings carry a schema version", instance.settings.schemaVersion === 2],
+  ["settings carry a schema version", instance.settings.schemaVersion === 3],
   ["the hat filter defaults to the mode you are wearing", instance.settings.hatFilter === "mode"],
   [
     // Mode is the organising metaphor (§7 A3): every hat needs a command, or
@@ -251,6 +260,39 @@ const checks = [
     instance.exporter?.plannedPath("Queue analytics", "html").startsWith("95 Exports/"),
   ],
   ["folder map is populated", instance.settings.folders.requests === "10 Requests"],
+  [
+    // §7 A4. Three commands, because verify and restore are separate acts:
+    // one proves the file, the other changes the vault.
+    "backup, verify and restore each have a command",
+    ["backup-now", "verify-backup", "restore-backup"].every((id) => commands.includes(id)),
+  ],
+  [
+    // Rule 3's principle applied to the filesystem: nothing is configured on
+    // install, so nothing is written to a folder nobody chose.
+    "no backup destination on a fresh install",
+    instance.settings.backup.destination === "" && instance.settings.backup.keep === 7,
+  ],
+  [
+    "the backup commands refuse until a destination is set",
+    (await instance.backup.destinationProblem())?.includes("No backup destination is set") === true,
+  ],
+  [
+    // A relative path would resolve against whatever the process CWD happens
+    // to be — which on Windows is wherever Obsidian was launched from.
+    "a relative destination is refused",
+    await (async () => {
+      instance.settings.backup.destination = "backups";
+      const problem = await instance.backup.destinationProblem();
+      instance.settings.backup.destination = "";
+      return typeof problem === "string" && problem.includes("full path");
+    })(),
+  ],
+  [
+    // Node builtins must stay external or the bundle stops loading in Obsidian
+    // and the 1.5 MB budget goes with it (§3).
+    "node builtins are required, not bundled",
+    /require\("node:(crypto|zlib|fs\/promises)"\)/.test(readFileSync(bundle, "utf8")),
+  ],
   ["Bases probe does not throw", typeof instance.basesAvailable === "boolean"],
   ["Bases absent without the API", instance.basesAvailable === false],
   ["onload completes", loadError === null || (console.error(loadError), false)],

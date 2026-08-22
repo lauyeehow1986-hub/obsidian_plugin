@@ -12,7 +12,8 @@
 
 .scdb-root,
 .scdb-modal,
-.scdb-mode {
+.scdb-mode,
+.scdb-backupnag {
   --scdb-overdue: var(--text-error, #b3261e);
   --scdb-at-risk: var(--text-warning, #8a6100);
   --scdb-on-track: var(--text-success, #1b6b2f);
@@ -1101,6 +1102,97 @@
   .scdb-explore__toolbar > * {
     flex: 1 1 auto;
   }
+}
+
+/* --- encrypted backup (§7 A4) ---------------------------------------------
+ *
+ * The status-bar nag borrows the mode HUD's button reset wholesale: a status
+ * bar segment is not a form control, and Obsidian's default button styling
+ * gives it a border and a fixed height that look wrong down there.
+ */
+
+.scdb-backupnag__button {
+  display: inline-flex;
+  gap: 6px;
+  align-items: baseline;
+  padding: 0 6px;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  box-shadow: none;
+  /* At-risk rather than overdue: an old backup is a thing to do today, not a
+   * governance breach, and the palette should not cry wolf. Colour is never
+   * alone here — the glyph and the word carry it (§6). */
+  color: var(--scdb-at-risk);
+  font-size: var(--font-ui-smaller);
+  line-height: inherit;
+  height: auto;
+  cursor: pointer;
+}
+
+.scdb-backupnag__button:hover {
+  background: var(--background-modifier-hover);
+}
+
+.scdb-backupnag__glyph {
+  font-size: var(--font-ui-small);
+}
+
+/* The passphrase dialog's one irreversible fact, given the weight it deserves. */
+.scdb-modal__warning {
+  margin: 0 0 var(--scdb-2);
+  padding: var(--scdb-1);
+  border-left: 3px solid var(--scdb-at-risk);
+  background: var(--background-secondary);
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+}
+
+.scdb-modal__error {
+  margin: var(--scdb-1) 0 0;
+  color: var(--scdb-overdue);
+  font-size: var(--font-ui-small);
+}
+
+/* `.scdb-field input[type="text"]` does not reach a password field. */
+.scdb-field__input {
+  width: 100%;
+}
+
+.scdb-field label {
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+  font-weight: 500;
+}
+
+.scdb-snapshots {
+  max-height: 40vh;
+  overflow-y: auto;
+}
+
+.scdb-snapshots li {
+  list-style: none;
+  margin-left: 0;
+}
+
+/* Two lines in one button, so the reset in the control block above matters. */
+.scdb-snapshot {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  align-items: flex-start;
+  width: 100%;
+  text-align: left;
+}
+
+.scdb-snapshot__name {
+  font-family: var(--font-monospace);
+  font-size: var(--font-ui-small);
+}
+
+.scdb-snapshot__meta {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
 }
 
 @media (prefers-reduced-motion: reduce) {

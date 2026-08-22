@@ -31,7 +31,18 @@ const context = await esbuild.context({
   target: "es2022",
   platform: "browser",
   // Anything Obsidian or Electron already provides must not be bundled.
-  external: ["obsidian", "electron", "@codemirror/*", "@lezer/*", ...builtins],
+  // `builtin-modules` lists bare names ("fs/promises"); the source imports the
+  // prefixed form ("node:fs/promises"), which esbuild matches literally, so
+  // both spellings have to be here or the backup service pulls Node into the
+  // bundle and the build fails.
+  external: [
+    "obsidian",
+    "electron",
+    "@codemirror/*",
+    "@lezer/*",
+    ...builtins,
+    ...builtins.map((name) => `node:${name}`),
+  ],
   jsx: "automatic",
   jsxImportSource: "preact",
   sourcemap: prod ? false : "inline",

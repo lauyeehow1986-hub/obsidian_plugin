@@ -5,6 +5,46 @@ clearly marked entry (CLAUDE.md §10).
 
 ## Unreleased
 
+### Added — A4, encrypted backup, restore and verification
+- **Encrypted vault snapshots.** One AES-256-GCM file per snapshot, key derived
+  with scrypt (N=32768, r=8), gzip inside the encryption, written to a folder
+  the user configures outside the vault. No new dependency: Node's built-in
+  `crypto` and `zlib` are already in Electron and marked external, so the
+  container format is ~60 lines of our own rather than an 8 KB zip writer. The
+  usual "any tool can open a zip" argument does not apply to a file that is
+  sealed anyway.
+- The archive header is **plaintext but authenticated** as GCM additional data,
+  so `Verify` can report the date, file count and plugin version before asking
+  for a passphrase, while editing it still fails the tag. Nothing identifying
+  the vault — no paths, no note names, not the vault's own name — is outside
+  the encryption.
+- **The passphrase is never stored**, in settings or anywhere else, and the
+  dialog says in plain words that losing it loses the archive.
+- **Verify a backup snapshot**: decrypts, authenticates, and re-hashes every
+  file against the manifest recorded when it was written. Writes nothing.
+- **Restore from a backup snapshot**: creates missing files only, never
+  overwrites, and refuses any path in the archive that escapes the vault — a
+  snapshot travels, so by the time it is read it is untrusted input.
+- **Retention** keeps the newest N. Only files matching the exact name this
+  plugin generates can ever be deleted; everything else in the folder is counted
+  and reported as untouched, which matters when the destination is Downloads.
+  The confirmation names every snapshot that will be deleted, before writing.
+- Status-bar nag once a destination is set and the last snapshot is older than
+  the configured interval. Never having taken one counts as stale.
+- Settings schema **v3** with a migration: adds the backup block, repaired field
+  by field so a destination typed once is never lost to a bad number elsewhere.
+
+### Rules and boundaries
+- `services/backup.ts` is **the only module that touches `fs` or writes outside
+  the vault**, and it is documented as the deliberate, confined exception to
+  rule 8 that A4 requires. Vault reads and restore writes still go through
+  Obsidian's APIs.
+- A snapshot is logged to the audit ledger as an `export` (§5.6) — which is
+  exactly what it is — rather than inventing a ledger action the vault contract
+  does not define.
+- `.obsidian/` is deliberately **not** in a snapshot: configuration is
+  reproducible from a plugin zip, the notes are not.
+
 Phase A1: request tracking. The domain layer — pure, Obsidian-free, unit-tested.
 
 ### Added

@@ -129,4 +129,45 @@ describe("migrateSettings", () => {
       expect(result.settings.mode).toBe("some-future-mode");
     });
   });
+
+  describe("backup settings (v3)", () => {
+    it("adds them to a v2 vault without touching anything else", () => {
+      const result = migrateSettings({ schemaVersion: 2, actor: "yh", hatFilter: "all" });
+      expect(result.settings.backup).toEqual({
+        destination: "",
+        keep: 7,
+        intervalDays: 7,
+        lastAt: "",
+        lastName: "",
+      });
+      expect(result.settings.actor).toBe("yh");
+      expect(result.settings.hatFilter).toBe("all");
+      expect(result.notes.join(" ")).toMatch(/no destination is set/i);
+    });
+
+    it("keeps a destination the user typed, whatever else is wrong with the block", () => {
+      // Replacing the whole block because one number is bad would silently
+      // forget a path set once months ago.
+      const result = migrateSettings({
+        schemaVersion: 3,
+        backup: { destination: "D:/snapshots", keep: "lots", intervalDays: 0 },
+      });
+      expect(result.settings.backup.destination).toBe("D:/snapshots");
+      expect(result.settings.backup.keep).toBe(7);
+      expect(result.settings.backup.intervalDays).toBe(1);
+    });
+
+    it("clamps rather than resets, so a small number stays small", () => {
+      const result = migrateSettings({ schemaVersion: 3, backup: { keep: 2 } });
+      expect(result.settings.backup.keep).toBe(2);
+      expect(result.settings.backup.destination).toBe("");
+    });
+
+    it("never invents a destination", () => {
+      // Guessing a folder would mean writing the whole vault somewhere nobody
+      // chose. The commands refuse until it is set.
+      expect(migrateSettings(null).settings.backup.destination).toBe("");
+      expect(migrateSettings({ schemaVersion: 3, backup: 42 }).settings.backup.destination).toBe("");
+    });
+  });
 });

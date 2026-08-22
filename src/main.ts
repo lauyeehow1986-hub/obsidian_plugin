@@ -33,10 +33,13 @@ import {
 } from "./domain/report/boards.js";
 import { renderDocument } from "./domain/report/document.js";
 import { toVaultMinute } from "./domain/time/dates.js";
+import { backupAge, formatBytes } from "./domain/backup/snapshots.js";
+import { describeRestore } from "./domain/backup/restore.js";
 import { MODES, defaultSettings, type Mode, type ScdbSettings } from "./domain/settings/schema.js";
 import type { FieldDef, Query, Row } from "./domain/query/model.js";
 import type { SavedView } from "./domain/query/savedView.js";
 import { AuditLog } from "./services/auditLog.js";
+import { BackupService } from "./services/backup.js";
 import { Exporter, type ExportRequest } from "./services/exporter.js";
 import {
   RequestWriter,
@@ -45,6 +48,7 @@ import {
 } from "./services/requestWriter.js";
 import { ScdbSettingsTab } from "./settings/SettingsTab.js";
 import { COCKPIT_VIEW_TYPE, CockpitView, type CockpitTab } from "./ui/CockpitView.js";
+import { askPassphrase, pickSnapshot } from "./ui/BackupModals.js";
 import { confirm } from "./ui/ConfirmModal.js";
 import { IntakeModal } from "./ui/IntakeModal.js";
 import { RequestDetailModal } from "./ui/RequestDetailModal.js";
@@ -73,9 +77,12 @@ export default class ScdbCockpitPlugin extends Plugin {
   views!: SavedViewStore;
   exporter!: Exporter;
   basesFiles!: BasesFiles;
+  backup!: BackupService;
 
   /** The mode HUD (§7 A3). Null until `onload` has run. */
   private statusBar: HTMLElement | null = null;
+  /** The backup nag (§7 A4). A separate segment so it can be absent entirely. */
+  private backupBar: HTMLElement | null = null;
 
   /**
    * Core Bases (Obsidian >= 1.10) is a progressive enhancement — never a
@@ -109,6 +116,14 @@ export default class ScdbCockpitPlugin extends Plugin {
       actor: () => this.settings.actor,
     });
 
+    this.backup = new BackupService({
+      app: this.app,
+      audit: this.audit,
+      actor: () => this.settings.actor,
+      settings: () => this.settings.backup,
+      pluginVersion: () => this.manifest.version,
+    });
+
     this.basesFiles = new BasesFiles(
       this.app,
       this.notes,
@@ -125,6 +140,7 @@ export default class ScdbCockpitPlugin extends Plugin {
     this.registerCommands();
     this.addRibbonIcon("layout-dashboard", "SCDB Cockpit", () => void this.activateCockpit());
     this.statusBar = this.addStatusBarItem();
+    this.backupBar = this.addStatusBarItem();
     this.renderStatusBar();
 
     // The metadata cache is not populated until layout is ready; indexing
@@ -274,6 +290,24 @@ export default class ScdbCockpitPlugin extends Plugin {
       callback: () => void this.verifyLedger(),
     });
 
+    this.addCommand({
+      id: "backup-now",
+      name: "Take an encrypted backup snapshot",
+      callback: () => void this.takeSnapshot(),
+    });
+
+    this.addCommand({
+      id: "verify-backup",
+      name: "Verify a backup snapshot",
+      callback: () => void this.verifySnapshot(),
+    });
+
+    this.addCommand({
+      id: "restore-backup",
+      name: "Restore from a backup snapshot",
+      callback: () => void this.restoreSnapshot(),
+    });
+
     // CLAUDE.md §7 A3 asks for Ctrl+1/2/3. Obsidian core already binds Ctrl+1..8
     // to "Go to tab #N" — verified in 1.12.7, where the core binding wins and
     // ours never fires — so the default is one modifier along. A shortcut that
@@ -403,6 +437,51 @@ export default class ScdbCockpitPlugin extends Plugin {
       button.createSpan({ cls: "scdb-mode__all", text: "all" });
     }
     button.addEventListener("click", () => void this.setMode(nextMode(this.settings.mode)));
+    this.renderBackupBar();
+  }
+
+  /**
+   * The backup nag (§7 A4).
+   *
+   * Shown only once a destination has been configured. Nagging about a feature
+   * nobody has switched on is noise, and the place to notice that backups are
+   * off entirely is the diagnostics report, which says so in as many words.
+   * Once it *is* on, "never" counts as stale — that is the state A4 exists for.
+   */
+  private renderBackupBar(): void {
+    const bar = this.backupBar;
+    if (bar === null) return;
+    bar.empty();
+
+    const config = this.settings.backup;
+    if (config.destination.trim() === "") {
+      bar.hide();
+      return;
+    }
+
+    const last = config.lastAt === "" ? null : Date.parse(config.lastAt);
+    const age = backupAge(
+      last === null || Number.isNaN(last) ? null : last,
+      config.intervalDays,
+      Date.now(),
+    );
+    if (!age.stale) {
+      bar.hide();
+      return;
+    }
+
+    bar.show();
+    bar.addClass("scdb-backupnag");
+    const button = bar.createEl("button", {
+      cls: "scdb-backupnag__button",
+      attr: { type: "button", "aria-label": `${age.text} Click to take one now.` },
+    });
+    // Glyph plus words, never colour alone (§6).
+    button.createSpan({ cls: "scdb-backupnag__glyph", text: "⛨" });
+    button.createSpan({
+      text: age.days === null ? "No backup" : `Backup ${age.days}d old`,
+    });
+    button.addEventListener("click", () => void this.takeSnapshot());
   }
 
   async setMode(mode: Mode): Promise<void> {
@@ -731,6 +810,206 @@ export default class ScdbCockpitPlugin extends Plugin {
       subject: `BOARD-${board}`,
       rows: boardRowCount(board, context),
     });
+  }
+
+  // --- encrypted snapshots (§7 A4) --------------------------------------------
+
+  /**
+   * Take a snapshot, after confirming what goes in and what comes out.
+   *
+   * The confirmation is not a formality. It names the destination folder, the
+   * file about to be written, how many files and how much data are going into
+   * it, and — the part that matters — every older snapshot the retention limit
+   * is about to delete, by name. Deleting a backup is the most consequential
+   * thing this plugin does to a file it cannot recreate.
+   */
+  async takeSnapshot(): Promise<void> {
+    const problem = await this.backup.destinationProblem();
+    if (problem !== null) {
+      new Notice(`SCDB: ${problem}`, 12000);
+      return;
+    }
+
+    const plan = await this.backup.plan();
+    if (plan.files === 0) {
+      new Notice("SCDB: this vault has no files to back up.", 6000);
+      return;
+    }
+
+    const lines = [
+      `Write an encrypted snapshot of ${plan.files} file${plan.files === 1 ? "" : "s"} (${formatBytes(plan.bytes)})?`,
+      "",
+      `• Into ${plan.destination}`,
+      `• As ${plan.name}`,
+      // Said every time, because it is the line people forget: what is NOT in
+      // the file matters as much as what is.
+      "• Notes and attachments only — Obsidian settings, themes and plugins are not included",
+    ];
+    if (plan.retention.remove.length > 0) {
+      lines.push("");
+      lines.push(`Keeping the newest ${this.settings.backup.keep}, so these will be deleted:`);
+      for (const name of plan.retention.remove) lines.push(`• ${name}`);
+    }
+    if (plan.retention.foreign.length > 0) {
+      const n = plan.retention.foreign.length;
+      lines.push("");
+      lines.push(
+        `${n} other file${n === 1 ? "" : "s"} in that folder ${n === 1 ? "is" : "are"} not a snapshot and will not be touched.`,
+      );
+    }
+
+    if (!(await confirm(this.app, lines.join("\n"), "Take snapshot"))) return;
+
+    const passphrase = await askPassphrase(this.app, {
+      title: "Passphrase for this snapshot",
+      lede: `Encrypts ${plan.name} with AES-256-GCM. Each snapshot carries its own salt, so a passphrase you change later still opens the older files it was used for.`,
+      confirm: true,
+      actionLabel: "Encrypt and write",
+    });
+    if (passphrase === null) return;
+
+    const working = new Notice("SCDB: writing snapshot…", 0);
+    try {
+      const result = await this.backup.create(passphrase);
+      this.settings.backup.lastAt = new Date(result.at).toISOString();
+      this.settings.backup.lastName = result.name;
+      await this.saveSettings();
+
+      const removed =
+        result.removed.length > 0
+          ? ` ${result.removed.length} older snapshot${result.removed.length === 1 ? "" : "s"} removed.`
+          : "";
+      new Notice(
+        `SCDB: wrote ${result.name} — ${result.files} files, ${formatBytes(result.bytes)}.${removed} ` +
+          "Run “Verify a backup snapshot” now: a backup nobody has ever opened is not a backup.",
+        0,
+      );
+    } catch (error) {
+      reportError(error, "could not write the snapshot.");
+    } finally {
+      working.hide();
+    }
+  }
+
+  /** Pick a snapshot from the destination, or say why there is nothing to pick. */
+  private async chooseSnapshot(lede: string): Promise<string | null> {
+    const problem = await this.backup.destinationProblem();
+    if (problem !== null) {
+      new Notice(`SCDB: ${problem}`, 12000);
+      return null;
+    }
+    const snapshots = await this.backup.list();
+    if (snapshots.length === 0) {
+      new Notice(`SCDB: no snapshots in ${this.settings.backup.destination}. Take one first.`, 8000);
+      return null;
+    }
+    return pickSnapshot(this.app, snapshots, lede);
+  }
+
+  /**
+   * Decrypt a snapshot and check every file against its recorded hash.
+   *
+   * Writes nothing. "A backup that has never been restored is not a backup"
+   * (§7 A4) — this is the half of that you can run every week without a spare
+   * vault to restore into.
+   */
+  async verifySnapshot(): Promise<void> {
+    const name = await this.chooseSnapshot(
+      "Decrypts it and checks every file. Nothing is written.",
+    );
+    if (name === null) return;
+
+    const passphrase = await askPassphrase(this.app, {
+      title: `Passphrase for ${name}`,
+      lede: "The passphrase you set when this snapshot was written.",
+      confirm: false,
+      actionLabel: "Verify",
+    });
+    if (passphrase === null) return;
+
+    const working = new Notice("SCDB: verifying snapshot…", 0);
+    try {
+      const result = await this.backup.verify(name, passphrase);
+      const taken = new Date(result.header.created).toLocaleString();
+      if (result.faults.length === 0) {
+        new Notice(
+          `SCDB: ${name} verified. ${result.files} files, ${formatBytes(result.bytes)}, taken ${taken} by plugin v${result.header.plugin}. Every file matches the hash recorded when it was written.`,
+          0,
+        );
+      } else {
+        new Notice(
+          `SCDB: ${name} decrypted, but ${result.faults.length} file${result.faults.length === 1 ? " does" : "s do"} not match the hash recorded when it was written. First: ${result.faults[0]!.path}. Take a fresh snapshot, and keep this one until you have.`,
+          0,
+        );
+      }
+    } catch (error) {
+      reportError(error, "could not verify the snapshot.");
+    } finally {
+      working.hide();
+    }
+  }
+
+  /**
+   * Restore missing files from a snapshot.
+   *
+   * Creates only, never overwrites (see `domain/backup/restore.ts`). Into an
+   * empty vault that restores everything; into this one it fills the gaps and
+   * reports what it left alone.
+   */
+  async restoreSnapshot(): Promise<void> {
+    const name = await this.chooseSnapshot(
+      "Files missing from this vault are created. Files already here are never overwritten.",
+    );
+    if (name === null) return;
+
+    const passphrase = await askPassphrase(this.app, {
+      title: `Passphrase for ${name}`,
+      lede: "Needed to read the snapshot. Nothing is written until you have seen what it contains.",
+      confirm: false,
+      actionLabel: "Read snapshot",
+    });
+    if (passphrase === null) return;
+
+    const working = new Notice("SCDB: reading snapshot…", 0);
+    let plan;
+    try {
+      plan = await this.backup.planRestoreFrom(name, passphrase);
+    } catch (error) {
+      reportError(error, "could not read the snapshot.");
+      return;
+    } finally {
+      working.hide();
+    }
+
+    if (plan.create.length === 0) {
+      new Notice(
+        `SCDB: nothing to restore from ${name} — all ${plan.existing.length} of its files are already in this vault.`,
+        8000,
+      );
+      return;
+    }
+
+    const lines = [
+      `Restore from ${name}, taken ${new Date(plan.manifest.created).toLocaleString()} from a vault named "${plan.manifest.vault}"?`,
+      "",
+      ...describeRestore(plan).map((line) => `• ${line}`),
+    ];
+    if (!(await confirm(this.app, lines.join("\n"), "Restore"))) return;
+
+    try {
+      const result = await this.backup.applyRestore(plan);
+      await this.reindex();
+      const failed =
+        result.failed.length > 0
+          ? ` ${result.failed.length} could not be written; the first was ${result.failed[0]!}.`
+          : "";
+      new Notice(
+        `SCDB: restored ${result.created} file${result.created === 1 ? "" : "s"}.${failed}`,
+        0,
+      );
+    } catch (error) {
+      reportError(error, "could not finish the restore.");
+    }
   }
 
   async verifyLedger(): Promise<void> {
