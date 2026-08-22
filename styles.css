@@ -1,0 +1,49 @@
+/*
+ * All colour and spacing comes from Obsidian's theme variables so the plugin
+ * looks native in light, dark and whatever theme the work laptop runs
+ * (CLAUDE.md §6). No hardcoded hex values belong in this file.
+ */
+
+.scdb-cockpit {
+  padding: 16px;
+  max-width: 720px;
+}
+
+.scdb-cockpit__title {
+  margin: 0 0 4px;
+  font-size: var(--font-ui-large);
+  color: var(--text-normal);
+}
+
+.scdb-cockpit__muted {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+
+.scdb-cockpit__facts {
+  display: grid;
+  grid-template-columns: minmax(120px, max-content) 1fr;
+  gap: 8px 16px;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+.scdb-cockpit__facts dt {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+
+.scdb-cockpit__facts dd {
+  margin: 0;
+  color: var(--text-normal);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Sidebar width: stack rather than scroll horizontally (§6). */
+@container (max-width: 400px) {
+  .scdb-cockpit__facts {
+    grid-template-columns: 1fr;
+    gap: 2px 0;
+  }
+}

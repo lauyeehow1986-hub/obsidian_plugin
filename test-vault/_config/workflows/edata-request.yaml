@@ -1,0 +1,45 @@
+# PLACEHOLDER workflow (CLAUDE.md §5.2).
+#
+# These stage names are invented. Replace them with the real eData stages,
+# owning parties, gates and target durations before real use. The engine is
+# stage-agnostic by design, so swapping them is a config edit plus a migration
+# pass — not a code change.
+
+id: edata-request
+version: 1
+label: eData request
+
+stages:
+  - { id: intake,            label: Intake,             owner: scdb,      sla_days: 2 }
+  - { id: triage,            label: SCDB triage,        owner: scdb,      sla_days: 3 }
+  - { id: awaiting-approval, label: Awaiting approval,  owner: approver,  sla_days: 14 }
+  - { id: approved,          label: Approved,           owner: scdb,      sla_days: 1 }
+  - { id: extraction,        label: Extraction,         owner: scdb,      sla_days: 10 }
+  - { id: qc,                label: QC,                 owner: scdb,      sla_days: 3 }
+  - { id: delivered,         label: Delivered,          owner: scdb,      terminal: true }
+  - { id: on-hold,           label: On hold,            owner: scdb }
+  - { id: withdrawn,         label: Withdrawn,          owner: requester, terminal: true }
+
+transitions:
+  - { from: [intake],            to: [triage, withdrawn] }
+  - { from: [triage],            to: [awaiting-approval, on-hold, withdrawn] }
+  - { from: [awaiting-approval], to: [approved, on-hold, withdrawn] }
+  - { from: [approved],          to: [extraction, on-hold] }
+  - { from: [extraction],        to: [qc, on-hold] }
+  - { from: [qc],                to: [delivered, extraction] }
+  - { from: [on-hold],           to: [triage, awaiting-approval, extraction, withdrawn] }
+
+gates:
+  - to: approved
+    require: [governance.irb_ref, governance.irb_expiry_in_future]
+    message: Cannot approve without a current IRB/DSRB reference.
+  - to: extraction
+    require_any: ["governance.identifiers == none", "governance.dua.status == signed"]
+    message: Identifiable extraction requires a signed DUA.
+  - to: delivered
+    require: ["outputs.length > 0"]
+    message: Cannot mark delivered with no recorded output.
+
+# Superseded stage ids keep their mapping so historical dwell maths still
+# resolves after a rename.
+retired: {}

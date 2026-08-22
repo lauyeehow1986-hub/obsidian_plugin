@@ -1,0 +1,30 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+main.js
+*.zip
+
+# ---------------------------------------------------------------------------
+# Vault content must NEVER be committed. This repo is PUBLIC and holds source
+# code only. `test-vault/` is the sole exception: it is synthetic by rule.
+# ---------------------------------------------------------------------------
+/vault/
+*.vault/
+**/95 Exports/
+**/82 Audit/
+**/80 Time/
+**/75 Correspondence/
+**/94 Runs/
+
+# Obsidian per-machine state (never useful in the repo)
+**/.obsidian/workspace*
+**/.obsidian/plugins/scdb-cockpit/
+**/.obsidian/cache
+
+# Editor / OS
+.vscode/
+.idea/
+Thumbs.db
+Desktop.ini
