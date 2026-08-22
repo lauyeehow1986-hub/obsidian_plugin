@@ -68,6 +68,18 @@ Phase A1: request tracking. The domain layer — pure, Obsidian-free, unit-teste
   with a `retired:` entry, so the board has something real to show.
 - 24 further tests; 231 in total.
 
+### Fixed
+- **Cards, tabs and inline links were being styled as form controls.** Obsidian's
+  `app.css` gives every `<button>` a fixed `height: var(--input-height)` (30px)
+  plus `white-space: nowrap` and centred content. Several elements here are
+  buttons for keyboard and screen-reader reasons rather than because they are
+  controls, and they never opted out — so a three-line request card was crushed
+  into a 30px box with its text overflowing onto the rows above and below it,
+  and long titles pushed past their column. Verified against the real
+  stylesheet, at full width and at a 320px sidebar.
+- The migration board's stage dropdown truncated its longest option; the column
+  now reserves enough width to read it without opening the list.
+
 ### Changed
 - `minAppVersion` raised to 1.6.0: `Vault.process` is used for append-only
   writes and arrived in that release. Keeping it honest matters more than
