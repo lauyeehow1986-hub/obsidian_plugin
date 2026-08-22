@@ -12,7 +12,12 @@ import type { RequestNote } from "./domain/request/request.js";
 import type { RequestView } from "./domain/request/holdup.js";
 import { TransitionRefused } from "./domain/request/transition.js";
 import type { WorkflowSpec } from "./domain/request/workflow.js";
-import { migrateSettings } from "./domain/settings/migrate.js";
+import {
+  migrateSettings,
+  settingsReadState,
+  unreadableSettingsMessage,
+  type SettingsReadState,
+} from "./domain/settings/migrate.js";
 import { allModes, matchesMode, modeInfo, nextMode } from "./domain/settings/mode.js";
 import {
   buildOverview,
@@ -71,6 +76,8 @@ export default class ScdbCockpitPlugin extends Plugin {
   // `Plugin` declares `settings?: unknown`; we narrow it to our schema.
   override settings: ScdbSettings = defaultSettings();
   migrationNotes: string[] = [];
+  /** How the last settings read went. Surfaced in diagnostics (A4). */
+  settingsRead: SettingsReadState = "loaded";
 
   workflows!: WorkflowStore;
   /** Every typed note. The query engine reads this; A1's boards read `index`. */
@@ -1153,10 +1160,40 @@ export default class ScdbCockpitPlugin extends Plugin {
       // Nothing was read, so there is nothing to bring forward — and writing
       // defaults now would overwrite settings that a failed read did not
       // return. The first real change persists them.
+      //
+      // Which of the two this is decides whether the user hears about it: a
+      // first install is normal and silent, an unreadable file is a fault and
+      // must say so rather than quietly running on the wrong actor.
+      this.settingsRead = settingsReadState(true, await this.settingsFileExists());
+      if (this.settingsRead === "unreadable") {
+        new Notice(unreadableSettingsMessage(this.settingsFilePath()), 15000);
+      }
       return;
     }
 
     if (result.changed) await this.saveData(this.settings);
+  }
+
+  /** Where Obsidian keeps this plugin's settings. Named in diagnostics and notices. */
+  settingsFilePath(): string {
+    return `${this.manifest.dir ?? ".obsidian/plugins/scdb-cockpit"}/data.json`;
+  }
+
+  /**
+   * False when there is no settings file — and also when we cannot tell.
+   *
+   * The adapter is desktop API surface we do not control; if it is absent or
+   * throws, the honest answer is "no evidence of a file", which keeps us quiet
+   * rather than raising an alarm we cannot stand behind.
+   */
+  private async settingsFileExists(): Promise<boolean> {
+    try {
+      const adapter = this.app.vault.adapter as { exists?: (p: string) => Promise<boolean> } | undefined;
+      if (typeof adapter?.exists !== "function") return false;
+      return await adapter.exists(this.settingsFilePath());
+    } catch {
+      return false;
+    }
   }
 
   async saveSettings(): Promise<void> {

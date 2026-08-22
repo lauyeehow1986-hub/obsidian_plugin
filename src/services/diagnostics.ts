@@ -80,7 +80,29 @@ function versions(plugin: ScdbCockpitPlugin): ReportSection {
     ),
   ];
 
-  if (plugin.migrationNotes.length > 0) {
+  // Only reported when it is not the ordinary case. A line saying "the file
+  // read fine" every time trains the reader to skip the section.
+  if (plugin.settingsRead !== "loaded") {
+    const unreadable = plugin.settingsRead === "unreadable";
+    checks.push(
+      check(
+        "Settings file",
+        unreadable ? "problem" : "ok",
+        unreadable
+          ? `${plugin.settingsFilePath()} exists but could not be read; running on defaults.`
+          : `No settings file yet (${plugin.settingsFilePath()}); running on defaults.`,
+        unreadable
+          ? "Repair or delete that file and reload. Nothing has been overwritten — the file on disk is still whatever it was."
+          : "Normal on a fresh install. Nothing is written until the first change.",
+      ),
+    );
+  }
+
+  // Suppressed unless the read was ordinary. migrateSettings cannot tell an
+  // absent file from an unreadable one, so its note says "no stored settings
+  // found" — which directly contradicts the row above when there IS a file.
+  // The dedicated row knows better; two rows disagreeing is worse than one.
+  if (plugin.settingsRead === "loaded" && plugin.migrationNotes.length > 0) {
     checks.push(
       check(
         "Settings migration",

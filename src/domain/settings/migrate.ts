@@ -39,6 +39,47 @@ export interface MigrationResult {
   fromNothing: boolean;
 }
 
+/**
+ * What the last settings read actually was.
+ *
+ * `loaded` — a stored file was read. `first-install` — there is no file yet.
+ * `unreadable` — there IS a file and we could not use it.
+ */
+export type SettingsReadState = "loaded" | "first-install" | "unreadable";
+
+/**
+ * Tell a first install apart from a settings file we could not read.
+ *
+ * `loadData()` returns null for both: no `data.json` at all, and a `data.json`
+ * that would not parse. A byte-order mark or a half-finished write is enough —
+ * Obsidian catches the parse error and hands back null either way.
+ *
+ * `fromNothing` already stops us overwriting the second case, but running on
+ * defaults without saying so is the silent failure §8 forbids. On the work
+ * laptop there is no console, so the only symptoms would be a wrong actor in
+ * the audit ledger and a backup destination that looks like it was never set —
+ * both of which read as "I must have forgotten to configure it", not as a
+ * fault.
+ *
+ * @param fileExists false when there is no file OR when we could not check;
+ *   an unverifiable absence is reported as a first install rather than raised
+ *   as an alarm we cannot substantiate.
+ */
+export function settingsReadState(fromNothing: boolean, fileExists: boolean): SettingsReadState {
+  if (!fromNothing) return "loaded";
+  return fileExists ? "unreadable" : "first-install";
+}
+
+/** Plain language plus a next action, per §8. Names the file; carries no content. */
+export function unreadableSettingsMessage(path: string): string {
+  return (
+    `SCDB Cockpit could not read its settings (${path}). The file is there but ` +
+    `unusable, so the plugin is running on defaults — the actor and backup ` +
+    `destination are not the ones you set. Nothing has been overwritten. ` +
+    `Repair or delete that file, then reload Obsidian.`
+  );
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }

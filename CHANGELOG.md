@@ -69,6 +69,16 @@ clearly marked entry (CLAUDE.md §10).
   destroy a configured backup destination and actor. Nothing is persisted until
   the first real change; defaults are what the next load produces anyway. Found
   when a hand-written `data.json` in a fresh vault came back as defaults.
+- **A settings file that cannot be read now says so.** Declining to overwrite it
+  was only half the fix: `loadData()` returns null for a `data.json` it could
+  not parse exactly as for one that is absent, so the plugin ran on defaults in
+  silence. The symptoms — a wrong actor in the ledger, a backup destination that
+  looks like it was never set — read as "I must have forgotten to configure it",
+  not as a fault, and on the work laptop there is no console to say otherwise.
+  A present-but-unreadable file now raises a notice naming the file and stating
+  that nothing was overwritten, and appears in diagnostics as a problem. Where
+  we cannot check whether a file is there, it is reported as a first install
+  rather than as an alarm we cannot substantiate.
 
 ### Rules and boundaries
 - `services/backup.ts` is **the only module that touches `fs` or writes outside

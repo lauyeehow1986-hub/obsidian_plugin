@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { migrateSettings } from "./migrate.js";
+import {
+  migrateSettings,
+  settingsReadState,
+  unreadableSettingsMessage,
+} from "./migrate.js";
 import { CURRENT_SETTINGS_VERSION, DEFAULT_FOLDERS, defaultSettings } from "./schema.js";
 
 describe("migrateSettings", () => {
@@ -185,6 +189,31 @@ describe("migrateSettings", () => {
       expect(migrateSettings({ schemaVersion: 3 }).fromNothing).toBe(false);
       expect(migrateSettings({}).fromNothing).toBe(false);
       expect(migrateSettings({ schemaVersion: 99 }).fromNothing).toBe(false);
+    });
+  });
+
+  describe("telling a first install from a broken file", () => {
+    it("is a first install when nothing was read and no file is there", () => {
+      expect(settingsReadState(true, false)).toBe("first-install");
+    });
+
+    it("is unreadable when nothing was read but a file exists", () => {
+      // The case that matters: loadData() returns null for a data.json it
+      // could not parse exactly as it does for one that is not there.
+      expect(settingsReadState(true, true)).toBe("unreadable");
+    });
+
+    it("is loaded whenever something was read, file check notwithstanding", () => {
+      expect(settingsReadState(false, true)).toBe("loaded");
+      expect(settingsReadState(false, false)).toBe("loaded");
+    });
+
+    it("says what happened, what was not damaged, and what to do", () => {
+      const message = unreadableSettingsMessage(".obsidian/plugins/scdb-cockpit/data.json");
+      expect(message).toContain(".obsidian/plugins/scdb-cockpit/data.json");
+      expect(message).toContain("running on defaults");
+      expect(message).toMatch(/nothing has been overwritten/i);
+      expect(message).toMatch(/repair or delete/i);
     });
   });
 });

@@ -289,6 +289,58 @@ const checks = [
     })(),
   ],
   [
+    // The stub's loadData() returns null and its vault has no adapter, so we
+    // cannot tell whether a file is there — which must read as a first install,
+    // not as an alarm we cannot substantiate.
+    "an unverifiable empty read is treated as a first install",
+    instance.settingsRead === "first-install",
+  ],
+  [
+    // The case this exists for: loadData() returns null for a data.json it
+    // could not parse exactly as for one that is absent. Running on defaults
+    // silently would show up only as a wrong actor in the ledger.
+    "an empty read with a file present is reported as unreadable",
+    await (async () => {
+      const notices = [];
+      const realNotice = stub.Notice;
+      stub.Notice = class {
+        constructor(message) {
+          notices.push(String(message));
+        }
+      };
+      instance.app.vault.adapter = { exists: async () => true };
+      try {
+        await instance.loadSettings();
+      } finally {
+        stub.Notice = realNotice;
+        delete instance.app.vault.adapter;
+      }
+      const told = notices.some((text) => /could not read its settings/i.test(text));
+      return instance.settingsRead === "unreadable" && told;
+    })(),
+  ],
+  [
+    // Rule 8: an unreadable file is the one case where writing defaults would
+    // destroy settings we simply failed to read.
+    "nothing is written back when the settings file could not be read",
+    await (async () => {
+      let wrote = false;
+      const realSave = instance.saveData.bind(instance);
+      instance.saveData = async (...args) => {
+        wrote = true;
+        return realSave(...args);
+      };
+      instance.app.vault.adapter = { exists: async () => true };
+      try {
+        await instance.loadSettings();
+      } finally {
+        instance.saveData = realSave;
+        delete instance.app.vault.adapter;
+      }
+      return wrote === false;
+    })(),
+  ],
+  [
     // A4: the two unglamorous commands. On a laptop with no dev tools these are
     // the difference between a bug you can describe and one you cannot.
     "diagnostics and integrity each have a command",
