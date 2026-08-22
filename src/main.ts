@@ -1149,6 +1149,13 @@ export default class ScdbCockpitPlugin extends Plugin {
       return;
     }
 
+    if (result.fromNothing) {
+      // Nothing was read, so there is nothing to bring forward — and writing
+      // defaults now would overwrite settings that a failed read did not
+      // return. The first real change persists them.
+      return;
+    }
+
     if (result.changed) await this.saveData(this.settings);
   }
 

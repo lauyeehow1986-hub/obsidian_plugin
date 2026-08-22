@@ -27,6 +27,16 @@ export interface MigrationResult {
   notes: string[];
   /** Set when stored settings come from a newer plugin build. */
   fromFuture: boolean;
+  /**
+   * Set when there was nothing readable to migrate.
+   *
+   * The caller must not persist in this case. A read that comes back empty is
+   * ambiguous — a first install and a failed read look identical from here —
+   * and writing defaults over the second silently destroys a configured backup
+   * destination and actor. Defaults are what the next load produces anyway, so
+   * saving them gains nothing and can only lose something.
+   */
+  fromNothing: boolean;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -47,6 +57,7 @@ export function migrateSettings(raw: unknown): MigrationResult {
       changed: true,
       notes: ["No stored settings found; initialised defaults."],
       fromFuture: false,
+      fromNothing: true,
     };
   }
 
@@ -66,6 +77,7 @@ export function migrateSettings(raw: unknown): MigrationResult {
       changed: false,
       notes,
       fromFuture: true,
+      fromNothing: false,
     };
   }
 
@@ -147,7 +159,7 @@ export function migrateSettings(raw: unknown): MigrationResult {
     notes.push("Settings normalised to the current schema.");
   }
 
-  return { settings: merged, changed, notes, fromFuture: false };
+  return { settings: merged, changed, notes, fromFuture: false, fromNothing: false };
 }
 
 /**

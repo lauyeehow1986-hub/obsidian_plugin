@@ -62,6 +62,14 @@ clearly marked entry (CLAUDE.md §10).
   naming the same person in `requester`, `blocked_on`, an evidence record and
   two history entries is one gap, not five.
 
+### Fixed
+- **Settings are no longer overwritten by an empty read.** `loadData()`
+  returning nothing is ambiguous — a first install and a failed read look
+  identical — and the old code wrote defaults over it, which would silently
+  destroy a configured backup destination and actor. Nothing is persisted until
+  the first real change; defaults are what the next load produces anyway. Found
+  when a hand-written `data.json` in a fresh vault came back as defaults.
+
 ### Rules and boundaries
 - `services/backup.ts` is **the only module that touches `fs` or writes outside
   the vault**, and it is documented as the deliberate, confined exception to

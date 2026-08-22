@@ -170,4 +170,21 @@ describe("migrateSettings", () => {
       expect(migrateSettings({ schemaVersion: 3, backup: 42 }).settings.backup.destination).toBe("");
     });
   });
+
+  describe("an empty read", () => {
+    it("is flagged so the caller does not persist over it", () => {
+      // A first install and a failed read are indistinguishable from here.
+      // Writing defaults would destroy a configured backup destination in the
+      // second case and gain nothing in the first.
+      for (const empty of [null, undefined, "", 0, []]) {
+        expect(migrateSettings(empty).fromNothing).toBe(true);
+      }
+    });
+
+    it("is not flagged when something was actually read", () => {
+      expect(migrateSettings({ schemaVersion: 3 }).fromNothing).toBe(false);
+      expect(migrateSettings({}).fromNothing).toBe(false);
+      expect(migrateSettings({ schemaVersion: 99 }).fromNothing).toBe(false);
+    });
+  });
 });
