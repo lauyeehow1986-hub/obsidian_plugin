@@ -19,7 +19,8 @@ import { OverviewBoard } from "./OverviewBoard";
 import { count, displayName, duration, presentState } from "./format";
 import { MigrationBoard, strandedCount } from "./MigrationBoard";
 import { QueryBoard } from "./QueryBoard";
-import { groupOutreachByParty } from "../domain/comms/thread";
+import { groupOutreachByParty, type AgedThread } from "../domain/comms/thread";
+import { describeHoldup, mergeHoldup } from "../domain/comms/holdup";
 
 export const COCKPIT_VIEW_TYPE = "scdb-cockpit-view";
 
@@ -170,87 +171,64 @@ function QueueBoard({ views, plugin }: { views: RequestView[]; plugin: ScdbCockp
 }
 
 /**
- * Unanswered outreach, in the same board as the blocked requests (§7 B1).
+ * One unanswered message, as a card.
  *
- * Deliberately the *same* board rather than a tab of its own. "Dr Tan owes me
- * a signature and has not replied to the email asking for it" is one situation,
- * and splitting it across two screens is how the second half gets forgotten —
- * which is the whole failure the outreach ageing exists to prevent.
+ * The same shape as a request card on purpose: this board's whole argument is
+ * that a stalled request and an unanswered email about it are the same problem,
+ * and two card designs would say otherwise.
  */
-function OutreachGroups({ plugin }: { plugin: ScdbCockpitPlugin }) {
-  const groups = groupOutreachByParty(plugin.agedThreads());
-  if (groups.length === 0) return null;
-
+function ThreadCard({ entry, plugin }: { entry: AgedThread; plugin: ScdbCockpitPlugin }) {
   return (
-    <>
-      {groups.map((group) => (
-        <section key={`outreach:${group.party.key}`} class="scdb-group">
-          <h3 class="scdb-group__title">
-            {group.party.name}
-            <span class="scdb-group__sub">
-              {count(group.threads.length, "unanswered message")} · longest{" "}
-              {duration(group.longestWaitMs)}
-            </span>
-            <button
-              type="button"
-              class="scdb-control scdb-group__action"
-              onClick={() => void plugin.openAgenda(group.party.raw)}
-            >
-              Chase up
-            </button>
-          </h3>
-          <ul class="scdb-cards">
-            {group.threads.map((entry) => (
-              <li key={entry.thread.uid || entry.thread.id} class="scdb-card">
-                <button
-                  type="button"
-                  class="scdb-card__main"
-                  onClick={() => void plugin.openThreadNote(entry.thread)}
-                  aria-label={`Open ${entry.thread.id}`}
-                >
-                  <span class="scdb-card__id">{entry.thread.id}</span>
-                  <span class="scdb-card__title">
-                    {entry.thread.subject || "(no subject)"}
-                  </span>
-                  <span class="scdb-card__meta">
-                    {/* Glyph and word as well as colour (§6). */}
-                    <span
-                      class={`scdb-state ${
-                        entry.overdue ? "scdb-state--overdue" : "scdb-state--at-risk"
-                      }`}
-                    >
-                      <span aria-hidden="true">{entry.overdue ? "!" : "~"}</span>
-                      {entry.overdue ? "No reply" : "Waiting"}
-                    </span>
-                    {/* "Recorded" is load-bearing: Tier 0 knows what it composed
-                        and nothing else, so a reply logged nowhere reads the
-                        same as no reply at all (§5.10). */}
-                    <span class="scdb-num">{duration(entry.waitingMs)} with no reply recorded</span>
-                    <span class="scdb-chip">{entry.thread.channel}</span>
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  class="scdb-card__action"
-                  onClick={() => void plugin.answerThread(entry.thread)}
-                  title="They have replied — close the loop"
-                >
-                  Answered
-                </button>
-              </li>
-            ))}
-          </ul>
-        </section>
-      ))}
-    </>
+    <li class="scdb-card">
+      <button
+        type="button"
+        class="scdb-card__main"
+        onClick={() => void plugin.openThreadNote(entry.thread)}
+        aria-label={`Open ${entry.thread.id}`}
+      >
+        <span class="scdb-card__id">{entry.thread.id}</span>
+        <span class="scdb-card__title">{entry.thread.subject || "(no subject)"}</span>
+        <span class="scdb-card__meta">
+          {/* Glyph and word as well as colour (§6). */}
+          <span
+            class={`scdb-state ${entry.overdue ? "scdb-state--overdue" : "scdb-state--at-risk"}`}
+          >
+            <span aria-hidden="true">{entry.overdue ? "!" : "~"}</span>
+            {entry.overdue ? "No reply" : "Waiting"}
+          </span>
+          {/* "Recorded" is load-bearing: Tier 0 knows what it composed and
+              nothing else, so a reply logged nowhere reads the same as no reply
+              at all (§5.10). */}
+          <span class="scdb-num">{duration(entry.waitingMs)} with no reply recorded</span>
+          <span class="scdb-chip">{entry.thread.channel}</span>
+        </span>
+      </button>
+      <button
+        type="button"
+        class="scdb-card__action"
+        onClick={() => void plugin.answerThread(entry.thread)}
+        title="They have replied — close the loop"
+      >
+        Answered
+      </button>
+    </li>
   );
 }
 
+/**
+ * Who the holdup is with — requests and unanswered outreach, one row per person.
+ *
+ * Merged rather than listed separately (see `domain/comms/holdup`): the same
+ * name under two adjacent headings is how the second half gets missed, and
+ * missing half of it is the failure this board exists to prevent.
+ */
 export function HoldupBoard({ views, plugin }: { views: RequestView[]; plugin: ScdbCockpitPlugin }) {
-  const groups = groupByBlockingParty(views);
-  const outreach = groupOutreachByParty(plugin.agedThreads());
+  const people = mergeHoldup(
+    groupByBlockingParty(views),
+    groupOutreachByParty(plugin.agedThreads()),
+  );
 
-  if (groups.length === 0 && outreach.length === 0) {
+  if (people.length === 0) {
     return (
       <Empty>
         Nothing is waiting on anybody. Set <code>blocked_on</code> when you move a request, and
@@ -261,31 +239,32 @@ export function HoldupBoard({ views, plugin }: { views: RequestView[]; plugin: S
 
   return (
     <div class="scdb-stack">
-      {groups.map((group) => (
-        <section key={group.party} class="scdb-group">
+      {people.map((person) => (
+        <section key={person.party.key} class="scdb-group">
           <h3 class="scdb-group__title">
-            {displayName(group.party)}
+            {person.party.name}
             <span class="scdb-group__sub">
-              {count(group.views.length, "request")} · longest{" "}
-              {duration(group.longestBlockedMs)}
-              {group.breachedCount > 0 ? ` · ${group.breachedCount} overdue` : ""}
+              {describeHoldup(person)} · longest {duration(person.longestMs)}
+              {person.breachedCount > 0 ? ` · ${person.breachedCount} overdue` : ""}
             </span>
             <button
               type="button"
               class="scdb-control scdb-group__action"
-              onClick={() => void plugin.openAgenda(group.party)}
+              onClick={() => void plugin.openAgenda(person.party.raw)}
             >
               Chase up
             </button>
           </h3>
           <ul class="scdb-cards">
-            {group.views.map((view) => (
+            {person.views.map((view) => (
               <RequestCard key={view.request.uid} view={view} plugin={plugin} />
+            ))}
+            {person.threads.map((entry) => (
+              <ThreadCard key={entry.thread.uid || entry.thread.id} entry={entry} plugin={plugin} />
             ))}
           </ul>
         </section>
       ))}
-      <OutreachGroups plugin={plugin} />
     </div>
   );
 }

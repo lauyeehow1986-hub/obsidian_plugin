@@ -28,7 +28,7 @@
 
 import { groupByBlockingParty, rowState, type RequestView } from "../request/holdup";
 import type { Overview } from "../overview/overview";
-import { DAY_MS, toVaultDate } from "../time/dates";
+import { DAY_MS, formatDuration, toVaultDate } from "../time/dates";
 import { groupOutreachByParty, type AgedThread } from "../comms/thread";
 
 export const BRIEFING_TYPE = "briefing";
@@ -61,10 +61,9 @@ function link(target: string, title: string): string {
   return clean === "" ? `[[${to}]]` : `[[${to}]] — ${clean}`;
 }
 
+/** The one formatter (§6) — the same words the boards and the export use. */
 function days(ms: number | null): string {
-  if (ms === null) return "no date";
-  const whole = Math.round(ms / DAY_MS);
-  return whole === 1 ? "1 day" : `${whole} days`;
+  return ms === null ? "no date" : formatDuration(ms);
 }
 
 interface Section {

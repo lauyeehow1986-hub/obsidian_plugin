@@ -200,7 +200,7 @@ function AgendaPanel({
       <label class="scdb-field">
         <span class="scdb-field__label">Message</span>
         <textarea
-          rows={12}
+          rows={8}
           value={body}
           onInput={(event) => setBody((event.target as HTMLTextAreaElement).value)}
         />

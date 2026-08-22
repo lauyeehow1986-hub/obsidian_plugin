@@ -106,6 +106,45 @@ plugin worth opening in the morning.
 - The overview's look-ahead window is now the configured briefing horizon rather
   than a hardcoded 60 days.
 
+### Fixed — B1, found by running it
+
+Four things the tests could not have caught and one they should have. All found
+by driving the plugin in Obsidian 1.12.7 against the test vault.
+
+- **The agenda dialog clipped its own buttons off the bottom of the window.**
+  Not cramped — unusable: "Open in email" is the thing the dialog exists to
+  reach, and at ordinary window heights it could not be reached or scrolled to.
+  The body now scrolls, the item list and the message box are capped, and the
+  action row is sticky.
+- **The holdup board listed one person twice** — once for their blocked
+  requests, once for their unanswered outreach, as two adjacent headings with
+  the same name. That is precisely the failure that putting outreach on this
+  board was meant to prevent: a reader finds the first heading, acts on it, and
+  never sees the second. They now merge into one row per person
+  (`domain/comms/holdup`, so "is this the same person" and "who is worst" are
+  tested rather than laid out).
+- **Two duration formatters disagreed in the same sentence.** The board said a
+  request had been blocked "51 days" while the agenda called it "52 days", and
+  the briefing said "56 days old" where the board said "55" — a local
+  `Math.round` against `formatDuration`'s floor. §6 asks for one formatter;
+  there is now one, with a test pinning the agenda's output to it.
+- **A chase-up covering two requests only recorded one on the thread.** The
+  second request's outreach would then have aged invisibly, because
+  `threadsForRequest` could not find the conversation from it. `appendOutbound`
+  now widens the request list, keeping existing entries' exact spelling and
+  writing nothing when there is nothing new.
+- The daily briefing is now gitignored under `test-vault/`: it is generated
+  output like the `.base` dashboards, and committing one means every morning's
+  test run dirties the tree.
+
+### Answered — an open question from §11
+
+**Outlook is registered as the `mailto:` handler on the dev machine**, and the
+"Test mailto:" button opens the new Outlook (`olk`) with the subject we set.
+Verified by pressing it. The Teams deep link and the real truncation ceiling are
+still unmeasured, and still need checking on the *work* laptop rather than this
+one — the button is there to make that a ten-second job.
+
 ### Added — A4, encrypted backup, restore and verification
 - **Encrypted vault snapshots.** One AES-256-GCM file per snapshot, key derived
   with scrypt (N=32768, r=8), gzip inside the encryption, written to a folder

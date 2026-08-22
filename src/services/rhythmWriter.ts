@@ -108,7 +108,7 @@ export class RhythmWriter {
     if (existing !== null) {
       const file = this.threadFileFor(existing);
       if (file !== null) {
-        const patch = appendOutbound(full);
+        const patch = appendOutbound(full, existing);
         await this.ctx.audit.append(patch.audit);
         await this.applyThreadPatch(file, patch);
         return file;

@@ -1254,15 +1254,48 @@
 
 /* --- the meeting agenda ------------------------------------------------- */
 
-.scdb-agenda__list {
+/*
+ * The agenda dialog is the tallest in the plugin: a list of items, a four-field
+ * form and a row of buttons. Verified in Obsidian 1.12.7 that without this it
+ * clips its own buttons off the bottom of the window at ordinary window
+ * heights — the whole dialog becomes unusable, not merely cramped, because
+ * "Open in email" is the thing it exists to reach.
+ *
+ * Three caps rather than one: the item list and the message box each grow with
+ * the data, and the body scrolls for whatever is left.
+ */
+.scdb-agenda {
   display: flex;
   flex-direction: column;
+  max-height: min(72vh, 720px);
+  overflow-y: auto;
+}
+
+.scdb-agenda__list {
+  display: flex;
+  flex: none;
+  flex-direction: column;
   gap: 6px;
-  max-height: 34vh;
+  max-height: 30vh;
   margin: 0 0 var(--scdb-2);
   padding: 0;
   overflow-y: auto;
   list-style: none;
+}
+
+/* The draft is edited here, so it needs room — but not at the cost of the
+ * buttons underneath it. */
+.scdb-agenda textarea {
+  max-height: 26vh;
+  resize: vertical;
+}
+
+/* Stays reachable while the body above it scrolls. */
+.scdb-agenda .scdb-modal__actions:last-child {
+  position: sticky;
+  bottom: 0;
+  padding-top: var(--scdb-1);
+  background: var(--background-primary);
 }
 
 .scdb-agenda__item {

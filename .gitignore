@@ -50,3 +50,8 @@ Desktop.ini
 # would make a fresh clone hit the already-exists path instead of the one that
 # actually needs testing.
 **/90 Dashboards/*.base
+
+# Same argument for the daily briefing: it is a dated record the plugin writes,
+# not a worked example of the contract. Committing one would also mean a test
+# run in the test vault dirties the tree every morning.
+**/90 Dashboards/Briefings/

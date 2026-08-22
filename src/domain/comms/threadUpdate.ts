@@ -161,21 +161,48 @@ export interface ThreadPatch {
   audit: AuditEntry[];
 }
 
-/** Record another outbound message on a thread that already exists. */
-export function appendOutbound(input: ComposedMessage): ThreadPatch {
-  return {
-    set: {
-      direction_last: "outbound",
-      last_outbound: toVaultDate(input.now),
-      awaiting: "them",
-      // A thread that was answered and has been written to again is open once
-      // more. Leaving it "answered" would take it straight back out of the
-      // ageing list it has just earned a place in.
-      state: "open",
-    },
-    appendMessage: messageEntry(input),
-    audit: [composedEntry(input)],
+/**
+ * Record another outbound message on a thread that already exists.
+ *
+ * `existing` is optional only so a caller with nothing to merge can omit it.
+ * When it is supplied, the request list is **widened, never replaced**: a
+ * chase-up often covers a request the thread did not previously mention, and
+ * leaving it out means `threadsForRequest` cannot find this conversation from
+ * that request — so its outreach ages invisibly, which is the one thing §5.10
+ * exists to prevent. Existing entries keep their exact spelling (rule 8).
+ */
+export function appendOutbound(input: ComposedMessage, existing?: Thread): ThreadPatch {
+  const set: Record<string, unknown> = {
+    direction_last: "outbound",
+    last_outbound: toVaultDate(input.now),
+    awaiting: "them",
+    // A thread that was answered and has been written to again is open once
+    // more. Leaving it "answered" would take it straight back out of the
+    // ageing list it has just earned a place in.
+    state: "open",
   };
+
+  if (existing !== undefined) {
+    const merged = mergeRequests(existing.requests, input.requests);
+    if (merged !== null) set["requests"] = merged;
+  }
+
+  return { set, appendMessage: messageEntry(input), audit: [composedEntry(input)] };
+}
+
+/** The union, or null when nothing new arrived and the note should not be touched. */
+function mergeRequests(
+  existing: readonly string[],
+  incoming: readonly string[],
+): string[] | null {
+  const seen = new Set(existing.map(normaliseRef));
+  const added = incoming.filter((entry) => {
+    const key = normaliseRef(entry);
+    if (key === "" || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  return added.length === 0 ? null : [...existing, ...added];
 }
 
 export interface LoopClosedInput {

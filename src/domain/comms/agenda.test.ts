@@ -16,7 +16,7 @@ import { parsePublication, type PublicationNote } from "../publication/publicati
 import type { RequestView } from "../request/holdup";
 import type { RequestMetrics } from "../request/dwell";
 import type { RequestNote } from "../request/request";
-import { DAY_MS } from "../time/dates";
+import { DAY_MS, formatDuration } from "../time/dates";
 
 const NOW = Date.parse("2026-07-24T10:00:00Z");
 const day = (n: number) => NOW - n * DAY_MS;
@@ -289,6 +289,20 @@ describe("composeMessage", () => {
     expect(fields.items.split("\n")).toHaveLength(6);
     expect(fields.items).toContain("and 15 more");
     expect(fields.count).toBe("20");
+  });
+
+  it("renders a duration exactly as every board renders it", () => {
+    // The holdup board once said "51 days here" about the request the agenda
+    // called "52 days": a local Math.round against formatDuration's floor.
+    // §6 asks for one formatter, and this is the guard that keeps it one.
+    const blockedFor = 51.6 * DAY_MS;
+    const one = buildAgenda({
+      party: "[[Dr A Tan]]",
+      now: NOW,
+      views: [view({ id: "R1", blockedOn: "[[Dr A Tan]]", blockedForMs: blockedFor })],
+    });
+    expect(one.items[0]?.context).toContain(`Blocked ${formatDuration(blockedFor)};`);
+    expect(one.items[0]?.context).toContain("Blocked 51 days;");
   });
 
   it("puts ids, stages and dates in a line, and nothing else", () => {

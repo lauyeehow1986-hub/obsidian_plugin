@@ -137,6 +137,31 @@ describe("appendOutbound", () => {
   it("logs the composition", () => {
     expect(patch.audit.map((entry) => entry.action)).toEqual(["message-composed"]);
   });
+
+  it("widens the request list rather than replacing it", () => {
+    // A chase-up often covers a request the thread never mentioned. Leaving it
+    // out means threadsForRequest cannot find this conversation from that
+    // request, so its outreach ages invisibly — the one thing §5.10 prevents.
+    const widened = appendOutbound(
+      composed({ requests: ["REQ-2026-006", "REQ-2026-014"] }),
+      thread({ requests: ["[[REQ-2026-014]]"] }),
+    );
+    expect(widened.set["requests"]).toEqual(["[[REQ-2026-014]]", "REQ-2026-006"]);
+  });
+
+  it("leaves the request list alone when nothing new arrived", () => {
+    // Rule 8: do not rewrite a field to the value it already holds. The stored
+    // spelling is the user's.
+    const same = appendOutbound(
+      composed({ requests: ["[[10 Requests/REQ-2026-014|the cohort]]"] }),
+      thread({ requests: ["[[REQ-2026-014]]"] }),
+    );
+    expect(same.set["requests"]).toBeUndefined();
+  });
+
+  it("touches nothing when no existing thread is supplied", () => {
+    expect(appendOutbound(composed()).set["requests"]).toBeUndefined();
+  });
 });
 
 describe("markAnswered", () => {

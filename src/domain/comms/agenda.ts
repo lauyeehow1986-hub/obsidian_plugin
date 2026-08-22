@@ -21,7 +21,7 @@
 import type { PublicationNote } from "../publication/publication";
 import { inFlight } from "../publication/publication";
 import { rowState, type RequestView } from "../request/holdup";
-import { DAY_MS, parseTimestamp, toVaultDate } from "../time/dates";
+import { formatDuration, parseTimestamp, toVaultDate } from "../time/dates";
 import { parseParty, partiesIn, type Party } from "./party";
 import { agedOutreach, type Thread } from "./thread";
 
@@ -103,11 +103,16 @@ function text(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
 }
 
-/** "9 days", for a context line. Whole days, because that is how people speak. */
+/**
+ * One duration formatter, shared with every board and the HTML export (§6).
+ *
+ * This was briefly a local `Math.round(ms / DAY_MS)`, which is how the holdup
+ * board came to say "51 days here" about the same request the agenda called
+ * "52 days" — `formatDuration` floors. Two renderings of one number in one
+ * product is a number nobody trusts, so there is exactly one of these.
+ */
 function days(ms: number | null): string {
-  if (ms === null) return "no date recorded";
-  const whole = Math.round(ms / DAY_MS);
-  return whole === 1 ? "1 day" : `${whole} days`;
+  return ms === null ? "no date recorded" : formatDuration(ms);
 }
 
 export interface AgendaInput {
