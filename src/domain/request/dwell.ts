@@ -12,6 +12,7 @@
  * Pure module: no Obsidian, no Node.
  */
 
+import { median } from "../stats/summary";
 import { DAY_MS } from "../time/dates";
 import type { HistoryEntry, RequestNote } from "./request";
 import { isBackwardMove, resolveStage, type WorkflowSpec } from "./workflow";
@@ -269,13 +270,8 @@ export function worstSlaState(...states: SlaState[]): SlaState {
   return states.reduce((worst, s) => (rank[s] > rank[worst] ? s : worst), "no-target" as SlaState);
 }
 
-/** Median of a list, or null when empty. Even counts take the mean of the middle pair. */
-export function median(values: readonly number[]): number | null {
-  if (values.length === 0) return null;
-  const sorted = [...values].sort((a, b) => a - b);
-  const mid = sorted.length >> 1;
-  return sorted.length % 2 === 1 ? sorted[mid]! : (sorted[mid - 1]! + sorted[mid]!) / 2;
-}
+/** Re-exported so callers of the dwell maths do not have to know where it lives. */
+export { median };
 
 export interface StageDwellStats {
   stageId: string;
