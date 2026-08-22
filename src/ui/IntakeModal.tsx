@@ -123,7 +123,7 @@ function IntakePanel({ spec, suggestedId, mode, onSubmit, onCancel }: PanelProps
       </label>
 
       <div class="scdb-modal__actions">
-        <button type="button" onClick={onCancel}>
+        <button type="button" class="scdb-control" onClick={onCancel}>
           Cancel
         </button>
         <button

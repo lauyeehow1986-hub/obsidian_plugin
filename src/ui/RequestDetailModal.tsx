@@ -160,7 +160,7 @@ function DetailPanel({ request, metrics, spec, onOpenNote, onMove }: Props) {
       )}
 
       <div class="scdb-modal__actions">
-        <button type="button" onClick={onOpenNote}>
+        <button type="button" class="scdb-control" onClick={onOpenNote}>
           Open note
         </button>
         <button type="button" class="mod-cta" onClick={onMove}>

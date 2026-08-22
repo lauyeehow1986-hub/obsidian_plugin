@@ -8,7 +8,7 @@
  * seed of the A4 diagnostics command.
  */
 import { createRequire } from "node:module";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
 
 const bundle = resolve("dist", "scdb-cockpit", "main.js");
@@ -144,6 +144,42 @@ const checks = [
   ["bulk migration is wired", typeof instance.writer?.migrate === "function"],
   ["migration quarantine is reachable", instance.needsMigration({ workflow: "", stage: "x" }) === false],
 ];
+
+/*
+ * Every button in `src/ui` must declare whether it is a control.
+ *
+ * Obsidian styles a bare `<button>` as a fixed-height control, which silently
+ * destroys any button holding more than one line — see the long comment in
+ * `styles.css`. The stylesheet resets that by default and lets real controls
+ * opt back in, so the failure mode is now cosmetic rather than catastrophic.
+ * This check closes the other half: a button carrying no class at all has not
+ * made the decision, and the author probably did not know there was one.
+ */
+const CONTROL = ["mod-cta", "mod-warning", "scdb-control"];
+const uiDir = resolve("src", "ui");
+const undeclared = [];
+for (const name of readdirSync(uiDir).filter((f) => f.endsWith(".tsx"))) {
+  const source = readFileSync(resolve(uiDir, name), "utf8");
+  // Each `<button` up to the `>` that ends its opening tag. Attribute values
+  // here never contain `>`, so this stays honest without a JSX parser.
+  for (const match of source.matchAll(/<button\b[^>]*>/g)) {
+    const tag = match[0];
+    const cls = /class=(?:"([^"]*)"|\{([^}]*)\})/.exec(tag);
+    const declared =
+      cls !== null && CONTROL.concat("scdb-").some((token) => (cls[1] ?? cls[2]).includes(token));
+    if (!declared) {
+      const line = source.slice(0, match.index).split("\n").length;
+      undeclared.push(`src/ui/${name}:${line}`);
+    }
+  }
+}
+
+checks.push([
+  undeclared.length === 0
+    ? "every UI button declares control or not"
+    : `buttons with no class: ${undeclared.join(", ")}`,
+  undeclared.length === 0,
+]);
 
 let failed = 0;
 for (const [label, ok] of checks) {

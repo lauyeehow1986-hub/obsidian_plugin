@@ -79,6 +79,14 @@ Phase A1: request tracking. The domain layer — pure, Obsidian-free, unit-teste
   stylesheet, at full width and at a 320px sidebar.
 - The migration board's stage dropdown truncated its longest option; the column
   now reserves enough width to read it without opening the list.
+- **The button reset is now the default rather than a list of exceptions.** The
+  first fix named the four classes that needed to opt out, which left every
+  future view one forgotten class away from the same collapse. Every button the
+  plugin renders now gets the safe metrics, and the handful that genuinely are
+  controls opt back in via `.mod-cta`, `.mod-warning` or `.scdb-control`. The
+  failure modes are no longer symmetric: forgetting to mark a control costs a
+  few pixels of height, where forgetting to exempt a card cost a legible view.
+  `npm run smoke` fails a button in `src/ui` that declares neither.
 
 ### Changed
 - `minAppVersion` raised to 1.6.0: `Vault.process` is used for append-only

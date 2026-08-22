@@ -33,26 +33,46 @@
 /* ------------------------------------------------- buttons that are not -- */
 /*                                                              controls     */
 /*
- * Obsidian styles every `<button>` as a form control (app.css):
+ * Obsidian styles every `<button>` as a fixed-height form control (app.css):
  *
  *   button { display: inline-flex; align-items: center; justify-content: center;
  *            height: var(--input-height); white-space: nowrap; }
  *
- * Several things here are buttons because they are activated by click and must
- * stay keyboard- and screen-reader-reachable — a request card, a link inside a
- * sentence — not because they are controls. They have to opt out of the fixed
- * height and the nowrap, or a three-line card is crushed into a 30px box with
- * its contents centred and overflowing onto the rows above and below it.
+ * Much of this plugin is buttons that are not controls — a request card, a
+ * link inside a sentence — buttons only because they are activated by click
+ * and must stay keyboard- and screen-reader-reachable. Left as controls they
+ * are catastrophic: a three-line card is crushed into a 30px box, centred, and
+ * its text overflows onto the rows above and below. That shipped once.
  *
- * Anything that genuinely is a control (New request, the modal actions) keeps
- * Obsidian's styling and is deliberately absent from this list.
+ * So the reset is the DEFAULT for every button we render, and the handful that
+ * genuinely are controls opt back in. That direction is deliberate. Forgetting
+ * to opt a control back in costs a few pixels of height; forgetting to opt a
+ * card out costs a legible view. New components inherit the safe case without
+ * anyone having to know this rule exists.
+ *
+ * `scripts/smoke.mjs` enforces the other half: every button in `src/ui` must
+ * declare which kind it is, so "neither" cannot be reached by accident.
  */
-.scdb-card__main,
-.scdb-card__action,
-.scdb-tab,
-.scdb-link {
+.scdb-root button,
+.scdb-modal button {
   height: auto;
   white-space: normal;
+}
+
+/*
+ * Opting back in. `.mod-cta` and `.mod-warning` are Obsidian's own markers for
+ * a call-to-action button and only ever sit on real controls, so they count as
+ * a declaration; `.scdb-control` is for the plain ones (Cancel, Close) that
+ * carry no class of their own.
+ */
+.scdb-root button.mod-cta,
+.scdb-root button.mod-warning,
+.scdb-root button.scdb-control,
+.scdb-modal button.mod-cta,
+.scdb-modal button.mod-warning,
+.scdb-modal button.scdb-control {
+  height: var(--input-height);
+  white-space: nowrap;
 }
 
 /* ---------------------------------------------------------------- shell -- */

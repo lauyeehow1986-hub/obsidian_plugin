@@ -100,7 +100,7 @@ function TransitionPanel({ spec, request, onSubmit, onCancel }: PanelProps) {
             : "The workflow offers no stage to move to from here."}
         </p>
         <div class="scdb-modal__actions">
-          <button type="button" onClick={onCancel}>
+          <button type="button" class="scdb-control" onClick={onCancel}>
             Close
           </button>
         </div>
@@ -161,7 +161,7 @@ function TransitionPanel({ spec, request, onSubmit, onCancel }: PanelProps) {
       )}
 
       <div class="scdb-modal__actions">
-        <button type="button" onClick={onCancel}>
+        <button type="button" class="scdb-control" onClick={onCancel}>
           Cancel
         </button>
         <button
