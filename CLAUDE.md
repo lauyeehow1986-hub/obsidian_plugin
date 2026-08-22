@@ -78,7 +78,7 @@ against fake notes.
 |---|---|---|
 | Dev machine | `%USERPROFILE%\Downloads\obsidian_plugin` (Node 25, npm 11) | All coding, tests, builds |
 | Test vault | `test-vault/` in this repo | Synthetic notes; committed; the only vault Claude may write to |
-| Personal vault | `(path kept in CLAUDE.local.md, untracked)` | Real personal use; **never committed** |
+| Personal vault | path in `CLAUDE.local.md` (untracked) | Real personal use; **never committed** |
 | Production vault | Locked-down work laptop | The real thing; no toolchain, no npm, no git |
 
 **Deployment is sneakernet.** The work laptop cannot build. A release is three files copied

@@ -23,6 +23,9 @@ main.js
 **/.obsidian/plugins/scdb-cockpit/
 **/.obsidian/cache
 
+# Machine-local secrets: absolute paths and git identity. Never committed.
+CLAUDE.local.md
+
 # Editor / OS
 .vscode/
 .idea/
