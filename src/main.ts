@@ -9,10 +9,12 @@ import { WorkflowStore } from "./data/workflowStore.js";
 import { requestMetrics } from "./domain/request/dwell.js";
 import { isStranded } from "./domain/request/migration.js";
 import type { RequestNote } from "./domain/request/request.js";
+import type { RequestView } from "./domain/request/holdup.js";
 import { TransitionRefused } from "./domain/request/transition.js";
 import type { WorkflowSpec } from "./domain/request/workflow.js";
 import { migrateSettings } from "./domain/settings/migrate.js";
-import { defaultSettings, type ScdbSettings } from "./domain/settings/schema.js";
+import { matchesMode, modeInfo, nextMode } from "./domain/settings/mode.js";
+import { MODES, defaultSettings, type Mode, type ScdbSettings } from "./domain/settings/schema.js";
 import type { FieldDef, Query, Row } from "./domain/query/model.js";
 import type { SavedView } from "./domain/query/savedView.js";
 import { AuditLog } from "./services/auditLog.js";
@@ -52,6 +54,9 @@ export default class ScdbCockpitPlugin extends Plugin {
   views!: SavedViewStore;
   exporter!: Exporter;
   basesFiles!: BasesFiles;
+
+  /** The mode HUD (§7 A3). Null until `onload` has run. */
+  private statusBar: HTMLElement | null = null;
 
   /**
    * Core Bases (Obsidian >= 1.10) is a progressive enhancement — never a
@@ -100,6 +105,8 @@ export default class ScdbCockpitPlugin extends Plugin {
     this.addSettingTab(new ScdbSettingsTab(this.app, this));
     this.registerCommands();
     this.addRibbonIcon("layout-dashboard", "SCDB Cockpit", () => void this.activateCockpit());
+    this.statusBar = this.addStatusBarItem();
+    this.renderStatusBar();
 
     // The metadata cache is not populated until layout is ready; indexing
     // before that produces an empty board on every startup.
@@ -236,6 +243,31 @@ export default class ScdbCockpitPlugin extends Plugin {
       callback: () => void this.verifyLedger(),
     });
 
+    // Ctrl/Cmd+1..3 as CLAUDE.md §7 A3 asks. Obsidian shows a conflict in its
+    // hotkeys pane if the user has bound these elsewhere, and they can rebind;
+    // shipping no default at all would leave the documented shortcut unwired.
+    MODES.forEach((mode, index) => {
+      const info = modeInfo(mode);
+      this.addCommand({
+        id: `mode-${mode}`,
+        name: `Wear the ${info.label} hat`,
+        hotkeys: [{ modifiers: ["Mod"], key: String(index + 1) }],
+        callback: () => void this.setMode(mode),
+      });
+    });
+
+    this.addCommand({
+      id: "cycle-mode",
+      name: "Switch to the next hat",
+      callback: () => void this.setMode(nextMode(this.settings.mode)),
+    });
+
+    this.addCommand({
+      id: "toggle-hat-filter",
+      name: "Show every hat, or only the one you are wearing",
+      callback: () => void this.setHatFilter(this.settings.hatFilter === "mode" ? "all" : "mode"),
+    });
+
     this.addCommand({
       id: "reindex",
       name: "Rebuild the note index",
@@ -305,7 +337,77 @@ export default class ScdbCockpitPlugin extends Plugin {
     }
   }
 
+  // --- the mode HUD (§7 A3) ---------------------------------------------------
+
+  /**
+   * Paint the status-bar segment.
+   *
+   * Built with `createEl` rather than markup: the label is ours, but the rule
+   * against `innerHTML` is worth keeping unconditional (§8). Glyph plus word,
+   * never colour alone (§6) — and the status bar is monochrome anyway.
+   */
+  private renderStatusBar(): void {
+    const bar = this.statusBar;
+    if (bar === null) return;
+    bar.empty();
+    bar.addClass("scdb-mode");
+
+    const info = modeInfo(this.settings.mode);
+    const filtered = this.settings.hatFilter === "mode";
+    const button = bar.createEl("button", {
+      cls: "scdb-mode__button",
+      attr: {
+        type: "button",
+        "aria-label": `Wearing the ${info.label} hat${filtered ? "" : " (showing every hat)"}. Click for ${modeInfo(nextMode(this.settings.mode)).label}.`,
+      },
+    });
+    button.createSpan({ cls: "scdb-mode__glyph", text: info.glyph });
+    button.createSpan({ cls: "scdb-mode__label", text: info.short });
+    if (!filtered) {
+      // The filter being off changes what every board shows, so it has to be
+      // visible from the status bar — otherwise "why am I seeing this?" has no
+      // answer on screen.
+      button.createSpan({ cls: "scdb-mode__all", text: "all" });
+    }
+    button.addEventListener("click", () => void this.setMode(nextMode(this.settings.mode)));
+  }
+
+  async setMode(mode: Mode): Promise<void> {
+    if (this.settings.mode === mode) return;
+    this.settings.mode = mode;
+    await this.saveSettings();
+    new Notice(`SCDB: ${modeInfo(mode).label}. ${modeInfo(mode).blurb}`, 4000);
+  }
+
+  async setHatFilter(filter: "mode" | "all"): Promise<void> {
+    if (this.settings.hatFilter === filter) return;
+    this.settings.hatFilter = filter;
+    await this.saveSettings();
+  }
+
+  /**
+   * The requests the current hat should see, and how many it is holding back.
+   *
+   * The hidden count travels with the rows on purpose. Mode filtering is the
+   * point of the HUD, but a filter that silently removes an overdue request is
+   * a way to miss one, so every board states what it is not showing (§6).
+   */
+  visibleRequests(now = Date.now()): {
+    views: RequestView[];
+    total: number;
+    hidden: number;
+    filtered: boolean;
+  } {
+    const all = this.index.views({ now });
+    if (this.settings.hatFilter === "all") {
+      return { views: all, total: all.length, hidden: 0, filtered: false };
+    }
+    const views = all.filter((view) => matchesMode(view.request.hat, this.settings.mode));
+    return { views, total: all.length, hidden: all.length - views.length, filtered: true };
+  }
+
   refreshViews(): void {
+    this.renderStatusBar();
     for (const leaf of this.app.workspace.getLeavesOfType(COCKPIT_VIEW_TYPE)) {
       const view = leaf.view;
       if (view instanceof CockpitView) view.refresh();

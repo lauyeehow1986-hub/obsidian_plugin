@@ -61,6 +61,11 @@ describe("migrateSettings", () => {
       expect(result.settings.actor).toBe("");
     });
 
+    it("resets an unknown hat filter", () => {
+      const result = migrateSettings({ schemaVersion: 2, hatFilter: "sometimes" });
+      expect(result.settings.hatFilter).toBe("mode");
+    });
+
     it("resets an unknown bases setting", () => {
       const result = migrateSettings({ schemaVersion: 1, bases: "always" });
       expect(result.settings.bases).toBe("auto");
@@ -74,6 +79,29 @@ describe("migrateSettings", () => {
     it("survives folders being the wrong type entirely", () => {
       const result = migrateSettings({ schemaVersion: 1, folders: "nope" });
       expect(result.settings.folders).toEqual(DEFAULT_FOLDERS);
+    });
+  });
+
+  describe("v1 → v2, which added the hat filter", () => {
+    it("supplies the default without touching anything else", () => {
+      const v1 = { schemaVersion: 1, actor: "yh", mode: "biostat", bases: "off" };
+      const result = migrateSettings(v1);
+      expect(result.settings.hatFilter).toBe("mode");
+      expect(result.settings.actor).toBe("yh");
+      expect(result.settings.mode).toBe("biostat");
+      expect(result.settings.bases).toBe("off");
+      expect(result.settings.schemaVersion).toBe(CURRENT_SETTINGS_VERSION);
+    });
+
+    it("leaves a trail, because an upgrade with no console needs one", () => {
+      const notes = migrateSettings({ schemaVersion: 1 }).notes.join(" ");
+      expect(notes).toContain("v1");
+      expect(notes).toContain("v2");
+    });
+
+    it("does not claim a v1 → v2 step for settings that were never v1", () => {
+      const notes = migrateSettings({ schemaVersion: 2, hatFilter: "all" }).notes.join(" ");
+      expect(notes).not.toContain("v1 → v2");
     });
   });
 

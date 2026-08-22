@@ -94,6 +94,11 @@ export function migrateSettings(raw: unknown): MigrationResult {
     merged.bases = "auto";
   }
 
+  if (merged.hatFilter !== "mode" && merged.hatFilter !== "all") {
+    notes.push(`Unknown hat filter ${JSON.stringify(raw.hatFilter)}; reset to "mode".`);
+    merged.hatFilter = "mode";
+  }
+
   // Folders: fill gaps, keep customised values, drop nothing.
   const folders: Record<string, unknown> = isRecord(merged.folders) ? { ...merged.folders } : {};
   const missing: string[] = [];
@@ -110,8 +115,15 @@ export function migrateSettings(raw: unknown): MigrationResult {
   merged.folders = folders as Record<FolderKey, string>;
 
   // --- Versioned migrations ------------------------------------------------
-  // Each future schema bump appends a step here, e.g.:
-  //   if (storedVersion < 2) { ...; notes.push("Migrated v1 -> v2: ..."); }
+  // Each future schema bump appends a step here.
+
+  if (storedVersion > 0 && storedVersion < 2) {
+    // v2 added `hatFilter`. The field repair above has already supplied the
+    // default, so this step only records that it happened: a settings file that
+    // changes shape without a line in the trail is exactly what makes an
+    // upgrade hard to diagnose on a laptop with no console (§7 A4).
+    notes.push('Migrated v1 → v2: added the hat filter, defaulting to the mode you are wearing.');
+  }
 
   merged.schemaVersion = CURRENT_SETTINGS_VERSION;
 

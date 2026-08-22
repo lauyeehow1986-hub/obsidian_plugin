@@ -11,6 +11,7 @@ import {
   type RequestView,
 } from "../domain/request/holdup";
 import { resolveStage } from "../domain/request/workflow";
+import { allModes, modeInfo, unhatted } from "../domain/settings/mode";
 import type ScdbCockpitPlugin from "../main.js";
 import { count, displayName, duration, presentState } from "./format";
 import { MigrationBoard, strandedCount } from "./MigrationBoard";
@@ -67,6 +68,14 @@ function RequestCard({ view, plugin }: { view: RequestView; plugin: ScdbCockpitP
           {metrics.problems.length > 0 && (
             <span class="scdb-chip scdb-chip--problem" title={metrics.problems.join("\n")}>
               needs attention
+            </span>
+          )}
+          {plugin.settings.hatFilter === "mode" && unhatted(request.hat) && (
+            <span
+              class="scdb-chip"
+              title="No `hat` in the frontmatter, so this shows under every mode. Set one to file it."
+            >
+              no hat
             </span>
           )}
           {plugin.needsMigration(request) && (
@@ -296,6 +305,60 @@ function HealthBoard({ views, plugin }: { views: RequestView[]; plugin: ScdbCock
   );
 }
 
+/**
+ * The hat being worn, and what it is holding back.
+ *
+ * Mode filtering is the organising metaphor (§7 A3), but a filter you cannot
+ * see is a filter that loses work. So the count of hidden requests is stated
+ * next to the switch that reveals them, always — never only when it is zero.
+ */
+function ModeBar({
+  plugin,
+  hidden,
+  filtered,
+}: {
+  plugin: ScdbCockpitPlugin;
+  hidden: number;
+  filtered: boolean;
+}) {
+  const current = plugin.settings.mode;
+  return (
+    <div class="scdb-modebar">
+      <div class="scdb-modebar__hats" role="group" aria-label="Hat">
+        {allModes().map((info) => (
+          <button
+            key={info.id}
+            type="button"
+            class={info.id === current ? "scdb-hat scdb-hat--active" : "scdb-hat"}
+            aria-pressed={info.id === current}
+            title={info.blurb}
+            onClick={() => void plugin.setMode(info.id)}
+          >
+            <span aria-hidden="true">{info.glyph}</span> {info.short}
+          </button>
+        ))}
+      </div>
+      <p class="scdb-modebar__note">
+        {filtered ? (
+          <>
+            Showing {modeInfo(current).label} work
+            {hidden > 0 ? ` · ${count(hidden, "request")} under another hat` : " · nothing hidden"}
+          </>
+        ) : (
+          <>Showing every hat</>
+        )}{" "}
+        <button
+          type="button"
+          class="scdb-link"
+          onClick={() => void plugin.setHatFilter(filtered ? "all" : "mode")}
+        >
+          {filtered ? "show all" : `show only ${modeInfo(current).short}`}
+        </button>
+      </p>
+    </div>
+  );
+}
+
 /** A tab the view has been asked to show. `token` changes on every request. */
 export interface TabFocus {
   tab: CockpitTab;
@@ -310,7 +373,7 @@ export function CockpitPanel({
   focus: TabFocus;
 }) {
   const [tab, setTab] = useState<CockpitTab>(focus.tab);
-  const views = plugin.index.views({ now: Date.now() });
+  const { views, hidden, filtered } = plugin.visibleRequests();
   const summary = summarise(views);
   const stranded = strandedCount(plugin);
 
@@ -335,6 +398,8 @@ export function CockpitPanel({
           New request
         </button>
       </header>
+
+      <ModeBar plugin={plugin} hidden={hidden} filtered={filtered} />
 
       <nav class="scdb-tabs" role="tablist">
         {TABS.map((entry) => (

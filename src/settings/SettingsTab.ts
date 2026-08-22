@@ -1,4 +1,5 @@
 import { App, PluginSettingTab, Setting } from "obsidian";
+import { allModes, modeInfo } from "../domain/settings/mode.js";
 import { MODES } from "../domain/settings/schema.js";
 import type ScdbCockpitPlugin from "../main.js";
 
@@ -31,16 +32,35 @@ export class ScdbSettingsTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("Mode")
-      .setDesc("Which hat you are wearing. Filters views and attributes effort.")
+      .setDesc(
+        `Which hat you are wearing. ${modeInfo(this.plugin.settings.mode).blurb} ` +
+          "Also on the status bar — click it to cycle, or use the mode commands.",
+      )
       .addDropdown((dropdown) => {
-        for (const mode of MODES) dropdown.addOption(mode, mode);
+        for (const info of allModes()) dropdown.addOption(info.id, info.label);
         dropdown.setValue(this.plugin.settings.mode).onChange(async (value) => {
           if ((MODES as readonly string[]).includes(value)) {
-            this.plugin.settings.mode = value as (typeof MODES)[number];
-            await this.plugin.saveSettings();
+            await this.plugin.setMode(value as (typeof MODES)[number]);
+            this.display();
           }
         });
       });
+
+    new Setting(containerEl)
+      .setName("Hat filter")
+      .setDesc(
+        "Whether the boards narrow to the hat you are wearing. Notes with no `hat` " +
+          "always show, and every board states how many it is holding back.",
+      )
+      .addDropdown((dropdown) =>
+        dropdown
+          .addOption("mode", "Show only the current hat")
+          .addOption("all", "Show every hat")
+          .setValue(this.plugin.settings.hatFilter)
+          .onChange(async (value) => {
+            await this.plugin.setHatFilter(value === "all" ? "all" : "mode");
+          }),
+      );
 
     new Setting(containerEl)
       .setName("Core Bases integration")

@@ -11,7 +11,8 @@
  */
 
 .scdb-root,
-.scdb-modal {
+.scdb-modal,
+.scdb-mode {
   --scdb-overdue: var(--text-error, #b3261e);
   --scdb-at-risk: var(--text-warning, #8a6100);
   --scdb-on-track: var(--text-success, #1b6b2f);
@@ -144,6 +145,94 @@
   color: var(--background-primary);
   font-size: var(--font-ui-smaller);
   font-variant-numeric: tabular-nums;
+}
+
+/* ------------------------------------------------------------ mode HUD -- */
+/*
+ * The status-bar segment lives outside `.scdb-root`, which is why it is named
+ * in the palette block at the top of this file: without that it would inherit
+ * none of the custom properties.
+ */
+
+.scdb-mode__button {
+  display: inline-flex;
+  gap: 6px;
+  align-items: baseline;
+  padding: 0 6px;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  box-shadow: none;
+  color: var(--status-bar-text-color, var(--text-muted));
+  font-size: var(--font-ui-smaller);
+  line-height: inherit;
+  height: auto;
+  cursor: pointer;
+}
+
+.scdb-mode__button:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+.scdb-mode__glyph {
+  font-size: var(--font-ui-small);
+}
+
+.scdb-mode__label {
+  font-weight: var(--font-medium, 500);
+}
+
+/* The filter being off is a state, so it gets a word — not a colour (§6). */
+.scdb-mode__all {
+  padding: 0 4px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 3px;
+  font-size: var(--font-ui-smaller);
+}
+
+.scdb-modebar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--scdb-1) var(--scdb-2);
+  align-items: center;
+  justify-content: space-between;
+  margin-top: var(--scdb-2);
+}
+
+.scdb-modebar__hats {
+  display: flex;
+  gap: 4px;
+}
+
+.scdb-modebar__note {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.scdb-hat {
+  padding: 4px 10px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 12px;
+  background: none;
+  box-shadow: none;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  cursor: pointer;
+}
+
+.scdb-hat:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+/* Active is border weight plus text colour, not a fill: three pills in a row
+ * with one filled reads as a colour code, and §6 forbids leaning on that. */
+.scdb-hat--active {
+  border-color: var(--interactive-accent);
+  color: var(--text-normal);
+  font-weight: var(--font-medium, 500);
 }
 
 /* ---------------------------------------------------------------- boards -- */

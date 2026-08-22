@@ -205,6 +205,26 @@ Publication, correspondence and catalogue stages still group by raw value: those
 vocabularies have no spec to read labels from yet, and inventing one here would
 put a second definition somewhere other than the vault contract.
 
+### Added — phase A3, the mode HUD
+The three hats become a control rather than a settings field (§7 A3).
+
+- **Status-bar segment** showing the hat being worn — glyph plus word, never
+  colour alone. Click it to cycle.
+- **`Ctrl/Cmd+1/2/3`** jump straight to a hat, plus commands to cycle and to
+  toggle the filter. Obsidian flags a clash in its hotkeys pane and the user can
+  rebind; shipping no default would leave the documented shortcut unwired.
+- **Every board narrows to the hat**, with a hat switcher above the tabs.
+- **A note with no `hat` shows under every mode and is flagged**, rather than
+  hidden. Unattributed work is still work, and hiding it under all three hats
+  would turn the filter into a way to lose a request. A hat we do *not*
+  recognise — a typo — is filtered out, because that is a claim about which hat,
+  just a wrong one, and folding it into whichever mode is on would bury it.
+- **The filter always states what it is holding back** and offers the switch
+  that reveals it, in the boards and on the status bar. A filter you cannot see
+  is a filter that loses an overdue request, so `hatFilter` is a real setting,
+  not a hidden switch.
+- Settings schema v2: adds `hatFilter`, with the migration step and its trail.
+
 ### Added — fixture verification
 - **The shipped `test-vault/` fixtures are now parsed by the real parsers**, not
   by eye. `tests/fixtures.test.ts` sweeps every note and every workflow spec in

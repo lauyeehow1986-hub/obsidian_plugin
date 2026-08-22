@@ -5,7 +5,7 @@
  * An upgrade must never lose settings (CLAUDE.md §10).
  */
 
-export const CURRENT_SETTINGS_VERSION = 1;
+export const CURRENT_SETTINGS_VERSION = 2;
 
 /** The three hats. Mode is the organising metaphor, not a cosmetic filter (§7 A3). */
 export const MODES = ["biostat", "hod", "research-core"] as const;
@@ -44,6 +44,13 @@ export interface ScdbSettings {
   folders: Record<FolderKey, string>;
   /** Core Bases is a progressive enhancement; "auto" uses it when available. */
   bases: "auto" | "off";
+  /**
+   * Whether the boards narrow to the hat being worn (§7 A3).
+   *
+   * "all" is a real setting rather than a hidden debug switch: a filter that
+   * cannot be turned off is a filter that hides an overdue request from you.
+   */
+  hatFilter: "mode" | "all";
   /** Unrecognised keys are preserved verbatim — see rule 8, never destroy data. */
   [extra: string]: unknown;
 }
@@ -79,6 +86,7 @@ export function defaultSettings(): ScdbSettings {
     mode: "hod",
     folders: { ...DEFAULT_FOLDERS },
     bases: "auto",
+    hatFilter: "mode",
   };
 }
 

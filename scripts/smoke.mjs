@@ -23,14 +23,50 @@ const Module = require("node:module");
 class Component {
   registerEvent() {}
 }
+
+/**
+ * The smallest thing that behaves like an Obsidian-decorated HTMLElement.
+ *
+ * Enough for the status-bar HUD to paint into. Obsidian adds `createEl`,
+ * `createSpan` and `empty` to the DOM prototype; Node has no DOM at all, so
+ * anything the plugin builds outside a view needs a stand-in here.
+ */
+function fakeEl() {
+  const el = {
+    children: [],
+    classes: [],
+    empty() {
+      el.children = [];
+    },
+    addClass(name) {
+      el.classes.push(name);
+    },
+    createEl() {
+      const child = fakeEl();
+      el.children.push(child);
+      return child;
+    },
+    createSpan() {
+      return el.createEl();
+    },
+    addEventListener() {},
+    setAttribute() {},
+  };
+  return el;
+}
 class Plugin extends Component {
   constructor(app, manifest) {
     super();
     this.app = app;
     this.manifest = manifest;
   }
-  addCommand() {}
+  addCommand(command) {
+    registeredCommands.push(command.id);
+  }
   addRibbonIcon() {}
+  addStatusBarItem() {
+    return fakeEl();
+  }
   addSettingTab() {}
   registerView() {}
   async loadData() {
@@ -99,6 +135,7 @@ const stub = {
  * which is where a broken import or a bad call order actually shows up.
  */
 const created = [];
+const registeredCommands = [];
 
 function stubApp() {
   const ref = {};
@@ -172,6 +209,8 @@ try {
 // `plan()` reads existing files to spot formulas that have drifted from the
 // workflow spec, so it is async. Resolve it once rather than in each check.
 const basesPlan = (await instance.basesFiles?.plan()) ?? [];
+// Both instances register the same commands, so dedupe before counting.
+const commands = [...new Set(registeredCommands)];
 
 const checks = [
   // Assert behaviour, not the class name: production builds are minified, so
@@ -179,7 +218,18 @@ const checks = [
   ["extends Obsidian's Plugin", instance instanceof Plugin],
   ["implements onload", typeof instance.onload === "function"],
   ["settings default to a known mode", instance.settings.mode === "hod"],
-  ["settings carry a schema version", instance.settings.schemaVersion === 1],
+  ["settings carry a schema version", instance.settings.schemaVersion === 2],
+  ["the hat filter defaults to the mode you are wearing", instance.settings.hatFilter === "mode"],
+  [
+    // Mode is the organising metaphor (§7 A3): every hat needs a command, or
+    // two of the three are only reachable by mouse.
+    "every hat has a command",
+    commands.filter((id) => id.startsWith("mode-")).length === 3,
+  ],
+  [
+    "the hat filter can be turned off from the palette",
+    commands.includes("toggle-hat-filter"),
+  ],
   ["folder map is populated", instance.settings.folders.requests === "10 Requests"],
   ["Bases probe does not throw", typeof instance.basesAvailable === "boolean"],
   ["Bases absent without the API", instance.basesAvailable === false],
