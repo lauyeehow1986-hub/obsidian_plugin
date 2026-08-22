@@ -15,6 +15,7 @@ import { allModes, modeInfo, unhatted } from "../domain/settings/mode";
 import type ScdbCockpitPlugin from "../main.js";
 import { boardTitle, type BoardId } from "../domain/report/boards";
 import { AnalyticsBoard } from "./AnalyticsBoard";
+import { OverviewBoard } from "./OverviewBoard";
 import { count, displayName, duration, presentState } from "./format";
 import { MigrationBoard, strandedCount } from "./MigrationBoard";
 import { QueryBoard } from "./QueryBoard";
@@ -22,6 +23,7 @@ import { QueryBoard } from "./QueryBoard";
 export const COCKPIT_VIEW_TYPE = "scdb-cockpit-view";
 
 export type CockpitTab =
+  | "overview"
   | "queue"
   | "holdup"
   | "ageing"
@@ -31,6 +33,7 @@ export type CockpitTab =
   | "health";
 
 const TABS: { id: CockpitTab; label: string }[] = [
+  { id: "overview", label: "Overview" },
   { id: "queue", label: "Queue" },
   { id: "holdup", label: "Holdup" },
   { id: "ageing", label: "Ageing" },
@@ -455,6 +458,7 @@ export function CockpitPanel({
       </nav>
 
       <div class="scdb-cockpit__body">
+        {tab === "overview" && <OverviewBoard views={views} plugin={plugin} />}
         {tab === "queue" && <QueueBoard views={views} plugin={plugin} />}
         {tab === "holdup" && <HoldupBoard views={views} plugin={plugin} />}
         {tab === "ageing" && <AgeingBoard views={views} plugin={plugin} />}
@@ -487,7 +491,7 @@ export class CockpitView extends ItemView {
     return "layout-dashboard";
   }
 
-  private focus: TabFocus = { tab: "queue", token: 0 };
+  private focus: TabFocus = { tab: "overview", token: 0 };
 
   /** Re-render in place. Preact diffs, so tab and scroll state survive. */
   refresh(): void {

@@ -231,6 +231,20 @@ const checks = [
     commands.includes("toggle-hat-filter"),
   ],
   ["the analytics board has a command", commands.includes("analytics")],
+  ["the overview has a command", commands.includes("needs-attention")],
+  [
+    // The overview reads three sources; on an empty vault it must be three
+    // empty lists rather than a throw during the first paint.
+    "the overview builds on an empty vault",
+    (() => {
+      const overview = instance.overview([]);
+      return (
+        overview.attention.length === 0 &&
+        overview.deadlines.length === 0 &&
+        overview.publications.length === 0
+      );
+    })(),
+  ],
   [
     // The static HTML export must never write outside 95 Exports/ (§7 A3).
     "board exports land in the exports folder",

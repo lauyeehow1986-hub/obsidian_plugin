@@ -25,6 +25,8 @@ import { load } from "js-yaml";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 import { describe, expect, it } from "vitest";
+import { deadlines } from "../src/domain/overview/overview";
+import { parsePublication, PUBLICATION_TYPE } from "../src/domain/publication/publication";
 import { validateQuery } from "../src/domain/query/model";
 import { parseSavedView, VIEW_TYPE } from "../src/domain/query/savedView";
 import { REQUEST_FIELDS, REQUEST_ROW_TYPE } from "../src/domain/request/queryFields";
@@ -156,6 +158,41 @@ describe("request notes", () => {
       return spec !== undefined && request.stage in spec.retired;
     });
     expect(onRetired.length).toBeGreaterThan(0);
+  });
+});
+
+describe("publication notes", () => {
+  const publications = typed(PUBLICATION_TYPE);
+
+  it("ships at least one, so the overview's third list is exercised", () => {
+    expect(publications.length).toBeGreaterThan(0);
+  });
+
+  it.each(publications.map((note) => note.rel))("%s parses with no problems", (rel) => {
+    const note = publications.find((entry) => entry.rel === rel);
+    expect(parsePublication(rel, note!.front).problems).toEqual([]);
+  });
+});
+
+describe("obligation notes", () => {
+  const obligations = typed("obligation");
+
+  it("ships one with a date and one without, covering both overview paths", () => {
+    // §5.7: an obligation the scheduler cannot place must be *reported* as
+    // unscheduled, never dropped — so a fixture has to exist for that path.
+    const dated = deadlines(
+      obligations.map((note) => ({ path: note.rel, type: "obligation", frontmatter: note.front })),
+      { now: Date.parse("2026-08-22T00:00:00Z"), withinDays: 3650 },
+    );
+    expect(dated.due.length).toBeGreaterThan(0);
+    expect(dated.unscheduled.length).toBeGreaterThan(0);
+  });
+
+  it("says what breaks, because a reminder that does not is ignored (§5.7)", () => {
+    const silent = obligations.filter(
+      (note) => typeof note.front["consequence"] !== "string" || note.front["consequence"] === "",
+    );
+    expect(silent.map((note) => note.rel)).toEqual([]);
   });
 });
 

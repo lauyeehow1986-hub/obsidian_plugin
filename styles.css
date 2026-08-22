@@ -371,6 +371,60 @@
   color: var(--text-normal);
 }
 
+/* -------------------------------------------------------------- overview -- */
+
+.scdb-overview {
+  display: flex;
+  flex-direction: column;
+  gap: var(--scdb-3);
+}
+
+/* Same two-part shape as a queue card: a wide clickable body and a Move button
+ * pinned to the right, so the two boards feel like one product. */
+.scdb-attention {
+  display: flex;
+  gap: var(--scdb-1);
+  align-items: stretch;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.scdb-attention__main {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  /* Obsidian centres a button's contents; a column of text in a card must not
+   * inherit that or every row reads as a caption. */
+  align-items: flex-start;
+  gap: 4px;
+  padding: var(--scdb-1);
+  border: none;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  text-align: left;
+  cursor: pointer;
+}
+
+.scdb-attention__main:hover {
+  background: var(--background-modifier-hover);
+}
+
+.scdb-attention__head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--scdb-1);
+  align-items: baseline;
+}
+
+.scdb-attention__why {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px var(--scdb-1);
+  align-items: baseline;
+}
+
 /* ------------------------------------------------------- status and chips -- */
 
 .scdb-state {

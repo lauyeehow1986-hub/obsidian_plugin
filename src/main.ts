@@ -15,6 +15,17 @@ import type { WorkflowSpec } from "./domain/request/workflow.js";
 import { migrateSettings } from "./domain/settings/migrate.js";
 import { allModes, matchesMode, modeInfo, nextMode } from "./domain/settings/mode.js";
 import {
+  buildOverview,
+  type DatedNote,
+  type Overview,
+} from "./domain/overview/overview.js";
+import {
+  PUBLICATION_TYPE,
+  parsePublication,
+  type PublicationNote,
+} from "./domain/publication/publication.js";
+import { governanceRisk } from "./domain/request/analytics.js";
+import {
   boardRowCount,
   buildBoardDocument,
   type BoardContext,
@@ -231,6 +242,12 @@ export default class ScdbCockpitPlugin extends Plugin {
       id: "migrate-requests",
       name: "Migrate requests to the current workflow version",
       callback: () => void this.activateCockpit("migration"),
+    });
+
+    this.addCommand({
+      id: "needs-attention",
+      name: "Show what needs attention",
+      callback: () => void this.activateCockpit("overview"),
     });
 
     this.addCommand({
@@ -569,6 +586,42 @@ export default class ScdbCockpitPlugin extends Plugin {
       parts.push(`${failed.length} refused: ${failed[0]!.error ?? "no reason given"}`);
     }
     new Notice(`SCDB: ${parts.join("; ")}.`, failed.length > 0 ? 0 : 6000);
+  }
+
+  /**
+   * The overview pane's three lists (§7 A3).
+   *
+   * Assembled here because it is the only place that can see all three sources
+   * — the request projection, the generic note index and the publication
+   * notes. The ordering and the "what counts as needing attention" rules are in
+   * `domain/overview`, where they are testable.
+   */
+  overview(views: readonly RequestView[]): Overview {
+    const now = Date.now();
+    const spec = this.workflows.only();
+
+    // One gate evaluation for the whole board rather than one per request:
+    // `governanceRisk` already walks every allowed transition, and doing it
+    // twice would double the most expensive thing on the pane.
+    const blocked = new Set(
+      governanceRisk(views, spec, now).blocked.map((view) => view.request.uid),
+    );
+
+    const dated: DatedNote[] = [];
+    const publications: PublicationNote[] = [];
+    for (const entry of this.notes.all()) {
+      if (entry.type === REQUEST_TYPE) continue;
+      if (entry.type === PUBLICATION_TYPE) {
+        publications.push(parsePublication(entry.file.path, entry.frontmatter));
+      }
+      dated.push({ path: entry.file.path, type: entry.type, frontmatter: entry.frontmatter });
+    }
+
+    return buildOverview(views, dated, publications, {
+      now,
+      stranded: (view) => this.needsMigration(view.request),
+      governanceBlocked: (view) => blocked.has(view.request.uid),
+    });
   }
 
   // --- the query surface (§7 A2) ---------------------------------------------

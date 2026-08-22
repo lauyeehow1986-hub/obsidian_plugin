@@ -224,7 +224,7 @@ The three hats become a control rather than a settings field (§7 A3).
   is a filter that loses an overdue request, so `hatFilter` is a real setting,
   not a hidden switch.
 - Settings schema v2: adds `hatFilter`, with the migration step and its trail.
-- 89 further tests; 420 in total. 36 smoke checks. Bundle 149.0 KB.
+- 119 further tests; 450 in total. 38 smoke checks. Bundle 156.5 KB.
 
 ### Added — A3, charts and bottleneck analytics
 An **Analytics** board and `Show queue analytics`, answering §7 A3's list in the
@@ -311,6 +311,40 @@ to `domain/report/present` so a board cannot say "Overdue" on screen and
 - The governance headline said "0 requests cannot move at all" when none were
   blocked. One shared sentence, and it says "No request is held up by a gate."
 
+### Added — A3, the cockpit overview
+An **Overview** tab, now the cockpit's first screen, and
+`Show what needs attention`. Three lists, in the order you would read them.
+
+- **Needs attention**, worst first, listing **every** reason that applies rather
+  than only the worst. A request that is overdue *and* stranded *and* waiting on
+  somebody is a different problem, not a worse one, and collapsing it to one
+  chip hides the case the board exists for. A note the metrics could not fully
+  trust ranks above everything else, because every other judgement here is
+  computed from the fields it could not read.
+- **Falling due** — any note carrying a readable date in the next 60 days,
+  whatever its type, plus publications by `decision_due`. Generic on purpose: it
+  covers event and obligation notes today, and when B3 materialises a next
+  occurrence it lands as an ordinary date and this list picks it up unchanged.
+  An obligation's `consequence` is shown, per §5.7 — a reminder that does not
+  say what breaks gets ignored.
+- **An obligation with a recurrence rule and no materialised date is reported as
+  unscheduled, not dropped.** This build cannot compute a next occurrence (that
+  is B3), and §5.7's whole point is that a lapsed obligation is the thing that
+  must never be missed, so it is named rather than quietly omitted.
+- **Publications in flight**, soonest decision first, from a §5.4 reader.
+  `accepted` and `in-press` stay on the board — proofs, embargo and the
+  open-access decision are still outstanding, and dropping them is how those get
+  missed. Only `published`, `rejected` and `shelved` settle. Anything other than
+  a literal `true` is not SCDB-supported: that number goes to a funding
+  committee, so `scdb_supported: "yes"` must not become a claim.
+- Two obligation fixtures (one dated, one recurrence-only) and the new unhatted
+  request are swept by the real parsers in `tests/fixtures.test.ts`, which now
+  also asserts every shipped obligation says what breaks.
+
+The stage columns stay on the Queue tab. Putting them here as well would make
+the overview scroll before it said anything, and the first screen of a cockpit
+has to be the summary rather than the whole cockpit.
+
 ### Verified — A3 in a running Obsidian
 Obsidian 1.12.7, test vault, after each fix above:
 - Status bar shows the hat; clicking cycles it; `Ctrl+Shift+1/2/3` jump.
@@ -321,6 +355,9 @@ Obsidian 1.12.7, test vault, after each fix above:
 - Export wrote `95 Exports/Queue analytics-2026-08-22.html`, the notice named
   the file and the row count, the ledger gained an `export` row, and
   `Verify audit ledger` reported all three entries reconciling.
+- The overview lists seven requests worst-first with their reasons, both
+  obligation fixtures behave as intended (one dated, one reported unscheduled),
+  and the publication appears with its decision 21 days overdue.
 
 ### Added — fixture verification
 - **The shipped `test-vault/` fixtures are now parsed by the real parsers**, not
