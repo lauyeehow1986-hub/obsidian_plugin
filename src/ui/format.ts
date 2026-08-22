@@ -1,48 +1,16 @@
 /**
- * Presentation helpers (CLAUDE.md §6).
+ * Re-export of the shared presentation vocabulary.
  *
- * Two rules from the design language live here:
- *
- *  - **Never colour alone.** Every state carries a glyph and a label as well as
- *    a colour class, so the board reads correctly for a colour-blind reader and
- *    in a theme that overrides our palette.
- *  - **Durations are human.** One formatter, imported everywhere.
+ * The definitions moved to `domain/report/present` when the static HTML export
+ * arrived: the exported board has to say "Overdue" too, and a second copy of
+ * those four words is a second copy that can drift. This shim keeps the short
+ * import path the UI files already use.
  */
 
-import type { SlaState } from "../domain/request/dwell";
-import { formatDuration } from "../domain/time/dates";
-
-export interface StatePresentation {
-  label: string;
-  /** Text glyph, not an icon font — it survives copy-paste into an export. */
-  glyph: string;
-  className: string;
-}
-
-const STATES: Record<SlaState, StatePresentation> = {
-  breached: { label: "Overdue", glyph: "!", className: "scdb-state--overdue" },
-  "at-risk": { label: "At risk", glyph: "~", className: "scdb-state--at-risk" },
-  "on-track": { label: "On track", glyph: "·", className: "scdb-state--on-track" },
-  "no-target": { label: "No target", glyph: "–", className: "scdb-state--none" },
-};
-
-export function presentState(state: SlaState): StatePresentation {
-  return STATES[state];
-}
-
-/** "23 days", or an em dash when there is nothing to show. */
-export function duration(ms: number | null): string {
-  return ms === null ? "—" : formatDuration(ms);
-}
-
-/** `[[Dr A Tan]]` reads as "Dr A Tan" in a table; the link stays in the note. */
-export function displayName(value: string | null): string {
-  if (value === null || value === "") return "—";
-  const match = /^\[\[([^\]|]+)(?:\|([^\]]+))?\]\]$/.exec(value.trim());
-  return match ? (match[2] ?? match[1]!).trim() : value;
-}
-
-/** "5 requests", "1 request". */
-export function count(n: number, noun: string, plural = `${noun}s`): string {
-  return `${n} ${n === 1 ? noun : plural}`;
-}
+export {
+  count,
+  displayName,
+  duration,
+  presentState,
+  type StatePresentation,
+} from "../domain/report/present";

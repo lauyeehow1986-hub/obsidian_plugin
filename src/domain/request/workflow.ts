@@ -274,6 +274,21 @@ export function resolveStage(spec: WorkflowSpec, stageId: string): StageSpec | n
   return mapped ? (spec.stages.find((s) => s.id === mapped) ?? null) : null;
 }
 
+/**
+ * The label to print for a stage id, for a board or a chart.
+ *
+ * Deliberately does **not** follow `retired:`. A request sitting in a stage the
+ * spec has dropped keeps showing its raw id, so it stays visibly odd wherever
+ * it appears — the same rule the generated `.base` files follow, and the same
+ * argument as the "migrate" chip on the cockpit cards (§5.2). Printing the
+ * successor's label would show two different stages under one name and hide the
+ * fact that a note needs migrating.
+ */
+export function stageLabelOf(spec: WorkflowSpec | null, stageId: string): string {
+  if (spec === null) return stageId;
+  return spec.stages.find((stage) => stage.id === stageId)?.label ?? stageId;
+}
+
 /** True when the spec knows this stage id, live or retired. */
 export function isKnownStage(spec: WorkflowSpec, stageId: string): boolean {
   return resolveStage(spec, stageId) !== null;

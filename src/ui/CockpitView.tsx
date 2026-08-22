@@ -10,25 +10,47 @@ import {
   summarise,
   type RequestView,
 } from "../domain/request/holdup";
-import { resolveStage } from "../domain/request/workflow";
+import { stageLabelOf } from "../domain/request/workflow";
 import { allModes, modeInfo, unhatted } from "../domain/settings/mode";
 import type ScdbCockpitPlugin from "../main.js";
+import { boardTitle, type BoardId } from "../domain/report/boards";
+import { AnalyticsBoard } from "./AnalyticsBoard";
 import { count, displayName, duration, presentState } from "./format";
 import { MigrationBoard, strandedCount } from "./MigrationBoard";
 import { QueryBoard } from "./QueryBoard";
 
 export const COCKPIT_VIEW_TYPE = "scdb-cockpit-view";
 
-export type CockpitTab = "queue" | "holdup" | "ageing" | "explore" | "migration" | "health";
+export type CockpitTab =
+  | "queue"
+  | "holdup"
+  | "ageing"
+  | "analytics"
+  | "explore"
+  | "migration"
+  | "health";
 
 const TABS: { id: CockpitTab; label: string }[] = [
   { id: "queue", label: "Queue" },
   { id: "holdup", label: "Holdup" },
   { id: "ageing", label: "Ageing" },
+  { id: "analytics", label: "Analytics" },
   { id: "explore", label: "Explore" },
   { id: "migration", label: "Migration" },
   { id: "health", label: "Health" },
 ];
+
+/**
+ * Tabs that export to a static HTML file (§7 A3).
+ *
+ * Explore is not among them — it has its own CSV and markdown export, which is
+ * the right shape for a query result. Migration is a worksheet, not a report.
+ */
+const EXPORTABLE: BoardId[] = ["queue", "holdup", "ageing", "analytics", "health"];
+
+function isExportable(tab: CockpitTab): tab is BoardId {
+  return (EXPORTABLE as string[]).includes(tab);
+}
 
 function StateBadge({ view }: { view: RequestView }) {
   const state = presentState(rowState(view));
@@ -241,7 +263,7 @@ function HealthBoard({ views, plugin }: { views: RequestView[]; plugin: ScdbCock
             <tbody>
               {stats.map((row) => (
                 <tr key={row.stageId}>
-                  <td>{spec ? (resolveStage(spec, row.stageId)?.label ?? row.stageId) : row.stageId}</td>
+                  <td>{stageLabelOf(spec, row.stageId)}</td>
                   <td class="scdb-num">{duration(row.medianClosedMs)}</td>
                   <td class="scdb-num">{row.closedCount}</td>
                   <td class="scdb-num">{row.openCount}</td>
@@ -334,7 +356,8 @@ function ModeBar({
             title={info.blurb}
             onClick={() => void plugin.setMode(info.id)}
           >
-            <span aria-hidden="true">{info.glyph}</span> {info.short}
+            <span aria-hidden="true">{info.glyph}</span>
+            <span>{info.short}</span>
           </button>
         ))}
       </div>
@@ -394,9 +417,21 @@ export function CockpitPanel({
             {stranded > 0 && ` · ${stranded} awaiting migration`}
           </p>
         </div>
-        <button type="button" class="mod-cta" onClick={() => plugin.startIntake()}>
-          New request
-        </button>
+        <div class="scdb-cockpit__actions">
+          {isExportable(tab) && (
+            <button
+              type="button"
+              class="scdb-control"
+              title={`Write "${boardTitle(tab)}" to ${plugin.settings.folders.exports}/ as a self-contained HTML file`}
+              onClick={() => void plugin.exportBoard(tab)}
+            >
+              Export board
+            </button>
+          )}
+          <button type="button" class="mod-cta" onClick={() => plugin.startIntake()}>
+            New request
+          </button>
+        </div>
       </header>
 
       <ModeBar plugin={plugin} hidden={hidden} filtered={filtered} />
@@ -423,6 +458,7 @@ export function CockpitPanel({
         {tab === "queue" && <QueueBoard views={views} plugin={plugin} />}
         {tab === "holdup" && <HoldupBoard views={views} plugin={plugin} />}
         {tab === "ageing" && <AgeingBoard views={views} plugin={plugin} />}
+        {tab === "analytics" && <AnalyticsBoard views={views} plugin={plugin} />}
         {tab === "explore" && <QueryBoard plugin={plugin} />}
         {tab === "migration" && <MigrationBoard plugin={plugin} />}
         {tab === "health" && <HealthBoard views={views} plugin={plugin} />}

@@ -34,7 +34,8 @@ export class ScdbSettingsTab extends PluginSettingTab {
       .setName("Mode")
       .setDesc(
         `Which hat you are wearing. ${modeInfo(this.plugin.settings.mode).blurb} ` +
-          "Also on the status bar — click it to cycle, or use the mode commands.",
+          "Also on the status bar — click it to cycle, or press Ctrl+Shift+1/2/3. " +
+          "(Ctrl+1/2/3 is Obsidian's own tab switcher; rebind in Hotkeys if you want it.)",
       )
       .addDropdown((dropdown) => {
         for (const info of allModes()) dropdown.addOption(info.id, info.label);

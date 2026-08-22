@@ -54,10 +54,21 @@ export function safeBasename(value: string, fallback = "export"): string {
 export class Exporter {
   constructor(private readonly deps: ExporterDeps) {}
 
-  /** The path an export would take, so a confirmation can name it before writing. */
+  /**
+   * The path an export would take, so a confirmation can name it before writing.
+   *
+   * Walks collisions exactly as `write()` does. It would be easier to return
+   * the un-suffixed name, but then the dialog would promise one file and the
+   * notice would report another — and a confirmation that does not name the
+   * thing it is about to do is not a confirmation.
+   */
   plannedPath(basename: string, extension: string, now = Date.now()): string {
-    const folder = normalizePath(this.deps.exportsFolder());
-    return `${folder}/${safeBasename(basename)}-${toVaultDate(now)}.${extension}`;
+    return this.freePath(
+      normalizePath(this.deps.exportsFolder()),
+      safeBasename(basename),
+      extension,
+      now,
+    );
   }
 
   async write(request: ExportRequest): Promise<ExportResult> {
@@ -73,7 +84,7 @@ export class Exporter {
     const folder = normalizePath(this.deps.exportsFolder());
     await ensureFolder(this.deps.app, folder);
 
-    const path = await this.freePath(folder, safeBasename(request.basename), request.extension);
+    const path = this.freePath(folder, safeBasename(request.basename), request.extension);
     const file = await this.deps.app.vault.create(path, request.content);
 
     const entry: AuditEntry = {
@@ -90,8 +101,8 @@ export class Exporter {
   }
 
   /** First free `name-date.ext`, then `name-date-2.ext`. Never overwrites (rule 8). */
-  private async freePath(folder: string, basename: string, extension: string): Promise<string> {
-    const stamp = toVaultDate(Date.now());
+  private freePath(folder: string, basename: string, extension: string, now = Date.now()): string {
+    const stamp = toVaultDate(now);
     for (let counter = 1; counter < 100; counter++) {
       const suffix = counter === 1 ? "" : `-${counter}`;
       const candidate = normalizePath(`${folder}/${basename}-${stamp}${suffix}.${extension}`);

@@ -37,3 +37,45 @@ export function mean(values: readonly number[]): number | null {
   if (values.length === 0) return null;
   return values.reduce((sum, value) => sum + value, 0) / values.length;
 }
+
+/** One bucket of a histogram: `[min, max)` in whatever unit the caller uses. */
+export interface Bucket {
+  label: string;
+  /** Inclusive lower bound. */
+  min: number;
+  /** Exclusive upper bound; null means "and above". */
+  max: number | null;
+}
+
+export interface BucketCount extends Bucket {
+  count: number;
+}
+
+/**
+ * Count values into fixed buckets.
+ *
+ * Fixed rather than computed: a distribution whose bucket edges move as the
+ * data changes cannot be compared against last month's, which is the only
+ * reason anyone looks at one. Empty buckets are kept — a gap in the middle of
+ * a distribution is information, and dropping it redraws the shape.
+ *
+ * A value below the first bucket or above the last is not counted, and the
+ * caller gets the total back so it can state its own denominator (§6).
+ */
+export function histogram(
+  values: readonly number[],
+  buckets: readonly Bucket[],
+): { counts: BucketCount[]; counted: number } {
+  const counts: BucketCount[] = buckets.map((bucket) => ({ ...bucket, count: 0 }));
+  let counted = 0;
+  for (const value of values) {
+    for (const bucket of counts) {
+      if (value >= bucket.min && (bucket.max === null || value < bucket.max)) {
+        bucket.count++;
+        counted++;
+        break;
+      }
+    }
+  }
+  return { counts, counted };
+}

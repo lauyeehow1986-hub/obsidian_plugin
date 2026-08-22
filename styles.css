@@ -90,6 +90,12 @@
   justify-content: space-between;
 }
 
+.scdb-cockpit__actions {
+  display: flex;
+  gap: var(--scdb-1);
+  flex-wrap: wrap;
+}
+
 .scdb-cockpit__title {
   margin: 0;
   font-size: var(--font-ui-large);
@@ -212,6 +218,11 @@
 }
 
 .scdb-hat {
+  /* Flex with a gap rather than a text space: JSX whitespace between the glyph
+   * and the label does not survive the build reliably. */
+  display: inline-flex;
+  gap: 5px;
+  align-items: baseline;
   padding: 4px 10px;
   border: 1px solid var(--background-modifier-border);
   border-radius: 12px;
@@ -427,6 +438,146 @@
   vertical-align: baseline;
   cursor: pointer;
   text-decoration: underline;
+}
+
+/* --------------------------------------------------------------- charts -- */
+/*
+ * §6: no pie charts, no 3D, no decorative gradients. Bars start at zero, the
+ * emphasised portion of a bar is always spelled out in words beside it, and
+ * every chart prints its unit and denominator. The rules that can be enforced
+ * in code live in `domain/report/charts.ts`; this file only paints them.
+ */
+
+.scdb-chartgrid {
+  display: grid;
+  /* 320px, not 280: below that the label column eats the bar and the chart
+   * stops being a chart. Fewer, readable columns beat more unreadable ones. */
+  /* `min(320px, 100%)`, not a bare 320px: a bare minimum in `minmax` refuses to
+   * shrink, so the grid would force a horizontal scrollbar in a 300px sidebar —
+   * exactly the width §6 requires every view to survive. */
+  grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr));
+  gap: var(--scdb-3) var(--scdb-2);
+}
+
+.scdb-chart {
+  margin: 0;
+  min-width: 0;
+}
+
+.scdb-chart__caption {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: var(--scdb-1);
+}
+
+.scdb-chart__title {
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-medium, 500);
+}
+
+.scdb-chart__meta,
+.scdb-chart__foot {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.scdb-chart__foot {
+  margin: var(--scdb-1) 0 0;
+}
+
+.scdb-bars {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* Label, bar, number, note. The note wraps onto its own line at every width,
+ * because it is the part that carries the words behind the shading. */
+.scdb-bar {
+  display: grid;
+  grid-template-columns: minmax(6em, 9em) 1fr auto;
+  gap: 2px var(--scdb-1);
+  align-items: center;
+  padding: 3px 0;
+}
+
+.scdb-bar__label {
+  color: var(--text-normal);
+  font-size: var(--font-ui-smaller);
+  overflow-wrap: anywhere;
+}
+
+.scdb-bar__track {
+  height: 12px;
+  border-radius: 2px;
+  background: var(--background-modifier-border);
+}
+
+.scdb-bar__fill {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--interactive-accent);
+}
+
+/* Darker, not just differently coloured: the shading has to survive a
+ * monochrome print, and the count is written out beside it regardless. */
+.scdb-bar__emphasis {
+  display: block;
+  height: 100%;
+  border-radius: 2px 0 0 2px;
+  background: var(--scdb-overdue);
+}
+
+.scdb-bar__value {
+  color: var(--text-normal);
+  font-size: var(--font-ui-smaller);
+}
+
+.scdb-bar__note {
+  grid-column: 2 / -1;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.scdb-trend {
+  display: block;
+  width: 100%;
+  max-width: 480px;
+  height: auto;
+}
+
+.scdb-trend__line {
+  fill: none;
+  stroke: var(--interactive-accent);
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+}
+
+.scdb-trend__dot {
+  fill: var(--interactive-accent);
+}
+
+.scdb-trend__axis {
+  stroke: var(--text-muted);
+  stroke-width: 0.75;
+}
+
+.scdb-trend__grid {
+  stroke: var(--background-modifier-border);
+  stroke-width: 0.75;
+}
+
+.scdb-trend__tick {
+  fill: var(--text-muted);
+  font-size: 8px;
+}
+
+.scdb-trend__value {
+  fill: var(--text-normal);
+  font-size: 9px;
 }
 
 /* ------------------------------------------------------- tables and lists -- */

@@ -71,7 +71,7 @@ export function QueryBoard({ plugin }: { plugin: ScdbCockpitPlugin }) {
         extension === "csv"
           ? toCsv(result, { now, rawDurations: true })
           : toMarkdownTable(result, { now });
-      await plugin.exportQuery({
+      await plugin.exportDocument({
         basename: savedPath === "" ? "query" : "view",
         extension,
         content,

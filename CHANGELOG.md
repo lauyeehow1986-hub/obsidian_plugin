@@ -224,6 +224,103 @@ The three hats become a control rather than a settings field (§7 A3).
   is a filter that loses an overdue request, so `hatFilter` is a real setting,
   not a hidden switch.
 - Settings schema v2: adds `hatFilter`, with the migration step and its trail.
+- 89 further tests; 420 in total. 36 smoke checks. Bundle 149.0 KB.
+
+### Added — A3, charts and bottleneck analytics
+An **Analytics** board and `Show queue analytics`, answering §7 A3's list in the
+order you would work through "why is the queue slow?": where the work is, how
+long it sits, who is holding it, and whether governance is the reason.
+
+- Queue by stage, median dwell per stage, dwell distribution, who the holdup is
+  with, live work by hat, and a turnaround trend by completion month.
+- **Governance risk is assessed by the workflow spec's own gates**, never by a
+  second definition. A request counts as *blocked* only when every stage it is
+  allowed to move to is gated shut; one open route means it can still progress.
+  The chart ranks which gate refuses most often — the one worth fixing first.
+  Re-implementing "needs a current IRB" in TypeScript would drift from the spec
+  the first time the spec changed, leaving a governance instrument that quietly
+  disagreed with the governance rules.
+- Every series carries its own title, unit, denominator and empty-state
+  sentence, and that is asserted in a test. §6 requires an explicit unit and a
+  stated denominator on every chart; a rule enforced in the view holds only
+  until somebody adds a second view.
+- Rules that could be enforced in code are: bars always from zero, categorical
+  order preserved rather than re-sorted by value, the emphasised part of a bar
+  spelled out in words as well as shaded, and the trend's y-axis starting at
+  zero with gaps left as gaps — a line drawn across a month where nothing
+  completed asserts a trend through a hole.
+- Terminal stages are excluded from median dwell: the clock stops the moment a
+  request enters one, so "Delivered: 0 days" measures the rule, not the stage.
+- **Effort by activity is not here.** It needs the effort log (B2), and the
+  board says so rather than showing an empty chart.
+
+### Added — A3, static HTML export
+`Export board` writes the current board to `95 Exports/` as one self-contained
+file that opens on a machine with no Obsidian, no plugin and no network.
+
+- Styles inlined, no script, no external request of any kind — asserted in
+  tests, because each of those would quietly break the only thing the file is
+  for. Print stylesheet included, with `print-color-adjust` so the bars survive
+  a printer's habit of dropping backgrounds.
+- **Every document carries a provenance footer** naming when it was generated
+  and stating plainly that it is not the official record — §5.1 is explicit
+  that the institutional eData system remains authoritative, and a governance
+  instrument that quietly contradicts the system of record is worse than none.
+- The document states the hat it was filtered to and how many requests that
+  hid, so a reader cannot mistake a filtered board for the whole queue.
+- The three A3 guards and only those three: it always lands in `95 Exports/`,
+  the confirmation names the file and the row count, and the write appends an
+  `export` entry to the ledger. **No redaction machinery**, deliberately.
+
+**Charts render from one source in both places.** A chart is built as a neutral
+element tree in `domain/report/`; the cockpit maps it onto Preact's `h`, the
+export serialises it to a string. Two hand-written renderers would drift, and
+the one that drifts is the one nobody looks at until it is in front of a
+committee. The alternative, `preact-render-to-string`, would have been a
+dependency for something `element.ts` does in sixty lines. Escaping is the
+serialiser's whole job: every value in a tree comes out of a note.
+
+Board *tables*, by contrast, are a snapshot and not a clone of the interactive
+board — cards you click do not become a document you print. What is shared is
+the part that must not drift: the numbers, and the state vocabulary, which moved
+to `domain/report/present` so a board cannot say "Overdue" on screen and
+"breached" in the file.
+
+### Fixed — found by running it
+- **The mode hotkeys moved to `Ctrl/Cmd+Shift+1/2/3`.** CLAUDE.md §7 A3 asks for
+  `Ctrl+1/2/3`, but Obsidian core already binds `Ctrl+1..8` to "Go to tab #N" —
+  verified in 1.12.7, where the core binding wins and ours never fired. A
+  shortcut that silently loses to a core binding is worse than a working one
+  next door; the hotkeys pane still lets the user take `Ctrl+1..3` back.
+- **The export confirmation named a file that was not the one written.**
+  `plannedPath` returned the un-suffixed name while `write()` walked collisions,
+  so a second export the same day promised `…-08-22.html` and produced
+  `…-08-22-2.html`. Both now walk the same path. A confirmation that does not
+  name the thing it is about to do is not a confirmation.
+- **The chart grid forced a horizontal scrollbar below its track minimum.** A
+  bare `minmax(320px, 1fr)` refuses to shrink, so the cockpit scrolled sideways
+  in a 300px sidebar — the width §6 requires every view to survive. Now
+  `minmax(min(320px, 100%), 1fr)`, in both stylesheets.
+- **Stage labels no longer follow `retired:` on a board.** `resolveStage` maps a
+  retired id to its successor so historical dwell still resolves, which meant a
+  request stranded in `pending-approval` displayed as "Awaiting approval" —
+  two stages under one heading, hiding the very note that needs migrating. One
+  shared `stageLabelOf` now prints the raw id for anything not currently
+  declared, matching the rule the generated `.base` files already follow.
+- Blocking parties render as `Dr A Tan`, not `[[Dr A Tan]]`.
+- The governance headline said "0 requests cannot move at all" when none were
+  blocked. One shared sentence, and it says "No request is held up by a gate."
+
+### Verified — A3 in a running Obsidian
+Obsidian 1.12.7, test vault, after each fix above:
+- Status bar shows the hat; clicking cycles it; `Ctrl+Shift+1/2/3` jump.
+- Boards narrow to the hat, state what they are holding back, and the unhatted
+  fixture (REQ-2026-009) appears under all three with its "no hat" chip.
+- The Analytics board renders every chart at full width and reflows to one
+  column at ~200px content width with no sideways scroll.
+- Export wrote `95 Exports/Queue analytics-2026-08-22.html`, the notice named
+  the file and the row count, the ledger gained an `export` row, and
+  `Verify audit ledger` reported all three entries reconciling.
 
 ### Added — fixture verification
 - **The shipped `test-vault/` fixtures are now parsed by the real parsers**, not

@@ -13,7 +13,15 @@ import type { RequestView } from "./domain/request/holdup.js";
 import { TransitionRefused } from "./domain/request/transition.js";
 import type { WorkflowSpec } from "./domain/request/workflow.js";
 import { migrateSettings } from "./domain/settings/migrate.js";
-import { matchesMode, modeInfo, nextMode } from "./domain/settings/mode.js";
+import { allModes, matchesMode, modeInfo, nextMode } from "./domain/settings/mode.js";
+import {
+  boardRowCount,
+  buildBoardDocument,
+  type BoardContext,
+  type BoardId,
+} from "./domain/report/boards.js";
+import { renderDocument } from "./domain/report/document.js";
+import { toVaultMinute } from "./domain/time/dates.js";
 import { MODES, defaultSettings, type Mode, type ScdbSettings } from "./domain/settings/schema.js";
 import type { FieldDef, Query, Row } from "./domain/query/model.js";
 import type { SavedView } from "./domain/query/savedView.js";
@@ -226,6 +234,12 @@ export default class ScdbCockpitPlugin extends Plugin {
     });
 
     this.addCommand({
+      id: "analytics",
+      name: "Show queue analytics",
+      callback: () => void this.activateCockpit("analytics"),
+    });
+
+    this.addCommand({
       id: "explore",
       name: "Explore notes with a query",
       callback: () => void this.activateCockpit("explore"),
@@ -243,15 +257,17 @@ export default class ScdbCockpitPlugin extends Plugin {
       callback: () => void this.verifyLedger(),
     });
 
-    // Ctrl/Cmd+1..3 as CLAUDE.md §7 A3 asks. Obsidian shows a conflict in its
-    // hotkeys pane if the user has bound these elsewhere, and they can rebind;
-    // shipping no default at all would leave the documented shortcut unwired.
+    // CLAUDE.md §7 A3 asks for Ctrl+1/2/3. Obsidian core already binds Ctrl+1..8
+    // to "Go to tab #N" — verified in 1.12.7, where the core binding wins and
+    // ours never fires — so the default is one modifier along. A shortcut that
+    // silently loses to a core binding is worse than a working one next door;
+    // the hotkeys pane still lets the user take Ctrl+1..3 if they prefer.
     MODES.forEach((mode, index) => {
       const info = modeInfo(mode);
       this.addCommand({
         id: `mode-${mode}`,
         name: `Wear the ${info.label} hat`,
-        hotkeys: [{ modifiers: ["Mod"], key: String(index + 1) }],
+        hotkeys: [{ modifiers: ["Mod", "Shift"], key: String(index + 1) }],
         callback: () => void this.setMode(mode),
       });
     });
@@ -607,9 +623,17 @@ export default class ScdbCockpitPlugin extends Plugin {
    * written (§7 A3), because an export is the moment vault content becomes a
    * file that can travel.
    */
-  async exportQuery(request: ExportRequest): Promise<void> {
-    const planned = this.exporter.plannedPath(request.basename, request.extension);
+  async exportDocument(request: ExportRequest): Promise<void> {
     const rows = `${request.rows} row${request.rows === 1 ? "" : "s"}`;
+    let planned: string;
+    try {
+      planned = this.exporter.plannedPath(request.basename, request.extension);
+    } catch (error) {
+      // Nothing has been written, so this is a refusal rather than a failure.
+      reportError(error, "could not work out where to write the export.");
+      return;
+    }
+
     const go = await confirm(this.app, `Write ${rows} to ${planned}?`, "Export");
     if (!go) return;
 
@@ -619,6 +643,41 @@ export default class ScdbCockpitPlugin extends Plugin {
     } catch (error) {
       reportError(error, "could not write the export.");
     }
+  }
+
+  /**
+   * Write a board out as a self-contained HTML file (§7 A3).
+   *
+   * The snapshot carries exactly what the board shows, including the hat
+   * filter — so the document states its own scope rather than leaving a reader
+   * to assume it is the whole queue.
+   */
+  async exportBoard(board: BoardId): Promise<void> {
+    const now = Date.now();
+    const { views, hidden, filtered } = this.visibleRequests(now);
+    const info = modeInfo(this.settings.mode);
+
+    const context: BoardContext = {
+      views,
+      allViews: this.index.views({ now }),
+      spec: this.workflows.only(),
+      hats: allModes().map((entry) => ({ id: entry.id, label: entry.label })),
+      now,
+      generatedAt: toVaultMinute(now).replace("T", " "),
+      scope: filtered
+        ? `${info.label} work only` +
+          (hidden > 0 ? `; ${hidden} request${hidden === 1 ? "" : "s"} under another hat not shown` : "")
+        : "Every hat",
+    };
+
+    const document = buildBoardDocument(board, context);
+    await this.exportDocument({
+      basename: document.title,
+      extension: "html",
+      content: renderDocument(document),
+      subject: `BOARD-${board}`,
+      rows: boardRowCount(board, context),
+    });
   }
 
   async verifyLedger(): Promise<void> {

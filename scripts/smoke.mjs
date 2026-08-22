@@ -230,6 +230,12 @@ const checks = [
     "the hat filter can be turned off from the palette",
     commands.includes("toggle-hat-filter"),
   ],
+  ["the analytics board has a command", commands.includes("analytics")],
+  [
+    // The static HTML export must never write outside 95 Exports/ (§7 A3).
+    "board exports land in the exports folder",
+    instance.exporter?.plannedPath("Queue analytics", "html").startsWith("95 Exports/"),
+  ],
   ["folder map is populated", instance.settings.folders.requests === "10 Requests"],
   ["Bases probe does not throw", typeof instance.basesAvailable === "boolean"],
   ["Bases absent without the API", instance.basesAvailable === false],
@@ -313,8 +319,19 @@ const checks = [
  */
 const CONTROL = ["mod-cta", "mod-warning", "scdb-control"];
 const uiDir = resolve("src", "ui");
+
+/** Every .tsx under src/ui, subdirectories included — boards live in them too. */
+function tsxFiles(dir, prefix = "") {
+  const out = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    if (entry.isDirectory()) out.push(...tsxFiles(resolve(dir, entry.name), `${prefix}${entry.name}/`));
+    else if (entry.name.endsWith(".tsx")) out.push(`${prefix}${entry.name}`);
+  }
+  return out;
+}
+
 const undeclared = [];
-for (const name of readdirSync(uiDir).filter((f) => f.endsWith(".tsx"))) {
+for (const name of tsxFiles(uiDir)) {
   const source = readFileSync(resolve(uiDir, name), "utf8");
   // Each `<button` up to the `>` that ends its opening tag. Attribute values
   // here never contain `>`, so this stays honest without a JSX parser.

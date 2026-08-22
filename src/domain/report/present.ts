@@ -1,0 +1,52 @@
+/**
+ * Presentation vocabulary (CLAUDE.md §6).
+ *
+ * In `domain/` rather than `ui/` because the static HTML export needs the same
+ * words as the screen: a board that reads "Overdue" in Obsidian and "breached"
+ * in the exported file is two vocabularies pretending to be one.
+ *
+ * Two rules from the design language live here:
+ *
+ *  - **Never colour alone.** Every state carries a glyph and a label as well as
+ *    a colour class, so the board reads correctly for a colour-blind reader and
+ *    in a theme that overrides our palette.
+ *  - **Durations are human.** One formatter, imported everywhere.
+ */
+
+import type { SlaState } from "../request/dwell";
+import { formatDuration } from "../time/dates";
+
+export interface StatePresentation {
+  label: string;
+  /** Text glyph, not an icon font — it survives copy-paste into an export. */
+  glyph: string;
+  className: string;
+}
+
+const STATES: Record<SlaState, StatePresentation> = {
+  breached: { label: "Overdue", glyph: "!", className: "scdb-state--overdue" },
+  "at-risk": { label: "At risk", glyph: "~", className: "scdb-state--at-risk" },
+  "on-track": { label: "On track", glyph: "·", className: "scdb-state--on-track" },
+  "no-target": { label: "No target", glyph: "–", className: "scdb-state--none" },
+};
+
+export function presentState(state: SlaState): StatePresentation {
+  return STATES[state];
+}
+
+/** "23 days", or an em dash when there is nothing to show. */
+export function duration(ms: number | null): string {
+  return ms === null ? "—" : formatDuration(ms);
+}
+
+/** `[[Dr A Tan]]` reads as "Dr A Tan" in a table; the link stays in the note. */
+export function displayName(value: string | null): string {
+  if (value === null || value === "") return "—";
+  const match = /^\[\[([^\]|]+)(?:\|([^\]]+))?\]\]$/.exec(value.trim());
+  return match ? (match[2] ?? match[1]!).trim() : value;
+}
+
+/** "5 requests", "1 request". */
+export function count(n: number, noun: string, plural = `${noun}s`): string {
+  return `${n} ${n === 1 ? noun : plural}`;
+}
