@@ -5,6 +5,42 @@ clearly marked entry (CLAUDE.md §10).
 
 ## Unreleased
 
+### Added — B4, English-language search
+
+*"requests stuck in approval more than 2 weeks waiting on Dr Tan"* now becomes
+an ordinary A2 query. It is a **deterministic parser over this vault's own
+vocabulary** — the workflow spec's stage names, the field catalogue's labels,
+and the people and studies that actually appear in frontmatter. No model, no
+network, nothing that could not run on a laptop with the cable pulled.
+
+- **Every phrase understood becomes a chip** saying what it will do, and every
+  word not understood is listed under the box. Nothing is guessed. That is B4's
+  "shown as editable chips, so it is auditable and correctable" taken literally:
+  the query you can defend a number with is the one you can read.
+- **Chips know the characters they came from**, so a chip's ✕ deletes exactly
+  those words from the box. There is no second copy of the query to drift out of
+  step with what is typed.
+- **Ambiguity is refused, not resolved.** A surname two people answer to matches
+  nothing and says so, rather than silently picking one — the failure mode that
+  ends with the wrong clinician being chased.
+- What it reads: note types; stages, by label, id or a single distinctive word
+  ("approval"); durations with the right anchor, so "stuck in triage for two
+  weeks" is current dwell and "older than two weeks" is total age (§5.1 insists
+  those are different numbers, and the chip always names which it chose); date
+  windows as *offsets* rather than dates, so a saved view still means the same
+  thing next month; the phrases that stand for a whole filter (overdue, at risk,
+  identifiable, no IRB, stranded, bounced); people and studies with the
+  preposition deciding the field ("waiting on X" is the holdup question);
+  negation; grouping, totals, sorting and a row limit.
+- Where it lives: the top of the **Explore** board, plus a **Search in English**
+  command that asks for a phrase and opens Explore showing what it parsed to.
+- A governance phrase is only offered when the field behind it exists, so the
+  vocabulary shrinks honestly on a note type that has no `identifiers`.
+- Three pure modules — `domain/query/words.ts` (tokens and quantities),
+  `phrases.ts` (the entire vocabulary, declarative, in one readable table) and
+  `language.ts` (the scanner) — with 30 tests, including one that runs the
+  parsed query through the engine and checks the rows that come back.
+
 ### Added — email Tier 1, importing saved messages (§5.10)
 
 Drag messages out of Outlook into the vault and the plugin reads them into

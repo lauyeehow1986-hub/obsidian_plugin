@@ -1,7 +1,8 @@
 import type { ComponentChildren } from "preact";
-import { useState } from "preact/hooks";
+import { useEffect, useState } from "preact/hooks";
 import { runQuery } from "../domain/query/evaluate";
 import { toCsv, toMarkdownTable } from "../domain/query/format";
+import type { ParsedText } from "../domain/query/language";
 import {
   AGGREGATE_FNS,
   BUCKETS,
@@ -13,6 +14,7 @@ import {
 } from "../domain/query/model";
 import type ScdbCockpitPlugin from "../main.js";
 import { FilterBuilder } from "./FilterBuilder";
+import { LanguageSearch } from "./LanguageSearch";
 import { ResultTable } from "./ResultTable";
 
 /**
@@ -22,9 +24,14 @@ import { ResultTable } from "./ResultTable";
  * deliberate rather than lazy — dwell times are computed from `now`, so a
  * cached result is a result that is quietly wrong by tomorrow (§5.1). Re-running
  * a few thousand rows costs less than a repaint.
+ *
+ * The English box (§7 B4) sits on top and *rebuilds* the panels below rather
+ * than filtering alongside them, so what runs is always what the panels show.
  */
 
 const REQUEST_TYPE = "scdb-request";
+
+const NOTHING_PARSED: ParsedText = { chips: [], ignored: [] };
 
 function Panel({ title, children }: { title: string; children: ComponentChildren }) {
   return (
@@ -35,13 +42,37 @@ function Panel({ title, children }: { title: string; children: ComponentChildren
   );
 }
 
-export function QueryBoard({ plugin }: { plugin: ScdbCockpitPlugin }) {
+export function QueryBoard({
+  plugin,
+  search,
+}: {
+  plugin: ScdbCockpitPlugin;
+  /** A phrase a command arrived with. `token` changes on every request. */
+  search?: { text: string; token: number };
+}) {
   const [query, setQuery] = useState<Query>(() => ({
     ...emptyQuery([REQUEST_TYPE]),
     sort: [{ field: "dwell", direction: "desc" }],
   }));
   const [savedPath, setSavedPath] = useState<string>("");
   const [busy, setBusy] = useState(false);
+  const [text, setText] = useState("");
+  const [parsed, setParsed] = useState<ParsedText>(NOTHING_PARSED);
+
+  const applySearch = (next: string): void => {
+    setText(next);
+    const result = plugin.searchInEnglish(next, { types: query.types, columns: query.columns });
+    setParsed(result.parsed);
+    setQuery(result.query);
+    // The query no longer matches the saved view it may have come from.
+    if (next.trim() !== "") setSavedPath("");
+  };
+
+  // A command can open this board with a phrase already typed. Keyed on the
+  // token, not the text, so asking the same question twice still lands.
+  useEffect(() => {
+    if (search !== undefined) applySearch(search.text);
+  }, [search?.token]);
 
   const now = Date.now();
   const types = plugin.notes.types();
@@ -87,6 +118,8 @@ export function QueryBoard({ plugin }: { plugin: ScdbCockpitPlugin }) {
 
   return (
     <div class="scdb-explore">
+      <LanguageSearch text={text} parsed={parsed} onChange={applySearch} />
+
       <div class="scdb-explore__toolbar">
         <label class="scdb-toggle">
           Saved view
@@ -96,7 +129,11 @@ export function QueryBoard({ plugin }: { plugin: ScdbCockpitPlugin }) {
               const path = (event.currentTarget as HTMLSelectElement).value;
               setSavedPath(path);
               const stored = plugin.views.byPath(path);
-              if (stored) setQuery(stored.view.query);
+              if (!stored) return;
+              setQuery(stored.view.query);
+              // The box no longer describes what is on screen, so it goes.
+              setText("");
+              setParsed(NOTHING_PARSED);
             }}
           >
             <option value="">Ad hoc query</option>

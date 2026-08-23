@@ -4,6 +4,8 @@ import { stageLabels } from "./domain/bases/config.js";
 import { NoteIndex } from "./data/noteIndex.js";
 import { REQUEST_TYPE, RequestIndex } from "./data/requestIndex.js";
 import { buildRows, catalogueFor, type RowSourceDeps } from "./data/rows.js";
+import { buildVocabulary } from "./data/vocabulary.js";
+import { chipsToQuery, parseQueryText, type ParsedText } from "./domain/query/language.js";
 import { SavedViewStore } from "./data/savedViewStore.js";
 import { WorkflowStore } from "./data/workflowStore.js";
 import { requestMetrics } from "./domain/request/dwell.js";
@@ -485,6 +487,12 @@ export default class ScdbCockpitPlugin extends Plugin {
       id: "explore",
       name: "Explore notes with a query",
       callback: () => void this.activateCockpit("explore"),
+    });
+
+    this.addCommand({
+      id: "search-english",
+      name: "Search in English",
+      callback: () => void this.searchFromCommand(),
     });
 
     this.addCommand({
@@ -1518,6 +1526,28 @@ export default class ScdbCockpitPlugin extends Plugin {
     return catalogueFor(this.queryDeps(), types);
   }
 
+  /**
+   * A phrase to a query (§7 B4). Offline, deterministic, no model involved.
+   *
+   * Parsed twice when the sentence names a note type, because the vocabulary
+   * depends on which types are in play: "publications submitted this year"
+   * has to be read against the publication catalogue, and the first pass is
+   * what reveals that it is about publications at all.
+   */
+  searchInEnglish(text: string, base: Partial<Query>): { parsed: ParsedText; query: Query } {
+    const deps = this.queryDeps();
+    const first = parseQueryText(text, buildVocabulary(deps, base.types ?? []));
+    const query = chipsToQuery(first.chips, base);
+
+    const same =
+      query.types.length === (base.types?.length ?? 0) &&
+      query.types.every((type) => base.types?.includes(type) === true);
+    if (same) return { parsed: first, query };
+
+    const second = parseQueryText(text, buildVocabulary(deps, query.types));
+    return { parsed: second, query: chipsToQuery(second.chips, base) };
+  }
+
   openNote(path: string): void {
     const entry = this.notes.byPath(path);
     if (entry) void this.app.workspace.getLeaf(false).openFile(entry.file);
@@ -1901,21 +1931,40 @@ export default class ScdbCockpitPlugin extends Plugin {
     }
   }
 
-  async activateCockpit(tab?: CockpitTab): Promise<void> {
+  /**
+   * Ask for a phrase, then open Explore showing what it means (§7 B4).
+   *
+   * The dialog only collects the words; every chip it parsed into is visible
+   * and removable on the board, because a search you cannot inspect is not a
+   * search you can defend a number with.
+   */
+  private async searchFromCommand(): Promise<void> {
+    const phrase = await askText(this.app, {
+      title: "Search in English",
+      lede: "Offline and deterministic — it knows this vault's stages, fields and names, and reports any words it could not place.",
+      label: "Ask for",
+      initial: "",
+      submitLabel: "Search",
+    });
+    if (phrase === null || phrase.trim() === "") return;
+    await this.activateCockpit("explore", phrase);
+  }
+
+  async activateCockpit(tab?: CockpitTab, search?: string): Promise<void> {
     const { workspace } = this.app;
     const existing = workspace.getLeavesOfType(COCKPIT_VIEW_TYPE);
 
     if (existing.length > 0) {
       const leaf = existing[0]!;
       await workspace.revealLeaf(leaf);
-      if (tab && leaf.view instanceof CockpitView) leaf.view.focusTab(tab);
+      if (tab && leaf.view instanceof CockpitView) leaf.view.focusTab(tab, search);
       return;
     }
 
     const leaf = workspace.getLeaf("tab");
     await leaf.setViewState({ type: COCKPIT_VIEW_TYPE, active: true });
     await workspace.revealLeaf(leaf);
-    if (tab && leaf.view instanceof CockpitView) leaf.view.focusTab(tab);
+    if (tab && leaf.view instanceof CockpitView) leaf.view.focusTab(tab, search);
   }
 
   async loadSettings(): Promise<void> {

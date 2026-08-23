@@ -473,6 +473,8 @@ function ModeBar({
 export interface TabFocus {
   tab: CockpitTab;
   token: number;
+  /** A phrase for the Explore board's English box, when a command supplied one. */
+  search?: string;
 }
 
 export function CockpitPanel({
@@ -555,7 +557,14 @@ export function CockpitPanel({
         {tab === "holdup" && <HoldupBoard views={views} plugin={plugin} />}
         {tab === "ageing" && <AgeingBoard views={views} plugin={plugin} />}
         {tab === "analytics" && <AnalyticsBoard views={views} plugin={plugin} />}
-        {tab === "explore" && <QueryBoard plugin={plugin} />}
+        {tab === "explore" && (
+          <QueryBoard
+            plugin={plugin}
+            {...(focus.search === undefined
+              ? {}
+              : { search: { text: focus.search, token: focus.token } })}
+          />
+        )}
         {tab === "effort" && <EffortBoard plugin={plugin} />}
         {tab === "deadlines" && <DeadlinesBoard plugin={plugin} />}
         {tab === "migration" && <MigrationBoard plugin={plugin} />}
@@ -593,8 +602,11 @@ export class CockpitView extends ItemView {
   }
 
   /** Show one tab — used by the commands that open the cockpit at a board. */
-  focusTab(tab: CockpitTab): void {
-    this.focus = { tab, token: this.focus.token + 1 };
+  focusTab(tab: CockpitTab, search?: string): void {
+    this.focus =
+      search === undefined
+        ? { tab, token: this.focus.token + 1 }
+        : { tab, token: this.focus.token + 1, search };
     this.refresh();
   }
 

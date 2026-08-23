@@ -926,6 +926,75 @@
   gap: 4px var(--scdb-2);
 }
 
+/* ------------------------------------------------- English search (§7 B4) --
+ *
+ * The chips are the audit trail, so they are legible before they are pretty:
+ * each carries a role word ("where", "sort") as well as a colour, per §6.
+ */
+
+.scdb-search {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.scdb-search__row {
+  display: flex;
+  gap: var(--scdb-1);
+  align-items: center;
+}
+
+.scdb-search__input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.scdb-search__chips {
+  gap: 6px;
+}
+
+.scdb-searchchip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 2px 6px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  font-size: var(--font-ui-smaller);
+}
+
+.scdb-searchchip--filter {
+  border-color: var(--interactive-accent);
+}
+
+.scdb-searchchip__role {
+  color: var(--text-muted);
+  font-variant: small-caps;
+  letter-spacing: 0.02em;
+}
+
+.scdb-searchchip__drop {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  line-height: 1;
+  cursor: pointer;
+}
+
+.scdb-searchchip__drop:hover {
+  color: var(--text-error, #b3261e);
+}
+
+.scdb-search__ignored {
+  margin: 0;
+  color: var(--scdb-at-risk);
+  font-size: var(--font-ui-smaller);
+}
+
+.scdb-search__hint {
+  margin: 0;
+  font-size: var(--font-ui-smaller);
+}
+
 /* ---------------------------------------------------------------- filter -- */
 
 .scdb-filter {
