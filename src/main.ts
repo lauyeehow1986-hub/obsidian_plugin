@@ -175,6 +175,9 @@ export default class ScdbCockpitPlugin extends Plugin {
    */
   private announced = new Set<string>();
 
+  /** When the reminder sweep last ran, so the interval can honour the setting. */
+  private lastReminderCheck = 0;
+
   /**
    * Bumped whenever a month file in `80 Time/` changes on disk.
    *
@@ -308,11 +311,19 @@ export default class ScdbCockpitPlugin extends Plugin {
     // §7 B3 asks for reminders on vault open and on an interval. In-app only:
     // this repaints the badge and may raise a notice, and never touches the OS
     // notification centre or a mailbox.
+    //
+    // A fixed one-minute tick that decides for itself whether enough time has
+    // passed, rather than an interval sized from the setting: `setInterval` is
+    // given its period once, so reading the setting here would freeze it at
+    // whatever it was on load and the settings field would appear to do
+    // nothing until a reload. Every other setting in this plugin is read
+    // through a getter at the point of use, and this one now is too.
     this.registerInterval(
-      window.setInterval(
-        () => this.checkReminders(),
-        Math.max(5, this.settings.events.checkMinutes) * 60_000,
-      ),
+      window.setInterval(() => {
+        const due = Math.max(5, this.settings.events.checkMinutes) * 60_000;
+        if (Date.now() - this.lastReminderCheck < due) return;
+        this.checkReminders();
+      }, 60_000),
     );
 
     // The metadata cache is not populated until layout is ready; indexing
@@ -2085,6 +2096,7 @@ export default class ScdbCockpitPlugin extends Plugin {
    *   interval tick, so a lapsed obligation is said once rather than hourly.
    */
   checkReminders(announce = false): void {
+    this.lastReminderCheck = Date.now();
     this.renderDeadlineBar();
 
     if (!announce || !this.settings.events.notifyOnOpen) return;
@@ -2294,7 +2306,7 @@ export default class ScdbCockpitPlugin extends Plugin {
       const ok = await confirm(
         this.app,
         `Create event notes from ${preview.events.length} entr${preview.events.length === 1 ? "y" : "ies"} in ${chosen.path}?\n\n` +
-          `They land in ${this.settings.folders.events}/ as \`type: event\`. Anything already imported under the same calendar id is skipped, and nothing already in the vault is changed.`,
+          `They land in ${this.settings.folders.events}/ as event notes. Anything already imported under the same calendar id is skipped, and nothing already in the vault is changed.`,
         "Import",
       );
       if (!ok) return;

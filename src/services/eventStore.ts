@@ -210,6 +210,12 @@ export class EventStore {
     const outcome: ImportOutcome = { created: [], duplicates: 0, problems: [...parsed.problems] };
     if (parsed.events.length === 0) return outcome;
 
+    // Checked before anything is written, not after. Asking for the actor once
+    // the notes already exist would leave the vault holding an import the
+    // ledger has no record of — the failure rule 9 exists to prevent, and the
+    // reason the exporter refuses up front too.
+    const actor = this.actorOrThrow();
+
     const existing = this.all();
     const seen = new Set(existing.map((note) => note.icsUid).filter((uid) => uid !== ""));
     // Entries this vault emitted, so a round trip through Outlook does not
@@ -246,7 +252,7 @@ export class EventStore {
       await this.deps.audit.append([
         {
           ts: toVaultMinute(now),
-          actor: this.actorOrThrow(),
+          actor,
           action: "bulk-edit",
           subject: "calendar-import",
           detail: `${outcome.created.length} event note${outcome.created.length === 1 ? "" : "s"} created from a calendar file, ${outcome.duplicates} already present`,

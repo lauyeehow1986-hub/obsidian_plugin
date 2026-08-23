@@ -115,6 +115,15 @@ to Outlook that needs no mailbox access (§5.7, §7 B3).
   override that runs first.
 - Exporting and re-importing the calendar would have created a second copy of
   every obligation as an `event` note. Guarded, as above.
+- **A calendar import with no actor set created the notes and *then* refused.**
+  The ledger entry needs an actor, and asking for one after the notes exist
+  leaves the vault holding an import the ledger has no record of — the failure
+  rule 9 exists to prevent. Checked up front now, as the exporter already did.
+- The recheck interval was sized from `checkMinutes` once at load, so changing
+  it in settings appeared to do nothing until a reload. It now ticks every
+  minute and reads the setting at the point of use, like every other setting.
+- The import confirmation rendered its own backticks — that dialog is plain
+  text, not markdown.
 
 
 ### Added — B2, the time and effort HUD
