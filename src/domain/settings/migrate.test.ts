@@ -438,4 +438,48 @@ describe("migrateSettings", () => {
     });
   });
 
+  describe("v7 -> v8: the publications tracker", () => {
+    it("defaults to Vancouver, as §5.4 names it", () => {
+      expect(migrateSettings(null).settings.publications.citationFormat).toBe("vancouver");
+    });
+
+    it("adds the block to a v7 file without disturbing anything else", () => {
+      const result = migrateSettings({
+        schemaVersion: 7,
+        actor: "yh",
+        comms: { uriCeiling: 1400 },
+      });
+      expect(result.settings.publications.citationFormat).toBe("vancouver");
+      expect(result.settings.actor).toBe("yh");
+      expect(result.settings.comms.uriCeiling).toBe(1400);
+      expect(result.notes.join(" ")).toContain("Migrated v7 -> v8");
+    });
+
+    it("keeps a format the user chose", () => {
+      const result = migrateSettings({
+        schemaVersion: 8,
+        publications: { citationFormat: "apa" },
+      });
+      expect(result.settings.publications.citationFormat).toBe("apa");
+    });
+
+    it("resets a format the formatter does not know, and says so", () => {
+      // `schema.ts` keeps its own copy of the format names so it does not have
+      // to import the publication engine; this is the seam that holds the two
+      // together, and an unknown name reaching the formatter produces nothing.
+      const result = migrateSettings({
+        schemaVersion: 8,
+        publications: { citationFormat: "harvard" },
+      });
+      expect(result.settings.publications.citationFormat).toBe("vancouver");
+      expect(result.notes.join(" ")).toContain("Unknown citation format");
+    });
+
+    it("survives a publications block that is not a mapping", () => {
+      const result = migrateSettings({ schemaVersion: 8, publications: 42 });
+      expect(result.settings.publications.citationFormat).toBe("vancouver");
+      expect(result.notes.join(" ")).toContain("Publication settings were not readable");
+    });
+  });
+
 });

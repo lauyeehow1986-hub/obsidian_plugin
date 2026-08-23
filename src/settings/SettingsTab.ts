@@ -3,7 +3,11 @@ import { backupAge } from "../domain/backup/snapshots.js";
 import type { AttachmentPolicy } from "../domain/comms/emlThread.js";
 import { describeAlerts } from "../domain/events/schedule.js";
 import { allModes, modeInfo } from "../domain/settings/mode.js";
-import { MODES } from "../domain/settings/schema.js";
+import {
+  CITATION_FORMAT_SETTINGS,
+  MODES,
+  type CitationFormatSetting,
+} from "../domain/settings/schema.js";
 import { buildMailto, buildTeamsChat, MIN_URI_CEILING } from "../domain/comms/uri.js";
 import { probeHandler, reportLaunch } from "../services/protocol.js";
 import type ScdbCockpitPlugin from "../main.js";
@@ -90,6 +94,7 @@ export class ScdbSettingsTab extends PluginSettingTab {
     this.emailImportSection(containerEl);
     this.briefingSection(containerEl);
     this.effortSection(containerEl);
+    this.publicationsSection(containerEl);
     this.eventsSection(containerEl);
     this.backupSection(containerEl);
 
@@ -344,6 +349,45 @@ export class ScdbSettingsTab extends PluginSettingTab {
         briefing.lastDate === ""
           ? "No briefing has been written yet. \"Write today's briefing\" in the command palette makes one now."
           : `Last briefing: ${briefing.lastDate}.`,
+    });
+  }
+
+  /**
+   * Publications (§5.4, §7 B5).
+   *
+   * One setting, which is the whole point: §5.4 asks for a configurable
+   * citation format and for nothing else to be a preference.
+   */
+  private publicationsSection(containerEl: HTMLElement): void {
+    containerEl.createEl("h3", { text: "Publications" });
+
+    new Setting(containerEl)
+      .setName("Citation format")
+      .setDesc(
+        "Used by the publication list and the copy commands. The list itself can be " +
+          "switched per view; this is what it opens as.",
+      )
+      .addDropdown((dropdown) => {
+        for (const format of CITATION_FORMAT_SETTINGS) {
+          dropdown.addOption(format, format === "vancouver" ? "Vancouver" : "APA");
+        }
+        dropdown
+          .setValue(this.plugin.settings.publications.citationFormat)
+          .onChange(async (value) => {
+            if (!(CITATION_FORMAT_SETTINGS as readonly string[]).includes(value)) return;
+            this.plugin.settings.publications.citationFormat =
+              value as CitationFormatSetting;
+            await this.plugin.saveSettings();
+          });
+      });
+
+    containerEl.createEl("p", {
+      cls: "setting-item-description",
+      text:
+        "Author names are split into surname and initials from what the note writes " +
+        "(“Dr A Tan” becomes “Tan A”). Where that split is a guess — a name " +
+        "written out in full, or a single word — the list says so rather than " +
+        "renaming a collaborator silently.",
     });
   }
 

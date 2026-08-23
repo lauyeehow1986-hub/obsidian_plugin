@@ -9,6 +9,7 @@
  */
 
 import {
+  CITATION_FORMAT_SETTINGS,
   CURRENT_SETTINGS_VERSION,
   DEFAULT_FOLDERS,
   defaultBackup,
@@ -16,6 +17,7 @@ import {
   defaultComms,
   defaultEffort,
   defaultEvents,
+  defaultPublications,
   defaultSettings,
   isMode,
   type BackupConfig,
@@ -24,6 +26,7 @@ import {
   type EffortConfig,
   type EventsConfig,
   type FolderKey,
+  type PublicationsConfig,
   type ScdbSettings,
 } from "./schema.js";
 import { ATTACHMENT_POLICIES, type AttachmentPolicy } from "../comms/emlThread.js";
@@ -174,6 +177,7 @@ export function migrateSettings(raw: unknown): MigrationResult {
   merged.briefing = repairBriefing(merged.briefing, notes);
   merged.effort = repairEffort(merged.effort, notes);
   merged.events = repairEvents(merged.events, notes);
+  merged.publications = repairPublications(merged.publications, notes);
 
   // Folders: fill gaps, keep customised values, drop nothing.
   const folders: Record<string, unknown> = isRecord(merged.folders) ? { ...merged.folders } : {};
@@ -236,6 +240,14 @@ export function migrateSettings(raw: unknown): MigrationResult {
       "Migrated v6 -> v7: added importing saved email files. It stays refused " +
         "until you list your own email addresses, because which way a message " +
         "went cannot be guessed and getting it wrong inverts every follow-up.",
+    );
+  }
+
+  if (storedVersion > 0 && storedVersion < 8) {
+    notes.push(
+      "Migrated v7 -> v8: added the publications tracker. Citations format as " +
+        "Vancouver until you choose otherwise, and no publication note is touched " +
+        "until you move a manuscript's stage yourself.",
     );
   }
 
@@ -343,6 +355,33 @@ function repairAttachmentPolicy(value: unknown, notes: string[]): AttachmentPoli
     `Unknown attachment setting ${JSON.stringify(value)}; saving attached files only.`,
   );
   return "attachments";
+}
+
+/**
+ * The publications block.
+ *
+ * `schema.ts` keeps its own copy of the format names so it does not have to
+ * import the publication engine (see the note there). This is the seam where
+ * the two are held to each other: an unknown format falls back to Vancouver
+ * rather than reaching the formatter and producing nothing.
+ */
+function repairPublications(value: unknown, notes: string[]): PublicationsConfig {
+  const base = defaultPublications();
+  if (!isRecord(value)) {
+    if (value !== undefined) {
+      notes.push("Publication settings were not readable; reset to defaults.");
+    }
+    return base;
+  }
+
+  const format = value["citationFormat"];
+  if (typeof format === "string" && (CITATION_FORMAT_SETTINGS as readonly string[]).includes(format)) {
+    return { citationFormat: format as PublicationsConfig["citationFormat"] };
+  }
+  if (format !== undefined) {
+    notes.push(`Unknown citation format ${JSON.stringify(format)}; reset to "${base.citationFormat}".`);
+  }
+  return base;
 }
 
 function repairBriefing(value: unknown, notes: string[]): BriefingConfig {

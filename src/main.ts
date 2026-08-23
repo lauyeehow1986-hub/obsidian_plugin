@@ -31,6 +31,10 @@ import {
   parsePublication,
   type PublicationNote,
 } from "./domain/publication/publication.js";
+import { formatList, type CitationFormat } from "./domain/publication/citation.js";
+import { PublicationRefused } from "./domain/publication/stages.js";
+import { PublicationWriter } from "./services/publicationWriter.js";
+import { PublicationStageModal } from "./ui/PublicationStageModal.js";
 import { governanceRisk } from "./domain/request/analytics.js";
 import {
   boardRowCount,
@@ -148,6 +152,7 @@ export default class ScdbCockpitPlugin extends Plugin {
   index!: RequestIndex;
   audit!: AuditLog;
   writer!: RequestWriter;
+  publicationWriter!: PublicationWriter;
   views!: SavedViewStore;
   exporter!: Exporter;
   basesFiles!: BasesFiles;
@@ -218,6 +223,12 @@ export default class ScdbCockpitPlugin extends Plugin {
       audit: this.audit,
       requestsFolder: () => this.settings.folders.requests,
       actor: () => this.settings.actor,
+    });
+    this.publicationWriter = new PublicationWriter({
+      app: this.app,
+      audit: this.audit,
+      actor: () => this.settings.actor,
+      reindex: (file) => this.notes.update(file),
     });
     this.views = new SavedViewStore(this.app, this.notes, () => this.settings.folders.dashboards);
     this.exporter = new Exporter({
@@ -663,6 +674,32 @@ export default class ScdbCockpitPlugin extends Plugin {
       id: "open-effort",
       name: "Open the effort table",
       callback: () => void this.activateCockpit("effort"),
+    });
+
+    this.addCommand({
+      id: "publications",
+      name: "Show publications",
+      callback: () => void this.activateCockpit("publications"),
+    });
+
+    this.addCommand({
+      id: "copy-publication-list",
+      name: "Copy the publication list",
+      callback: () =>
+        void this.copyPublicationList({
+          format: this.settings.publications.citationFormat,
+          scdbOnly: false,
+        }),
+    });
+
+    this.addCommand({
+      id: "copy-scdb-publication-list",
+      name: "Copy the SCDB-supported publication list",
+      callback: () =>
+        void this.copyPublicationList({
+          format: this.settings.publications.citationFormat,
+          scdbOnly: true,
+        }),
     });
 
     this.addCommand({
@@ -1197,6 +1234,102 @@ export default class ScdbCockpitPlugin extends Plugin {
     }
 
     return { dated, publications };
+  }
+
+  // --- publications (§5.4, §7 B5) -------------------------------------------
+
+  /**
+   * Every publication note in the vault.
+   *
+   * Parsed on demand rather than cached: §5.4's numbers are all derived from
+   * `history`, and a projection kept alongside the index would be one more
+   * thing to invalidate for a note type measured in dozens, not thousands.
+   */
+  publications(): PublicationNote[] {
+    const publications: PublicationNote[] = [];
+    for (const entry of this.notes.all()) {
+      if (entry.type !== PUBLICATION_TYPE) continue;
+      publications.push(parsePublication(entry.file.path, entry.frontmatter));
+    }
+    return publications.sort((a, b) => a.id.localeCompare(b.id));
+  }
+
+  /** Move a manuscript to another stage, through the dialog that explains why not. */
+  movePublication(publication: PublicationNote): void {
+    const file = this.app.vault.getAbstractFileByPath(publication.path);
+    if (!(file instanceof TFile)) {
+      new Notice(`SCDB: "${publication.path}" is no longer in the vault.`, 8000);
+      return;
+    }
+
+    new PublicationStageModal(this.app, {
+      publication,
+      onSubmit: async (submission) => {
+        try {
+          await this.publicationWriter.transition({
+            file,
+            publication,
+            to: submission.to,
+            ...(submission.journal === undefined ? {} : { journal: submission.journal }),
+            ...(submission.decisionDue === undefined
+              ? {}
+              : { decisionDue: submission.decisionDue }),
+          });
+          this.refreshViews();
+          new Notice(`SCDB: ${publication.id || "manuscript"} → ${submission.to}.`);
+        } catch (error) {
+          if (error instanceof PublicationRefused) {
+            new Notice(`SCDB: move refused. ${error.message}`, 10000);
+          } else {
+            reportError(error, "could not move the manuscript.");
+          }
+        }
+      },
+    }).open();
+  }
+
+  /**
+   * The formatted publication list, on the clipboard.
+   *
+   * Clipboard rather than a written note, deliberately: a CV lands in Word or
+   * a grant portal, not in the vault, and writing a file the user then has to
+   * find and copy out of is a step for nothing. B7's report engine is where a
+   * list becomes a document.
+   */
+  async copyPublicationList(options: {
+    format: CitationFormat;
+    scdbOnly: boolean;
+  }): Promise<void> {
+    const groups = formatList(this.publications(), options);
+    const total = groups.reduce((sum, group) => sum + group.citations.length, 0);
+    if (total === 0) {
+      new Notice("SCDB: nothing to copy — no manuscript is accepted, in press or published.", 6000);
+      return;
+    }
+
+    const lines: string[] = [];
+    const uncertain = new Set<string>();
+    for (const group of groups) {
+      lines.push(`## ${group.year ?? "Undated"}`, "");
+      group.citations.forEach((citation, index) => {
+        lines.push(`${index + 1}. ${citation.text}`);
+        for (const name of citation.uncertain) uncertain.add(name.raw);
+      });
+      lines.push("");
+    }
+
+    const copied = await copyToClipboard(lines.join("\n").trimEnd());
+    if (!copied) {
+      new Notice("SCDB: the clipboard could not be written to.", 6000);
+      return;
+    }
+    new Notice(
+      `SCDB: ${total} reference${total === 1 ? "" : "s"} copied.` +
+        (uncertain.size === 0
+          ? ""
+          : ` Check ${uncertain.size} author name${uncertain.size === 1 ? "" : "s"} the split was unsure about: ${[...uncertain].join(", ")}.`),
+      uncertain.size === 0 ? 4000 : 10000,
+    );
   }
 
   /** Where the recurrence engine says each rule-driven obligation falls next. */

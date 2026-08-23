@@ -5,6 +5,69 @@ clearly marked entry (CLAUDE.md §10).
 
 ## Unreleased
 
+### Added — B5, the publications tracker
+
+The manuscript half of the job, and the number §5.4 calls the single most useful
+one an HOD can put in front of a funding committee: **papers this facility made
+possible**. A new **Publications** tab in the cockpit, three panels behind one
+segmented control.
+
+- **In flight** — every manuscript that still needs something from someone,
+  soonest decision first, with an overdue-decision alarm above it. `accepted`
+  and `in-press` stay on the board deliberately: proofs, embargo and the
+  open-access decision are still outstanding, and dropping them is how those get
+  missed.
+- **List** — the formatted publication list, grouped by year, newest first, in
+  Vancouver (the §5.4 default) or APA, filterable to SCDB-supported work, and
+  copyable to the clipboard in one action or two commands. Work still in
+  drafting is left out: a draft is not a publication.
+- **Impact** — count by stage, median days to first decision, resubmission
+  counts, and where the work lands. Every number states its denominator, and
+  the median names how many manuscripts it could not see because they are still
+  waiting.
+
+**The stage machine** mirrors the request engine's shape — `evaluate` decides
+and explains, `apply` returns a frontmatter patch and audit entries for the
+vault layer to write — with one deliberate difference: **no governance gates,
+and no override path.** A request gate exists because releasing identifiable
+data without a signed DUA is a breach; a manuscript moving to `accepted` is a
+journal's decision, not ours to withhold. Refusals here are structural only, and
+a structural refusal means the note and the vocabulary disagree, which is a typo
+rather than a judgement. Every stage change still appends to `history` and logs
+a `stage-change` to the audit ledger (§5.6).
+
+- `rejected` is **not** a terminal stage. A rejected paper going back out is the
+  normal life of a manuscript and is exactly what the resubmission count counts;
+  closing that door would make the number always zero. `published` is the only
+  stage with nowhere to go.
+- A resubmission **records the new journal on the history entry**, because
+  `journal:` only ever holds the current one. Without that, "where the work
+  lands" can only see the last stop, and a rejection gets attributed to the
+  journal that eventually took the paper.
+- A first submission stamps `submitted:` only if it is not already there:
+  overwriting it would make every resubmitted paper look quickly answered.
+
+**Author names are a guess, and are treated as one.** A citation wants "Tan A";
+a vault writes `[[Dr A Tan]]`. The split strips honorifics and qualifications
+and takes the last word as the surname — but where it cannot be sure (a given
+name written out in full, where "Siew Lim" could as easily be surname-first, or
+a single-word name) it says so, in the list and in the copy notice. A CV that
+silently renames a collaborator is worse than one that asks.
+
+**Fields beyond §5.4.** `volume`, `issue`, `pages`, `published` and
+`abbreviation` are read when a note carries them and omitted from the citation
+when it does not, so a note written to the contract exactly still formats — just
+shorter. History entries gained an optional `journal`. None is required.
+
+**Settings — schema v8.** One new setting, the citation format, defaulting to
+Vancouver. The migration adds the block and touches nothing else; an
+unrecognised format falls back rather than reaching the formatter.
+
+Pure modules under `domain/publication/` — `publication.ts` (the reader),
+`stages.ts` (the machine), `citation.ts` (names, years, formats) and
+`metrics.ts` (the impact numbers) — with 68 tests. The smoke test's schema pin
+moved to v8 and gained five publication checks.
+
 ### Added — B4, English-language search
 
 *"requests stuck in approval more than 2 weeks waiting on Dr Tan"* now becomes

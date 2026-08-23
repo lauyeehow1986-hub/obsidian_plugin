@@ -8,7 +8,7 @@
 import type { AttachmentPolicy } from "../comms/emlThread";
 import type { TimerState } from "../effort/timer";
 
-export const CURRENT_SETTINGS_VERSION = 7;
+export const CURRENT_SETTINGS_VERSION = 8;
 
 /** The three hats. Mode is the organising metaphor, not a cosmetic filter (§7 A3). */
 export const MODES = ["biostat", "hod", "research-core"] as const;
@@ -60,6 +60,7 @@ export interface ScdbSettings {
   briefing: BriefingConfig;
   effort: EffortConfig;
   events: EventsConfig;
+  publications: PublicationsConfig;
   /** Unrecognised keys are preserved verbatim — see rule 8, never destroy data. */
   [extra: string]: unknown;
 }
@@ -198,6 +199,35 @@ export function defaultComms(): CommsConfig {
   };
 }
 
+/**
+ * The publications tracker (§5.4, §7 B5).
+ *
+ * Only the citation style is configurable. §5.4 asks for that explicitly and
+ * for nothing else; how far ahead a decision counts as due, and which stages
+ * belong on a CV, are properties of the data rather than preferences, and a
+ * setting for each would be four ways for two people to disagree about what
+ * "published" means.
+ */
+export interface PublicationsConfig {
+  citationFormat: CitationFormatSetting;
+}
+
+/**
+ * Duplicated rather than imported from `domain/publication/citation`.
+ *
+ * The settings schema is the one module every other one loads, and pointing it
+ * at a feature module would make the whole publication engine a load-time
+ * dependency of reading `data.json`. `repairPublications` in `migrate.ts` is
+ * where the two are held to each other.
+ */
+export const CITATION_FORMAT_SETTINGS = ["vancouver", "apa"] as const;
+export type CitationFormatSetting = (typeof CITATION_FORMAT_SETTINGS)[number];
+
+export function defaultPublications(): PublicationsConfig {
+  // §5.4 names Vancouver as the default.
+  return { citationFormat: "vancouver" };
+}
+
 export function defaultBriefing(): BriefingConfig {
   // `onOpen` is false on a fresh install for the same reason nothing else is
   // enabled (rule 3): a plugin that writes a note into your vault the first
@@ -275,6 +305,7 @@ export function defaultSettings(): ScdbSettings {
     briefing: defaultBriefing(),
     effort: defaultEffort(),
     events: defaultEvents(),
+    publications: defaultPublications(),
   };
 }
 

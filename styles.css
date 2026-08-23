@@ -1743,3 +1743,121 @@
     margin-left: 0;
   }
 }
+
+/* --- publications (§7 B5) ------------------------------------------------ */
+
+/* A segmented control rather than a second row of tabs: these three panels are
+ * views of one thing, and giving them the same weight as the cockpit's tabs
+ * would suggest they are the same kind of choice. */
+.scdb-segment {
+  display: inline-flex;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  overflow: hidden;
+}
+
+/* Element+class, not a bare class: Obsidian styles buttons with
+ * `button:not(.clickable-icon)`, which outspecifies a single class and would
+ * paint the active segment with the ordinary button background. Same reason
+ * `.scdb-control` is written this way above. */
+.scdb-root button.scdb-segment__on,
+.scdb-root button.scdb-segment__off {
+  padding: 4px var(--scdb-1);
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  font-size: var(--font-ui-smaller);
+  cursor: pointer;
+}
+
+.scdb-root button.scdb-segment__off {
+  background: transparent;
+  color: var(--text-muted);
+}
+
+.scdb-root button.scdb-segment__on {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+
+.scdb-root button.scdb-segment__off:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+/* Numbered, because a reference list is numbered wherever it is going. */
+.scdb-citations {
+  margin: var(--scdb-1) 0 0;
+  padding-left: var(--scdb-3);
+  font-size: var(--font-ui-smaller);
+}
+
+.scdb-citations li {
+  margin-bottom: var(--scdb-1);
+  line-height: 1.5;
+}
+
+/* A button so the reference opens its note, styled as text so the list still
+ * reads as a bibliography rather than a row of controls. */
+.scdb-root button.scdb-citation {
+  padding: 0;
+  border: none;
+  background: none;
+  box-shadow: none;
+  color: var(--text-normal);
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.scdb-root button.scdb-citation:hover {
+  color: var(--text-accent);
+  text-decoration: underline;
+}
+
+.scdb-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--scdb-2);
+}
+
+.scdb-stat {
+  display: flex;
+  flex-direction: column;
+  min-width: 8rem;
+  padding: var(--scdb-1);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  background: var(--background-secondary);
+}
+
+.scdb-stat__value {
+  font-size: 1.6em;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+
+.scdb-stat__label {
+  color: var(--text-normal);
+  font-size: var(--font-ui-smaller);
+}
+
+/* The denominator (§6). Always present, so a number is never read alone. */
+.scdb-stat__sub {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.scdb-field__hint--bad {
+  color: var(--scdb-overdue);
+}
+
+/* At sidebar width the stats stack rather than scroll (§6). */
+@media (max-width: 400px) {
+  .scdb-stats {
+    flex-direction: column;
+    gap: var(--scdb-1);
+  }
+}

@@ -257,7 +257,7 @@ const checks = [
   // Pinned deliberately: this line failing means the schema moved, which is
   // the moment to check a migration step went with it (§10 — an upgrade must
   // never lose settings). Bump it only after writing that step.
-  ["settings carry a schema version", instance.settings.schemaVersion === 7],
+  ["settings carry a schema version", instance.settings.schemaVersion === 8],
   ["the hat filter defaults to the mode you are wearing", instance.settings.hatFilter === "mode"],
   // §7 B2. No timer on a fresh install, and every timer action reachable from
   // the keyboard — the status-bar segment is a shortcut, not the only door.
@@ -295,6 +295,19 @@ const checks = [
     "nothing is materialised on an empty vault",
     instance.events.plans().length === 0,
   ],
+  // §7 B5. The publications tracker reads notes and writes nothing until a
+  // stage is moved by hand; the citation format is the one thing configurable.
+  ["publications are reachable from the palette", commands.includes("publications")],
+  [
+    "the publication list can be copied, whole or SCDB-supported only",
+    ["copy-publication-list", "copy-scdb-publication-list"].every((id) => commands.includes(id)),
+  ],
+  ["no publication notes on an empty vault", instance.publications().length === 0],
+  [
+    "citations default to Vancouver, as §5.4 names it",
+    instance.settings.publications.citationFormat === "vancouver",
+  ],
+  ["the publication writer is wired", typeof instance.publicationWriter?.transition === "function"],
   // §5.10 email Tier 1. The importer reads files that are already in the vault
   // and refuses until it knows which mailboxes are yours — a wrong direction
   // inverts every follow-up, so it asks rather than guesses.
