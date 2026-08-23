@@ -24,6 +24,7 @@
 import { load } from "js-yaml";
 import { agedOutreach, CORRESPONDENCE_TYPE, parseThread } from "../src/domain/comms/thread";
 import { CAPTURE_TYPE } from "../src/domain/capture/capture";
+import { execFileSync } from "node:child_process";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -77,10 +78,41 @@ function loadRecord(yaml: string, where: string): Record<string, unknown> {
   return raw as Record<string, unknown>;
 }
 
-const files = walk(VAULT).map((path) => ({
+/** Everything on disk, committed or not. The safety scans use this. */
+const onDisk = walk(VAULT).map((path) => ({
   rel: relative(VAULT, path).split(sep).join("/"),
   text: readFileSync(path, "utf8"),
 }));
+
+/**
+ * The committed fixture set — what a fresh clone actually gets.
+ *
+ * Working in the test vault *generates* notes: composing a chase-up opens a
+ * correspondence thread, the briefing writes a note, the ledger appends a
+ * month file. Those are gitignored output, not worked examples of the
+ * contract, and a shape assertion that counts them ("exactly one thread ages")
+ * goes red the first time somebody uses the plugin they are developing. So the
+ * fixture set is what git tracks, and git is the authority on that.
+ *
+ * The *content* guards below deliberately do not use this — see `onDisk`.
+ */
+const tracked = new Set(
+  execFileSync("git", ["ls-files", "-z", "--", "test-vault"], {
+    cwd: join(__dirname, ".."),
+    encoding: "utf8",
+  })
+    .split("\0")
+    .filter((line) => line !== "")
+    .map((line) => line.replace(/^test-vault\//, "")),
+);
+
+if (tracked.size === 0) {
+  // Loudly, rather than silently falling back to the full walk: an empty
+  // fixture set would make every assertion below vacuously pass.
+  throw new Error("git ls-files returned no test-vault fixtures — is this a git checkout?");
+}
+
+const files = onDisk.filter((file) => tracked.has(file.rel));
 
 const specs = new Map<string, WorkflowSpec>();
 const notes: Array<{ rel: string; front: Record<string, unknown> }> = [];
@@ -302,6 +334,25 @@ describe("person notes", () => {
   });
 });
 
+describe("no real address anywhere in the test vault", () => {
+  it("scans every file on disk, tracked or not", () => {
+    // This one reads `onDisk` rather than the tracked fixture set, and that is
+    // the point: a real address typed into a note git happens to be ignoring
+    // is exactly the one nobody would notice. It is not a repo risk — an
+    // ignored file cannot be committed — but rule 1 is about what enters the
+    // vault at all, and the generated notes are written from fixture data, so
+    // a real address appearing in one means it came from a fixture.
+    const offenders: string[] = [];
+    for (const file of onDisk) {
+      for (const match of file.text.matchAll(/[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g)) {
+        if (/@(example\.(com|org|net)|.*\.example)$/.test(match[0])) continue;
+        offenders.push(`${file.rel}: ${match[0]}`);
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+});
+
 describe("captures", () => {
   it("ships one, untriaged, so the inbox path is exercised", () => {
     const captures = typed(CAPTURE_TYPE);
@@ -337,9 +388,13 @@ describe("the ban on committing correspondence has no exception", () => {
     expect(exceptions).toEqual([]);
   });
 
-  it("keeps every fixture out of a folder that would be ignored", () => {
-    // Checked against the filesystem, not against git: a file git is ignoring
-    // is exactly the file nobody would notice had gone wrong.
+  it("keeps every committed fixture out of a folder that would be ignored", () => {
+    // `files` is the tracked set on purpose. The plugin's *own* output belongs
+    // in `75 Correspondence/` — that is the shipped default write folder and
+    // the whole reason the rename is safe — so an ignored thread sitting there
+    // is the design working, not a breach. What must never happen is a fixture
+    // we meant to commit landing there, where the ban would hide it and a
+    // fresh clone would silently come up short.
     const inside = files.filter((file) => file.rel.split("/").includes("75 Correspondence"));
     expect(inside.map((file) => file.rel)).toEqual([]);
   });

@@ -86,6 +86,20 @@ plugin worth opening in the morning.
   path segment called `75 Correspondence`. The plugin still *writes* new threads
   to the real folder, so anything generated while developing stays out of git by
   itself.
+- **The fixture guards now describe the *committed* vault, not the folder.**
+  Driving the chase-up composer in the test vault — the write path the rename
+  actually touched — created `75 Correspondence/THR-2026-0003.md` exactly as
+  designed, left `git status` clean, and turned `npm test` red: the guards
+  walked the filesystem, so the plugin's own gitignored output counted as a
+  fixture. Two tests failed, including the new one, which accused the run of
+  committing correspondence it had not committed. The fixture set is now what
+  `git ls-files` tracks, so generated notes are ignored by the suite the same
+  way git ignores them, and the correspondence guard asks the question it meant
+  to ask: no *committed* fixture may sit where the ban would hide it. The
+  content safety net moved the other way and now scans **every file on disk,
+  tracked or not**, for an address outside RFC 2606's reserved domains — an
+  ignored file is exactly where a real address would go unnoticed. All three
+  were re-checked by violating them.
 
 ### Vault contract — B1
 
