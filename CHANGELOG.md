@@ -5,6 +5,118 @@ clearly marked entry (CLAUDE.md §10).
 
 ## Unreleased
 
+### Added — B3, events, recurring obligations and calendar interop
+
+The recurrence engine, the lapsed-obligation alarm, and a two-way `.ics` bridge
+to Outlook that needs no mailbox access (§5.7, §7 B3).
+
+- **The recurrence engine.** `{ every, unit, anchor }` over days, weeks, months
+  and years. Every occurrence is counted **from the anchor**, never from the
+  previous result: stepping forward from each computed date would let a clamped
+  month end drift permanently — 31 January + 1 month is 28 February, and the
+  next step from *there* would give 28 March, so a month-end obligation would
+  wander to the 28th and stay. All of it works on `YYYY-MM-DD` strings rather
+  than timestamps, because an annual review due on 31 March is due on 31 March
+  in every timezone.
+- **The next occurrence is computed, not stored.** Same argument as dwell time
+  in §5.1: a date written into frontmatter can go stale, and an obligation whose
+  materialised `due` was satisfied months ago would sit on the board claiming to
+  be overdue. Nothing is ever unwatched as a result — the board dates every rule
+  it can read, whether or not the note carries a date.
+- **The Deadlines board**, with the lapsed list first and on its own. §7 B3 asks
+  for an alarm that outranks everything else in the UI, and a lapsed obligation
+  three sections down is not one. It renders whether or not anything has lapsed,
+  so its absence is as legible as its presence.
+- **A status-bar badge** and a notice on vault open, both in-app only. Reminders
+  are recomputed on an interval, but the notice is said **once** per lapsed date
+  — an alarm that fires hourly is one that gets dismissed without reading.
+- **Only obligations lapse.** A one-off `event` in the past is history, not an
+  alarm. That distinction is the point of having two note types, and it is why a
+  passed submission deadline does not join the queue of things that have gone
+  wrong.
+- **Lead times** from the note's `lead_days`, falling back to a configurable
+  default of 30/7/1. The board reports the *tightest* window entered, not the
+  widest: with 90/30/7 and 20 days to go, the reminder that has just fired is
+  the 30-day one, and saying "90" would understate how close it now is.
+- **Completing an obligation** writes `last_completed` and advances `due`. The
+  next occurrence is counted from the occurrence just satisfied, not from the
+  day it was recorded — finishing a review five days early must not reschedule
+  it for five days from now, which is how a year gets skipped.
+- **Materialising** writes each computed date into its note, in bulk, after a
+  confirmation listing every change. Offered, never done on load: the board
+  already works without it, so the only thing it buys is a `due` another tool
+  can read, which is not worth a silent write to somebody's notes.
+- **Calendar emit.** RFC 5545 by hand — no dependency — with CRLF, 75-**octet**
+  folding that never splits a multi-byte character, proper escaping, an
+  exclusive `DTEND`, `TRANSP:TRANSPARENT` so a deadline does not block a day of
+  availability, and one `VALARM` per lead time. **One entry per next occurrence,
+  never a run of them** (§5.7). The UID is derived from the note's `uid`, so
+  re-emitting after a date moves updates the existing entry instead of adding a
+  second.
+- **Calendar consume.** VEVENTs from an Outlook export become `event` notes,
+  deduped on the calendar's `UID`. Timezone blocks, VALARMs and every other
+  component are skipped rather than half-understood — importing a VTIMEZONE as a
+  meeting is a comic failure that only surfaces once notes are in the vault.
+- **New deadline** dialog, one form for both note types, with §5.7's
+  `consequence` enforced for anything recurring and deliberately not demanded of
+  a one-off.
+- Settings schema **v6** with a migration, a diagnostics section, and fixtures
+  covering lapsed, computed, written and one-off dates.
+
+### Rules and boundaries — B3
+
+- **In-app only, and it says so on the board.** A status-bar badge, the
+  Deadlines board and an Obsidian notice. No OS notification and no email: §7 B3
+  says the work laptop can be relied on for neither, and a reminder that
+  silently fails to arrive is worse than one that never promised to.
+- **Nothing leaves the machine.** The calendar file is written into
+  `95 Exports/` like any other export and read back from inside the vault.
+  Importing offers only `.ics` files **already in the vault** — reading an
+  arbitrary path would mean `fs`, which rule 8 forbids.
+- **What a calendar entry may carry**, per §7 B3's governance line: the note id,
+  its title, the date, the owner, the study and the `consequence` the note
+  already states. Never note content — there is no path from a note body into
+  that file, and a fixture test asserts it.
+- **The calendar file is overwritten**, and it is the only file this plugin
+  overwrites. A subscription needs a stable path; a dated file per run would
+  leave Outlook reading a snapshot that never changes. Rule 8 forbids destroying
+  data you did not write — this is a file the plugin wrote, regenerated from the
+  vault, and the confirmation names it first.
+- **Exporting and re-importing your own calendar does not duplicate anything.**
+  Entries carrying a UID this vault emitted are recognised and skipped.
+- **What is logged, and what is not.** Bulk materialisation and a calendar
+  import append a `bulk-edit` entry with counts only; the export appends an
+  `export` entry. Completing a single obligation is **not** logged: it is an
+  ordinary field edit the user could make by hand, §5.6 does not list it, and a
+  ledger recording every routine edit is one nobody reads — the same argument
+  §5.12 makes about exploratory console lines.
+- **An imported calendar entry is never an `obligation`.** An Outlook `RRULE` is
+  a different model from §5.7's, and guessing a rule would produce an obligation
+  whose next occurrence nobody checked. A recurring meeting can be turned into
+  one by hand in seconds; a wrong one lapses silently.
+- **A lapsed obligation gets no alarms in the calendar file.** An alarm dated in
+  the past fires on import and keeps firing, which trains the reader to dismiss
+  exactly the reminders §5.7 exists to make them read.
+- **No effort fixture, and no calendar fixture.** `**/95 Exports/` is
+  unconditionally gitignored, so a fresh clone sees the empty state. The `.ics`
+  round trip is covered by unit tests and by a fixture test over the shipped
+  event notes instead.
+
+### Fixed — B3, found by running it
+
+- **Pressing Enter in a prompt dialog reopened it.** The keypress submitted, the
+  modal closed, focus was restored to the button that opened it, and Enter's
+  default action then clicked that button. `preventDefault` is the fix, and it
+  also removes the same latent bug from B2's split-entry dialog, which shares
+  the component.
+- **Picking a calendar file did nothing.** `SuggestModal` closes *before* it
+  calls `onChooseItem`, so an `onClose` that resolves null on the way past won
+  the race and the chosen file was silently dropped. The flag is now set in an
+  override that runs first.
+- Exporting and re-importing the calendar would have created a second copy of
+  every obligation as an `event` note. Guarded, as above.
+
+
 ### Added — B2, the time and effort HUD
 
 A status-bar timer, a monthly effort log, retroactive editing and roll-ups

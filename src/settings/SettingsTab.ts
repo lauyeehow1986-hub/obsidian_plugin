@@ -1,5 +1,6 @@
 import { App, Notice, PluginSettingTab, Setting } from "obsidian";
 import { backupAge } from "../domain/backup/snapshots.js";
+import { describeAlerts } from "../domain/events/schedule.js";
 import { allModes, modeInfo } from "../domain/settings/mode.js";
 import { MODES } from "../domain/settings/schema.js";
 import { buildMailto, buildTeamsChat, MIN_URI_CEILING } from "../domain/comms/uri.js";
@@ -87,6 +88,7 @@ export class ScdbSettingsTab extends PluginSettingTab {
     this.messagesSection(containerEl);
     this.briefingSection(containerEl);
     this.effortSection(containerEl);
+    this.eventsSection(containerEl);
     this.backupSection(containerEl);
 
     // Surfacing migration notes here rather than only in the console: on the
@@ -290,6 +292,104 @@ export class ScdbSettingsTab extends PluginSettingTab {
     for (const problem of problems) {
       containerEl.createEl("p", { cls: "setting-item-description", text: problem });
     }
+  }
+
+  /**
+   * Recurring obligations and the calendar bridge (§5.7, §7 B3).
+   *
+   * Nothing here reaches a mailbox or a network. The calendar file is written
+   * into the vault like any other export; pointing Outlook at it is a separate,
+   * deliberate step the user takes once.
+   */
+  private eventsSection(containerEl: HTMLElement): void {
+    const events = this.plugin.settings.events;
+    containerEl.createEl("h3", { text: "Deadlines and obligations" });
+
+    containerEl.createEl("p", {
+      cls: "setting-item-description",
+      text:
+        "Reminders are in-app only \u2014 a status-bar badge, the Deadlines board and a " +
+        "notice. No OS notification and no email: the work laptop can be relied on for " +
+        "neither, and a reminder that silently fails to arrive is worse than one that " +
+        "never promised to.",
+    });
+
+    new Setting(containerEl)
+      .setName("Warn me this many days ahead")
+      .setDesc(
+        "Used when a note declares no lead_days of its own. Comma separated. An " +
+          "obligation with no lead time stays silent until the day it falls due, which " +
+          "for an IRB renewal is far too late to act on.",
+      )
+      .addText((text) =>
+        text.setValue(events.leadDays.join(", ")).onChange(async (value) => {
+          const parsed = [
+            ...new Set(
+              value
+                .split(/[,\s]+/)
+                .map((part) => Number.parseInt(part, 10))
+                .filter((n) => Number.isInteger(n) && n >= 0 && n <= 3650),
+            ),
+          ].sort((a, b) => b - a);
+          // An empty list would mean no warning ever fires for a note that
+          // declares none. Ignore the keystroke rather than accept it.
+          if (parsed.length === 0) return;
+          this.plugin.settings.events.leadDays = parsed;
+          await this.plugin.saveSettings();
+        }),
+      );
+
+    new Setting(containerEl)
+      .setName("Say when something has lapsed")
+      .setDesc(
+        "Raise a notice on vault open for any obligation past its date. The badge and " +
+          "the board are always there; this is the one that interrupts.",
+      )
+      .addToggle((toggle) =>
+        toggle.setValue(events.notifyOnOpen).onChange(async (value) => {
+          this.plugin.settings.events.notifyOnOpen = value;
+          await this.plugin.saveSettings();
+        }),
+      );
+
+    new Setting(containerEl)
+      .setName("Recheck every")
+      .setDesc("Minutes between recomputations while Obsidian is open. Five is the floor.")
+      .addText((text) =>
+        text.setValue(String(events.checkMinutes)).onChange(async (value) => {
+          const parsed = Number.parseInt(value, 10);
+          if (!Number.isFinite(parsed)) return;
+          this.plugin.settings.events.checkMinutes = Math.min(1440, Math.max(5, parsed));
+          await this.plugin.saveSettings();
+        }),
+      );
+
+    new Setting(containerEl)
+      .setName("Calendar file")
+      .setDesc(
+        `Written to ${this.plugin.settings.folders.exports}/ and replaced each time, so a ` +
+          "subscription picks up the new dates. Entries carry the note id, title, date and " +
+          "the consequence the note states \u2014 never note content.",
+      )
+      .addText((text) =>
+        text.setValue(events.calendarFile).onChange(async (value) => {
+          const name = value.trim();
+          if (name === "") return;
+          this.plugin.settings.events.calendarFile = name;
+          await this.plugin.saveSettings();
+        }),
+      );
+
+    const schedule = this.plugin.eventSchedule();
+    const summary = describeAlerts(schedule);
+    containerEl.createEl("p", {
+      cls: "setting-item-description",
+      text:
+        schedule.length === 0
+          ? `No event or obligation notes yet. One note in ${this.plugin.settings.folders.events}/ with a due date is enough to start.`
+          : `Watching ${schedule.length} note${schedule.length === 1 ? "" : "s"}` +
+            (summary === "" ? ", none of them pressing." : ` \u2014 ${summary}.`),
+    });
   }
 
   /**

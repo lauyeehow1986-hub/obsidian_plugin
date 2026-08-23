@@ -20,6 +20,8 @@ import { count, displayName, duration, presentState } from "./format";
 import { MigrationBoard, strandedCount } from "./MigrationBoard";
 import { QueryBoard } from "./QueryBoard";
 import { EffortBoard } from "./EffortBoard";
+import { DeadlinesBoard } from "./DeadlinesBoard";
+import { lapsed } from "../domain/events/schedule";
 import { groupOutreachByParty, type AgedThread } from "../domain/comms/thread";
 import { describeHoldup, mergeHoldup } from "../domain/comms/holdup";
 
@@ -33,6 +35,7 @@ export type CockpitTab =
   | "analytics"
   | "explore"
   | "effort"
+  | "deadlines"
   | "migration"
   | "health";
 
@@ -44,6 +47,7 @@ const TABS: { id: CockpitTab; label: string }[] = [
   { id: "analytics", label: "Analytics" },
   { id: "explore", label: "Explore" },
   { id: "effort", label: "Effort" },
+  { id: "deadlines", label: "Deadlines" },
   { id: "migration", label: "Migration" },
   { id: "health", label: "Health" },
 ];
@@ -482,6 +486,9 @@ export function CockpitPanel({
   const { views, hidden, filtered } = plugin.visibleRequests();
   const summary = summarise(views);
   const stranded = strandedCount(plugin);
+  // The lapsed count rides on the tab as well as the status bar: §7 B3 wants
+  // this outranking everything, and the cockpit is where the eye lands first.
+  const overdueObligations = lapsed(plugin.eventSchedule()).length;
 
   // A command may ask for a tab the user has since navigated away from, so the
   // token — not the tab id — is what makes a repeat request take effect.
@@ -533,6 +540,11 @@ export function CockpitPanel({
             {entry.id === "migration" && stranded > 0 && (
               <span class="scdb-tab__count">{stranded}</span>
             )}
+            {entry.id === "deadlines" && overdueObligations > 0 && (
+              <span class="scdb-tab__count" title="Obligations past their date">
+                {overdueObligations}
+              </span>
+            )}
           </button>
         ))}
       </nav>
@@ -545,6 +557,7 @@ export function CockpitPanel({
         {tab === "analytics" && <AnalyticsBoard views={views} plugin={plugin} />}
         {tab === "explore" && <QueryBoard plugin={plugin} />}
         {tab === "effort" && <EffortBoard plugin={plugin} />}
+        {tab === "deadlines" && <DeadlinesBoard plugin={plugin} />}
         {tab === "migration" && <MigrationBoard plugin={plugin} />}
         {tab === "health" && <HealthBoard views={views} plugin={plugin} />}
       </div>

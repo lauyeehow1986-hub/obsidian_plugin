@@ -15,12 +15,14 @@ import {
   defaultBriefing,
   defaultComms,
   defaultEffort,
+  defaultEvents,
   defaultSettings,
   isMode,
   type BackupConfig,
   type BriefingConfig,
   type CommsConfig,
   type EffortConfig,
+  type EventsConfig,
   type FolderKey,
   type ScdbSettings,
 } from "./schema.js";
@@ -170,6 +172,7 @@ export function migrateSettings(raw: unknown): MigrationResult {
   merged.comms = repairComms(merged.comms, notes);
   merged.briefing = repairBriefing(merged.briefing, notes);
   merged.effort = repairEffort(merged.effort, notes);
+  merged.events = repairEvents(merged.events, notes);
 
   // Folders: fill gaps, keep customised values, drop nothing.
   const folders: Record<string, unknown> = isRecord(merged.folders) ? { ...merged.folders } : {};
@@ -216,6 +219,14 @@ export function migrateSettings(raw: unknown): MigrationResult {
     notes.push(
       "Migrated v4 -> v5: added the effort timer. No timer is running, and the " +
         "activity vocabulary comes from _config/vocabularies.yaml when you write one.",
+    );
+  }
+
+  if (storedVersion > 0 && storedVersion < 6) {
+    notes.push(
+      "Migrated v5 -> v6: added recurring obligations and the calendar bridge. " +
+        "Lead reminders default to 30, 7 and 1 days where a note declares none, " +
+        "and nothing is written to a calendar until you ask for it.",
     );
   }
 
@@ -329,6 +340,62 @@ function repairEffort(value: unknown, notes: string[]): EffortConfig {
   }
 
   return { idleMinutes, costCentre, timer };
+}
+
+/**
+ * Repair the events block.
+ *
+ * `leadDays` is the field worth being careful with: an empty list means no lead
+ * reminder ever fires for a note that declares none, which is silent failure of
+ * exactly the kind §5.7 is written against. An unusable list falls back to the
+ * default rather than being honoured as "none wanted" — if that is genuinely
+ * wanted, the note says so with `lead_days: []`.
+ */
+function repairEvents(value: unknown, notes: string[]): EventsConfig {
+  const base = defaultEvents();
+  if (!isRecord(value)) {
+    if (value !== undefined) notes.push("Event settings were not readable; reset to defaults.");
+    return base;
+  }
+
+  const rawLeads = value["leadDays"];
+  let leadDays = base.leadDays;
+  if (Array.isArray(rawLeads)) {
+    const cleaned = [
+      ...new Set(
+        rawLeads
+          .map((entry) => (typeof entry === "number" ? Math.round(entry) : Number.NaN))
+          .filter((entry) => Number.isInteger(entry) && entry >= 0 && entry <= 3650),
+      ),
+    ].sort((a, b) => b - a);
+    if (cleaned.length === 0) {
+      notes.push("Default lead times were unusable; reset to 30, 7 and 1 days.");
+    } else {
+      leadDays = cleaned;
+    }
+  } else if (rawLeads !== undefined) {
+    notes.push("Default lead times were not a list; reset to 30, 7 and 1 days.");
+  }
+
+  const file = value["calendarFile"];
+  const calendarFile =
+    typeof file === "string" && file.trim() !== "" ? file.trim() : base.calendarFile;
+
+  const check = value["checkMinutes"];
+  const checkMinutes =
+    typeof check === "number" && Number.isFinite(check)
+      ? Math.min(1440, Math.max(5, Math.round(check)))
+      : base.checkMinutes;
+  if (typeof check === "number" && check !== checkMinutes) {
+    notes.push(`Reminder interval was ${check} minutes; using ${checkMinutes}.`);
+  }
+
+  return {
+    leadDays,
+    calendarFile,
+    notifyOnOpen: value["notifyOnOpen"] !== false,
+    checkMinutes,
+  };
 }
 
 /** A stored timer, or null when anything about it is not what it should be. */

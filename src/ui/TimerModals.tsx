@@ -21,6 +21,7 @@ import {
 } from "../domain/effort/timer";
 import type { StopOutcome } from "../services/timerService";
 import { PreactModal } from "./PreactModal";
+import { askText } from "./PromptModal";
 
 interface FormProps {
   initial: TimeEntry;
@@ -445,115 +446,18 @@ export function askBinding(
 
 /* ---------------------------------------------------------- split time -- */
 
-class PromptModal extends PreactModal {
-  private decided = false;
-
-  constructor(
-    app: App,
-    private readonly config: {
-      title: string;
-      lede: string;
-      label: string;
-      initial: string;
-      submitLabel: string;
-    },
-    private readonly resolve: (value: string | null) => void,
-  ) {
-    super(app);
-  }
-
-  protected body() {
-    return <PromptForm {...this.config} onSubmit={(v) => this.finish(v)} onCancel={() => this.finish(null)} />;
-  }
-
-  override onOpen(): void {
-    this.titleEl.setText(this.config.title);
-    super.onOpen();
-  }
-
-  override onClose(): void {
-    super.onClose();
-    if (!this.decided) this.resolve(null);
-  }
-
-  private finish(value: string | null): void {
-    this.decided = true;
-    this.resolve(value);
-    this.close();
-  }
-}
-
-function PromptForm({
-  lede,
-  label,
-  initial,
-  submitLabel,
-  onSubmit,
-  onCancel,
-}: {
-  lede: string;
-  label: string;
-  initial: string;
-  submitLabel: string;
-  onSubmit: (value: string) => void;
-  onCancel: () => void;
-}) {
-  const [value, setValue] = useState(initial);
-  return (
-    <div class="scdb-modal__body">
-      <p class="scdb-modal__lede">{lede}</p>
-      <label class="scdb-field">
-        <span class="scdb-field__label">{label}</span>
-        <input
-          type="text"
-          autofocus
-          value={value}
-          onInput={(event) => setValue((event.target as HTMLInputElement).value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" && value.trim() !== "") onSubmit(value.trim());
-          }}
-        />
-      </label>
-      <div class="scdb-modal__actions">
-        <button type="button" class="scdb-control" onClick={onCancel}>
-          Cancel
-        </button>
-        <button
-          type="button"
-          class="mod-cta"
-          disabled={value.trim() === ""}
-          onClick={() => onSubmit(value.trim())}
-        >
-          {submitLabel}
-        </button>
-      </div>
-    </div>
-  );
-}
-
-/**
- * Ask where to split an entry.
- *
- * Its own dialog rather than `window.prompt`: Electron does not implement
- * `prompt()`, so that path is a silent no-op in Obsidian rather than a fallback.
- */
+/** Ask where to split an entry. The prompt itself lives in `PromptModal`. */
 export function askSplitTime(
   app: App,
   lede: string,
   suggested: string,
 ): Promise<string | null> {
-  return new Promise((resolve) => {
-    new PromptModal(
-      app,
-      {
-        title: "Split entry",
-        lede,
-        label: "Split at",
-        initial: suggested,
-        submitLabel: "Split",
-      },
-      resolve,
-    ).open();
+  return askText(app, {
+    title: "Split entry",
+    lede,
+    label: "Split at",
+    initial: suggested,
+    submitLabel: "Split",
   });
 }
 

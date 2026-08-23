@@ -29,6 +29,10 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 import { describe, expect, it } from "vitest";
 import { deadlines } from "../src/domain/overview/overview";
+import { parseEventNote } from "../src/domain/events/event";
+import { buildSchedule, occurrenceDate } from "../src/domain/events/schedule";
+import { calendarEvents } from "../src/domain/events/feed";
+import { buildCalendar, parseCalendar } from "../src/domain/events/ics";
 import { parsePublication, PUBLICATION_TYPE } from "../src/domain/publication/publication";
 import { validateQuery } from "../src/domain/query/model";
 import { parseSavedView, VIEW_TYPE } from "../src/domain/query/savedView";
@@ -233,6 +237,70 @@ describe("obligation notes", () => {
       (note) => typeof note.front["consequence"] !== "string" || note.front["consequence"] === "",
     );
     expect(silent.map((note) => note.rel)).toEqual([]);
+  });
+});
+
+describe("events and obligations through the recurrence engine (§5.7)", () => {
+  const notes = [...typed("obligation"), ...typed("event")].map((note) =>
+    parseEventNote(note.rel, note.front),
+  );
+
+  it.each(notes.map((note) => note.path))("%s reads with no problems", (path) => {
+    expect(notes.find((note) => note.path === path)!.problems).toEqual([]);
+  });
+
+  it("ships a worked example of every state the board has to paint", () => {
+    // The fixtures are documentation as much as fixture (§5): if a state has no
+    // example, the first time anyone sees it is in a real vault.
+    const schedule = buildSchedule(notes, {
+      today: "2026-08-23",
+      horizonDays: 60,
+      defaultLeadDays: [30, 7, 1],
+    });
+    const states = new Set(schedule.map((entry) => entry.state));
+    expect(states.has("lapsed")).toBe(true);
+    expect(schedule.some((entry) => entry.source === "computed")).toBe(true);
+    expect(schedule.some((entry) => entry.source === "due")).toBe(true);
+  });
+
+  it("gives every recurring obligation a date the engine can work out", () => {
+    // A rule with no anchor and no due is watched by nothing, which is the one
+    // failure §5.7 is written against. No shipped fixture may demonstrate it
+    // by accident.
+    const blind = notes.filter(
+      (note) => note.recurrence !== null && occurrenceDate(note).date === "",
+    );
+    expect(blind.map((note) => note.path)).toEqual([]);
+  });
+
+  it("survives a round trip through the calendar file", () => {
+    const schedule = buildSchedule(notes, {
+      today: "2026-08-23",
+      horizonDays: 60,
+      defaultLeadDays: [30, 7, 1],
+    });
+    const events = calendarEvents(schedule);
+    const parsed = parseCalendar(buildCalendar(events, { now: Date.parse("2026-08-23T00:00:00Z") }));
+    expect(parsed.problems).toEqual([]);
+    expect(parsed.events.map((entry) => entry.date).sort()).toEqual(
+      events.map((entry) => entry.date).sort(),
+    );
+  });
+
+  it("puts nothing in the calendar that the note did not already say", () => {
+    // §7 B3's governance line: refs, dates, titles and the consequence. The
+    // body of a note never reaches a file that travels.
+    const schedule = buildSchedule(notes, {
+      today: "2026-08-23",
+      horizonDays: 60,
+      defaultLeadDays: [30, 7, 1],
+    });
+    for (const entry of calendarEvents(schedule)) {
+      const note = notes.find((candidate) => entry.summary.startsWith(`${candidate.id} `))!;
+      expect(entry.summary).toBe(`${note.id} — ${note.title || note.id}`);
+      if (note.consequence !== "") expect(entry.description).toContain(note.consequence);
+      expect(entry.description).not.toContain("Fixture note");
+    }
   });
 });
 

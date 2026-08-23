@@ -27,6 +27,7 @@ import { collectIntegrityFindings } from "./integrity";
 import { toVaultMinute } from "../domain/time/dates";
 import { formatMinutes } from "../domain/effort/aggregate";
 import type ScdbCockpitPlugin from "../main.js";
+import { describeAlerts, lapsed } from "../domain/events/schedule.js";
 
 /** How long the Mermaid probe waits for an SVG before giving up. */
 const MERMAID_TIMEOUT_MS = 2000;
@@ -38,6 +39,7 @@ export async function collectDiagnostics(plugin: ScdbCockpitPlugin): Promise<Dia
     validation(plugin),
     await ledger(plugin),
     await effort(plugin),
+    obligations(plugin),
     await integrity(plugin),
     await backup(plugin),
     await integrations(plugin),
@@ -105,6 +107,77 @@ async function effort(plugin: ScdbCockpitPlugin): Promise<ReportSection> {
   }
 
   return { title: "Time and effort", checks };
+}
+
+/* ---------------------------------------------------------- obligations -- */
+
+/**
+ * Deadlines and recurring obligations (§7 B3).
+ *
+ * The one section here that reports something a user cannot otherwise see at a
+ * glance: a recurrence rule the engine cannot resolve produces no date, no
+ * badge and no notice, which is silence in exactly the place §5.7 says silence
+ * is dangerous. Counts and ids only, never a title (rule 7).
+ */
+function obligations(plugin: ScdbCockpitPlugin): ReportSection {
+  const schedule = plugin.eventSchedule();
+  const overdue = lapsed(schedule);
+  const blind = schedule.filter((entry) => entry.state === "unscheduled" && entry.alerting);
+  const unreadable = schedule.filter((entry) => entry.note.problems.length > 0);
+  const plans = plugin.events.plans();
+
+  const checks: Check[] = [
+    check(
+      "Notes watched",
+      "ok",
+      `${schedule.length} event and obligation note${schedule.length === 1 ? "" : "s"} in ` +
+        `${plugin.settings.folders.events}. ${describeAlerts(schedule) || "Nothing pressing."}`,
+    ),
+    check(
+      "Lapsed obligations",
+      overdue.length === 0 ? "ok" : "warn",
+      overdue.length === 0
+        ? "None."
+        : overdue.map((entry) => `${entry.note.id} (${-entry.inDays} days)`).join(", "),
+      overdue.length === 0
+        ? undefined
+        : "Open the Deadlines board and record each as done, or move its date.",
+    ),
+    check(
+      "Rules with no date",
+      blind.length === 0 ? "ok" : "warn",
+      blind.length === 0
+        ? "Every recurrence rule resolves to a date."
+        : blind.map((entry) => entry.note.id).join(", "),
+      blind.length === 0
+        ? undefined
+        : "A rule with no anchor and no due date is watched by nothing. Add either.",
+    ),
+    check(
+      "Notes the parser questioned",
+      unreadable.length === 0 ? "ok" : "warn",
+      unreadable.length === 0
+        ? "None."
+        : unreadable.map((entry) => `${entry.note.id}: ${entry.note.problems.join(" ")}`).join("; "),
+    ),
+    check(
+      "Dates not yet written to notes",
+      "ok",
+      plans.length === 0
+        ? "Every recurring obligation carries the date its rule computes."
+        : `${plans.length} computed date${plans.length === 1 ? "" : "s"} not written to the note. ` +
+          "The board uses them either way.",
+    ),
+    check(
+      "Calendar file",
+      "ok",
+      plugin.app.vault.getAbstractFileByPath(plugin.events.calendarPath()) === null
+        ? `Not written yet (${plugin.events.calendarPath()}).`
+        : `${plugin.events.calendarPath()}, replaced on each export.`,
+    ),
+  ];
+
+  return { title: "Deadlines and obligations", checks };
 }
 
 /* ------------------------------------------------------------- versions -- */

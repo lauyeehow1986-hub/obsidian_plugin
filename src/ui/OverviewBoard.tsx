@@ -162,10 +162,12 @@ export function OverviewBoard({
         )}
         {overview.unscheduled.length > 0 && (
           <p class="scdb-muted">
+            {/* Everything the recurrence engine can date is already in the list
+                above, computed. What is left here is a rule it cannot resolve —
+                no anchor, or one it could not read. */}
             {count(overview.unscheduled.length, "obligation")}{" "}
-            {overview.unscheduled.length === 1 ? "carries" : "carry"} a recurrence rule but no
-            date yet. Materialising the next occurrence is B3; until then, set a{" "}
-            <code>due</code> date by hand.
+            {overview.unscheduled.length === 1 ? "carries" : "carry"} a recurrence rule the
+            engine cannot work a date from. The Deadlines tab says which and why.
           </p>
         )}
       </section>

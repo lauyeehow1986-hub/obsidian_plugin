@@ -4,15 +4,18 @@ An Obsidian plugin for running a clinical data collection facility: data-request
 tracking with governance gates, effort measurement, publications, and the audit
 trail behind all of it. Offline-first, no telemetry, no network calls by default.
 
-**Status: phase B2.** Track A is complete: request tracking end to end (A1),
+**Status: phase B3.** Track A is complete: request tracking end to end (A1),
 the query engine behind the Explore board (A2), core Bases layered on where it
 exists (A2b), the cockpit and its analytics (A3), and encrypted backup with
 restore, verification, a diagnostics self-test and an integrity check (A4).
 B1 adds the daily rhythm — quick capture, a daily briefing, meeting agendas,
 the chase-up composer and outreach ageing. B2 adds the time and effort HUD — a
 crash-safe status-bar timer, the monthly effort log, retroactive editing, and
-roll-ups per person, activity, study and cost centre. Bases is never a
-dependency: on an Obsidian without it, every view still works. Not yet released.
+roll-ups per person, activity, study and cost centre. B3 adds deadlines and
+recurring obligations — a recurrence engine, the lapsed-obligation alarm, and a
+two-way calendar bridge to Outlook that needs no mailbox access. Bases is never
+a dependency: on an Obsidian without it, every view still works. Not yet
+released.
 
 The design lives in [CLAUDE.md](CLAUDE.md) — architecture, the vault contract,
 build phases, and the rules that constrain them.
@@ -147,6 +150,57 @@ The activity list is a closed vocabulary — free text gives you "extraction",
 "Extraction" and "pulling data" as three categories and a roll-up that says
 nothing. Edit `_config/vocabularies.yaml` to use your own; a file that cannot be
 read falls back to the built-in list and tells you so in settings.
+
+## Deadlines and recurring obligations
+
+A note in `60 Events/` with a `due` date is watched. Add a `recurrence` rule and
+it becomes an obligation that comes back:
+
+```yaml
+type: obligation
+title: DSRB continuing review
+recurrence: { every: 1, unit: year, anchor: 2026-03-31 }
+lead_days: [90, 30, 7]
+consequence: Study suspended if the review lapses.
+last_completed: 2026-03-18
+```
+
+`consequence` is required, because a reminder that does not say what breaks gets
+ignored. The **Deadlines** tab in the cockpit shows what has lapsed, what is due
+now, and what is coming up; **Done** records a completion and moves the date on.
+
+Three things worth knowing about how it counts:
+
+- **The next date is worked out, not stored.** A note carrying only a rule is
+  still watched — the board dates it and marks that date *computed*. **Materialise**
+  writes those dates into the notes when you want them there, after showing you
+  every change; nothing is written on load.
+- **Occurrences are counted from the anchor.** A review anchored to 31 January
+  lands on 28 February and then back on 31 March, rather than drifting to the
+  28th and staying there.
+- **Completing early does not move the cycle.** Finishing a review five days
+  ahead of its date schedules the next one a year after *the date*, not a year
+  after the day you happened to record it.
+
+Only obligations lapse. A one-off event that has passed is history, and the
+alarm stays for the things that have actually gone wrong.
+
+### The calendar bridge
+
+**Write deadlines to a calendar file** produces an RFC 5545 `.ics` in
+`95 Exports/`, replaced each time so Outlook can subscribe to it, with reminders
+at your lead times. Each entry carries the note id, its title, the date and the
+consequence — never note content. **Import events from a calendar file** reads an
+`.ics` you have saved into the vault and turns its entries into event notes,
+skipping anything already imported.
+
+No Graph API, no credentials, no mailbox access, and nothing is sent. A file
+goes out; a file comes back.
+
+Reminders themselves are in-app only: the status-bar badge, the Deadlines board
+and an Obsidian notice. No OS notification and no email — a work laptop cannot be
+relied on for either, and a reminder that silently fails to arrive is worse than
+one that never promised to.
 
 ## Encrypted backup, and how to restore one
 

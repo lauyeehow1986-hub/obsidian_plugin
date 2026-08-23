@@ -7,7 +7,7 @@
 
 import type { TimerState } from "../effort/timer";
 
-export const CURRENT_SETTINGS_VERSION = 5;
+export const CURRENT_SETTINGS_VERSION = 6;
 
 /** The three hats. Mode is the organising metaphor, not a cosmetic filter (§7 A3). */
 export const MODES = ["biostat", "hod", "research-core"] as const;
@@ -58,6 +58,7 @@ export interface ScdbSettings {
   comms: CommsConfig;
   briefing: BriefingConfig;
   effort: EffortConfig;
+  events: EventsConfig;
   /** Unrecognised keys are preserved verbatim — see rule 8, never destroy data. */
   [extra: string]: unknown;
 }
@@ -119,6 +120,46 @@ export interface EffortConfig {
 
 export function defaultEffort(): EffortConfig {
   return { idleMinutes: 10, costCentre: "", timer: null };
+}
+
+/**
+ * Recurring obligations and the calendar bridge (§5.7, §7 B3).
+ *
+ * Nothing here reaches a network or a mailbox. The calendar file is written
+ * inside the vault like every other export (rule 8); pointing Outlook at it is
+ * the user's own, deliberate step.
+ */
+export interface EventsConfig {
+  /**
+   * Lead times used when a note declares no `lead_days` of its own.
+   *
+   * A default matters: §5.7 makes `consequence` required but not `lead_days`,
+   * and an obligation with no lead time would sit silent until the day it fell
+   * due — which for an IRB renewal is far too late to act on.
+   */
+  leadDays: number[];
+  /** File name inside the exports folder. Overwritten so a subscription updates. */
+  calendarFile: string;
+  /**
+   * Whether a lapsed obligation raises a notice on vault open.
+   *
+   * On by default, unlike everything else on a fresh install: this is the one
+   * alarm §7 B3 says must outrank the rest of the UI, and a governance deadline
+   * that only shows up if you go looking is not a reminder. It is in-app only —
+   * a notice and a status-bar badge, never an OS notification or an email.
+   */
+  notifyOnOpen: boolean;
+  /** Minutes between recomputations while Obsidian is open. */
+  checkMinutes: number;
+}
+
+export function defaultEvents(): EventsConfig {
+  return {
+    leadDays: [30, 7, 1],
+    calendarFile: "scdb-deadlines.ics",
+    notifyOnOpen: true,
+    checkMinutes: 60,
+  };
 }
 
 export function defaultComms(): CommsConfig {
@@ -201,6 +242,7 @@ export function defaultSettings(): ScdbSettings {
     comms: defaultComms(),
     briefing: defaultBriefing(),
     effort: defaultEffort(),
+    events: defaultEvents(),
   };
 }
 

@@ -1525,3 +1525,64 @@
     font-size: var(--font-ui-smaller);
   }
 }
+
+/* ------------------------------- deadlines and obligations (§7 B3) -------- */
+/* The status-bar badge is absent when nothing is up, like the timer segment.
+   When something has lapsed it says "lapsed" as well as turning red: §7 B3
+   calls this the alarm that outranks everything else, and an alarm carried by
+   colour alone is invisible to a colour-blind reader (§6). */
+
+.scdb-deadlinebar__button {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  padding: 0 6px;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  color: var(--scdb-at-risk);
+  font-size: var(--font-ui-smaller);
+  line-height: inherit;
+  height: auto;
+  cursor: pointer;
+}
+
+.scdb-deadlinebar__button:hover {
+  background: var(--background-modifier-hover);
+}
+
+.scdb-deadlinebar__button--lapsed {
+  color: var(--scdb-overdue);
+  font-weight: 600;
+}
+
+.scdb-deadlinebar__glyph {
+  font-size: var(--font-ui-small);
+}
+
+/* The lapsed section. A left rule and a tinted ground so it reads as a
+   different kind of thing from the sections under it, without a second
+   accent colour. */
+.scdb-group--alarm {
+  padding-left: var(--scdb-2);
+  border-left: 3px solid var(--scdb-overdue);
+  background: var(--background-secondary);
+  border-radius: 4px;
+}
+
+.scdb-group--alarm .scdb-group__title {
+  color: var(--scdb-overdue);
+}
+
+/* The prompt's rejection line. `--error` rather than muted, because it is the
+   reason the Save button is disabled. */
+.scdb-field__hint--problem {
+  color: var(--scdb-overdue);
+}
+
+/* Deadline cards carry more chips than a request card does — a recurrence, a
+   lead time, an owner and a consequence — so let them wrap rather than
+   squeezing the title (§6, responsive). */
+.scdb-deadlines .scdb-card__meta {
+  flex-wrap: wrap;
+}

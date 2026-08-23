@@ -257,7 +257,7 @@ const checks = [
   // Pinned deliberately: this line failing means the schema moved, which is
   // the moment to check a migration step went with it (§10 — an upgrade must
   // never lose settings). Bump it only after writing that step.
-  ["settings carry a schema version", instance.settings.schemaVersion === 5],
+  ["settings carry a schema version", instance.settings.schemaVersion === 6],
   ["the hat filter defaults to the mode you are wearing", instance.settings.hatFilter === "mode"],
   // §7 B2. No timer on a fresh install, and every timer action reachable from
   // the keyboard — the status-bar segment is a shortcut, not the only door.
@@ -273,6 +273,27 @@ const checks = [
   [
     "the activity vocabulary falls back to the built-in list",
     instance.effort.vocabularies().activities.includes("rework"),
+  ],
+  // §7 B3. Reminders are in-app only, and nothing about a deadline is written
+  // to a note or a calendar without the user asking for it.
+  ["the obligation schedule builds on an empty vault", instance.eventSchedule().length === 0],
+  [
+    "deadlines are reachable from the palette",
+    ["deadlines", "new-deadline", "materialise-occurrences", "export-calendar", "import-calendar"].every(
+      (id) => commands.includes(id),
+    ),
+  ],
+  [
+    "the calendar file lands inside the exports folder",
+    instance.events.calendarPath() === "95 Exports/scdb-deadlines.ics",
+  ],
+  [
+    "lead reminders have a default, so an obligation is never silent until the day",
+    instance.settings.events.leadDays.length > 0,
+  ],
+  [
+    "nothing is materialised on an empty vault",
+    instance.events.plans().length === 0,
   ],
   [
     // Mode is the organising metaphor (§7 A3): every hat needs a command, or

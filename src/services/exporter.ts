@@ -12,7 +12,7 @@
  * to be able to trust.
  */
 
-import { normalizePath, type App, type TFile } from "obsidian";
+import { normalizePath, TFile, type App } from "obsidian";
 import type { AuditEntry } from "../domain/audit/ledger";
 import { toVaultDate, toVaultMinute } from "../domain/time/dates";
 import { ensureFolder } from "../data/vaultPaths";
@@ -28,12 +28,22 @@ export interface ExporterDeps {
 export interface ExportRequest {
   /** Becomes the file name, with a date and, if needed, a counter appended. */
   basename: string;
-  extension: "csv" | "md" | "html";
+  extension: "csv" | "md" | "html" | "ics";
   content: string;
   /** What was exported, for the ledger: a view id, a board name. */
   subject: string;
   /** Rows in the file, for the ledger and the confirmation. */
   rows: number;
+  /**
+   * Write to exactly this path, replacing what is there.
+   *
+   * The one exception to "never overwrite", and it exists for the calendar
+   * file (§7 B3): a subscription needs a stable path, and a dated file per run
+   * would leave Outlook reading a snapshot that never changes. Only ever used
+   * for a file the plugin itself generated and can regenerate, and the caller
+   * confirms by name first. Everything else takes the collision-walking path.
+   */
+  path?: string;
 }
 
 export interface ExportResult {
@@ -81,11 +91,19 @@ export class Exporter {
       );
     }
 
-    const folder = normalizePath(this.deps.exportsFolder());
+    const fixed = request.path === undefined ? null : normalizePath(request.path);
+    const folder = normalizePath(
+      fixed === null ? this.deps.exportsFolder() : fixed.split("/").slice(0, -1).join("/"),
+    );
     await ensureFolder(this.deps.app, folder);
 
-    const path = this.freePath(folder, safeBasename(request.basename), request.extension);
-    const file = await this.deps.app.vault.create(path, request.content);
+    const path =
+      fixed ?? this.freePath(folder, safeBasename(request.basename), request.extension);
+    const existing = this.deps.app.vault.getAbstractFileByPath(path);
+    const file =
+      existing instanceof TFile
+        ? (await this.deps.app.vault.modify(existing, request.content), existing)
+        : await this.deps.app.vault.create(path, request.content);
 
     const entry: AuditEntry = {
       ts: toVaultMinute(Date.now()),
@@ -93,7 +111,9 @@ export class Exporter {
       action: "export",
       subject: request.subject,
       // Counts and paths only — never a cell of the data itself (rule 7).
-      detail: `${request.rows} row${request.rows === 1 ? "" : "s"} → ${path}`,
+      detail:
+        `${request.rows} row${request.rows === 1 ? "" : "s"} → ${path}` +
+        (existing instanceof TFile ? " (replaced)" : ""),
     };
     await this.deps.audit.append([entry]);
 

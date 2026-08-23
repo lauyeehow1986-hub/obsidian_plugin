@@ -37,7 +37,7 @@ import {
   type BoardId,
 } from "./domain/report/boards.js";
 import { renderDocument } from "./domain/report/document.js";
-import { toVaultMinute } from "./domain/time/dates.js";
+import { toVaultDate, toVaultMinute } from "./domain/time/dates.js";
 import { backupAge, formatBytes } from "./domain/backup/snapshots.js";
 import { describeRestore } from "./domain/backup/restore.js";
 import { MODES, defaultSettings, type Mode, type ScdbSettings } from "./domain/settings/schema.js";
@@ -88,6 +88,22 @@ import {
 import { markAnswered, threadToContinue } from "./domain/comms/threadUpdate.js";
 import { briefingDue } from "./domain/briefing/briefing.js";
 import { EffortLog } from "./services/effortLog.js";
+import { EventStore } from "./services/eventStore.js";
+import { isEventType, parseEventNote, type EventNote } from "./domain/events/event.js";
+import {
+  alertingCount,
+  describeAlerts,
+  lapsed,
+} from "./domain/events/schedule.js";
+import { parseDate } from "./domain/events/recurrence.js";
+import { parseCalendar } from "./domain/events/ics.js";
+import {
+  askObligation,
+  emptyDraft,
+  pickCalendarFile,
+  type CalendarChoice,
+} from "./ui/EventDialogs.js";
+import { askText } from "./ui/PromptModal.js";
 import { HEARTBEAT_MS, TimerService, type StopOutcome } from "./services/timerService.js";
 import {
   DIMENSION_LABELS,
@@ -138,6 +154,8 @@ export default class ScdbCockpitPlugin extends Plugin {
   effort!: EffortLog;
   /** The running timer (§7 B2). */
   timer!: TimerService;
+  /** Events, recurring obligations and the calendar bridge (§7 B3). */
+  events!: EventStore;
 
   /** The mode HUD (§7 A3). Null until `onload` has run. */
   private statusBar: HTMLElement | null = null;
@@ -145,6 +163,17 @@ export default class ScdbCockpitPlugin extends Plugin {
   private backupBar: HTMLElement | null = null;
   /** The effort timer (§7 B2). Hidden until a timer is running. */
   private timerBar: HTMLElement | null = null;
+  /** Lapsed and imminent obligations (§7 B3). Hidden when nothing is up. */
+  private deadlineBar: HTMLElement | null = null;
+
+  /**
+   * Obligations already announced this session, keyed by note path and date.
+   *
+   * A reminder that fires every hour is a reminder that gets dismissed without
+   * reading. The badge stays up for as long as the thing is lapsed; the notice
+   * is said once, and again only if the date moves.
+   */
+  private announced = new Set<string>();
 
   /**
    * Bumped whenever a month file in `80 Time/` changes on disk.
@@ -224,6 +253,19 @@ export default class ScdbCockpitPlugin extends Plugin {
       askRecovery: (recovery) => askRecovery(this.app, recovery),
     });
 
+    this.events = new EventStore({
+      app: this.app,
+      notes: this.notes,
+      audit: this.audit,
+      exporter: this.exporter,
+      eventsFolder: () => this.settings.folders.events,
+      exportsFolder: () => this.settings.folders.exports,
+      calendarFile: () => this.settings.events.calendarFile,
+      leadDays: () => this.settings.events.leadDays,
+      horizonDays: () => this.settings.briefing.horizonDays,
+      actor: () => this.settings.actor,
+    });
+
     this.rhythm = new RhythmWriter({
       app: this.app,
       notes: this.notes,
@@ -249,6 +291,7 @@ export default class ScdbCockpitPlugin extends Plugin {
     this.addRibbonIcon("layout-dashboard", "SCDB Cockpit", () => void this.activateCockpit());
     this.statusBar = this.addStatusBarItem();
     this.timerBar = this.addStatusBarItem();
+    this.deadlineBar = this.addStatusBarItem();
     this.backupBar = this.addStatusBarItem();
     this.renderStatusBar();
 
@@ -262,6 +305,16 @@ export default class ScdbCockpitPlugin extends Plugin {
       }, HEARTBEAT_MS),
     );
 
+    // §7 B3 asks for reminders on vault open and on an interval. In-app only:
+    // this repaints the badge and may raise a notice, and never touches the OS
+    // notification centre or a mailbox.
+    this.registerInterval(
+      window.setInterval(
+        () => this.checkReminders(),
+        Math.max(5, this.settings.events.checkMinutes) * 60_000,
+      ),
+    );
+
     // The metadata cache is not populated until layout is ready; indexing
     // before that produces an empty board on every startup.
     this.app.workspace.onLayoutReady(() =>
@@ -271,7 +324,8 @@ export default class ScdbCockpitPlugin extends Plugin {
         // question about time already spent, and it should not be behind a
         // note the plugin generated on the way past.
         .then(() => this.timer.recoverOnLoad())
-        .then(() => this.maybeWriteBriefing()),
+        .then(() => this.maybeWriteBriefing())
+        .then(() => this.checkReminders(true)),
     );
     this.registerWatchers();
 
@@ -576,6 +630,47 @@ export default class ScdbCockpitPlugin extends Plugin {
     });
 
     this.addCommand({
+      id: "deadlines",
+      name: "Show deadlines and obligations",
+      callback: () => void this.activateCockpit("deadlines"),
+    });
+
+    this.addCommand({
+      id: "new-deadline",
+      name: "New deadline or recurring obligation",
+      callback: () => void this.newObligation(),
+    });
+
+    this.addCommand({
+      id: "complete-obligation",
+      name: "Record this obligation as done",
+      checkCallback: (checking) => {
+        const note = this.currentEventNote();
+        if (checking) return note !== null;
+        if (note !== null) void this.completeObligation(note);
+        return true;
+      },
+    });
+
+    this.addCommand({
+      id: "materialise-occurrences",
+      name: "Materialise the next occurrence of each obligation",
+      callback: () => void this.materialiseOccurrences(),
+    });
+
+    this.addCommand({
+      id: "export-calendar",
+      name: "Write deadlines to a calendar file",
+      callback: () => void this.exportCalendar(),
+    });
+
+    this.addCommand({
+      id: "import-calendar",
+      name: "Import events from a calendar file",
+      callback: () => void this.importCalendar(),
+    });
+
+    this.addCommand({
       id: "reindex",
       name: "Rebuild the note index",
       callback: () => void this.reindex(true),
@@ -697,6 +792,7 @@ export default class ScdbCockpitPlugin extends Plugin {
     }
     button.addEventListener("click", () => void this.setMode(nextMode(this.settings.mode)));
     this.renderTimerBar();
+    this.renderDeadlineBar();
     this.renderBackupBar();
   }
 
@@ -731,6 +827,44 @@ export default class ScdbCockpitPlugin extends Plugin {
     button.createSpan({ cls: "scdb-timer__glyph", text: state.status === "paused" ? "❙❙" : "▶" });
     button.createSpan({ text: label });
     button.addEventListener("click", () => void this.timer.stop());
+  }
+
+  /**
+   * The obligations badge (§7 B3).
+   *
+   * Absent when nothing is up, like the timer segment — a permanent "0 due"
+   * chip is a chip nobody reads. When something *has* lapsed it says so in
+   * words, not only in colour (§6), because that is the one state on this
+   * badge that means something has already gone wrong.
+   */
+  private renderDeadlineBar(): void {
+    const bar = this.deadlineBar;
+    if (bar === null) return;
+    bar.empty();
+
+    const schedule = this.eventSchedule();
+    const alerting = alertingCount(schedule);
+    if (alerting === 0) {
+      bar.hide();
+      return;
+    }
+
+    const overdue = lapsed(schedule).length;
+    bar.show();
+    bar.addClass("scdb-deadlinebar");
+    const button = bar.createEl("button", {
+      cls:
+        overdue > 0
+          ? "scdb-deadlinebar__button scdb-deadlinebar__button--lapsed"
+          : "scdb-deadlinebar__button",
+      attr: {
+        type: "button",
+        "aria-label": `${describeAlerts(schedule)}. Click to open the board.`,
+      },
+    });
+    button.createSpan({ cls: "scdb-deadlinebar__glyph", text: overdue > 0 ? "!" : "\u25D4" });
+    button.createSpan({ text: overdue > 0 ? `${overdue} lapsed` : `${alerting} due` });
+    button.addEventListener("click", () => void this.activateCockpit("deadlines"));
   }
 
   /**
@@ -1001,16 +1135,37 @@ export default class ScdbCockpitPlugin extends Plugin {
   private noteSources(): { dated: DatedNote[]; publications: PublicationNote[] } {
     const dated: DatedNote[] = [];
     const publications: PublicationNote[] = [];
+    const computed = this.computedDueDates();
 
     for (const entry of this.notes.all()) {
       if (entry.type === REQUEST_TYPE) continue;
       if (entry.type === PUBLICATION_TYPE) {
         publications.push(parsePublication(entry.file.path, entry.frontmatter));
       }
-      dated.push({ path: entry.file.path, type: entry.type, frontmatter: entry.frontmatter });
+      const next = computed.get(entry.file.path);
+      dated.push({
+        path: entry.file.path,
+        type: entry.type,
+        // The recurrence engine's answer, overlaid in memory rather than
+        // written to the note (§7 B3): the overview and the briefing pick up
+        // the computed occurrence with no change to either, and materialising
+        // it into the file stays an explicit act.
+        frontmatter: next === undefined ? entry.frontmatter : { ...entry.frontmatter, due: next },
+      });
     }
 
     return { dated, publications };
+  }
+
+  /** Where the recurrence engine says each rule-driven obligation falls next. */
+  private computedDueDates(): Map<string, string> {
+    const map = new Map<string, string>();
+    for (const occurrence of this.eventSchedule()) {
+      if (occurrence.source === "computed" && occurrence.date !== "") {
+        map.set(occurrence.note.path, occurrence.date);
+      }
+    }
+    return map;
   }
 
   // --- the daily rhythm (§7 B1) ---------------------------------------------
@@ -1901,6 +2056,259 @@ export default class ScdbCockpitPlugin extends Plugin {
       subject: `EFFORT-${month}`,
       rows: buckets.length,
     });
+  }
+
+  // --- deadlines and recurring obligations (§7 B3) ------------------------------
+
+  /** The whole schedule, computed. Nothing here writes. */
+  eventSchedule(now = Date.now()) {
+    return this.events.schedule(now);
+  }
+
+  /** The event or obligation note in the active editor, if there is one. */
+  private currentEventNote(): EventNote | null {
+    const file = this.app.workspace.getActiveFile();
+    if (file === null) return null;
+    const entry = this.notes.byPath(file.path);
+    if (entry === null || !isEventType(entry.type)) return null;
+    return parseEventNote(entry.file.path, entry.frontmatter);
+  }
+
+  /**
+   * Recompute reminders and repaint the badge.
+   *
+   * In-app only, per §7 B3 — a badge, a board and a notice. No OS notification
+   * and no email: the work laptop can be relied on for neither, and a reminder
+   * that silently fails to arrive is worse than one that never promised to.
+   *
+   * @param announce raise a notice for anything newly lapsed. False on the
+   *   interval tick, so a lapsed obligation is said once rather than hourly.
+   */
+  checkReminders(announce = false): void {
+    this.renderDeadlineBar();
+
+    if (!announce || !this.settings.events.notifyOnOpen) return;
+
+    const overdue = lapsed(this.eventSchedule());
+    const fresh = overdue.filter((entry) => !this.announced.has(`${entry.note.path}@${entry.date}`));
+    for (const entry of overdue) this.announced.add(`${entry.note.path}@${entry.date}`);
+    if (fresh.length === 0) return;
+
+    const first = fresh[0]!;
+    const rest = fresh.length - 1;
+    new Notice(
+      `SCDB: ${first.note.id} lapsed ${-first.inDays} days ago` +
+        (first.note.consequence === "" ? "." : ` — ${first.note.consequence}`) +
+        (rest > 0 ? ` (and ${rest} more)` : ""),
+      12000,
+    );
+  }
+
+  /** Create an obligation or a one-off deadline from the dialog. */
+  async newObligation(): Promise<void> {
+    const now = Date.now();
+    const draft = await askObligation(
+      this.app,
+      emptyDraft(toVaultDate(now), this.settings.events.leadDays),
+      toVaultDate(now),
+    );
+    if (draft === null) return;
+
+    try {
+      const file = await this.events.createObligation({
+        title: draft.title,
+        due: draft.due.trim(),
+        recurrence:
+          draft.recurrence === null
+            ? null
+            : { ...draft.recurrence, anchor: draft.recurrence.anchor.trim() },
+        leadDays: draft.leadDays,
+        owner: draft.owner,
+        study: draft.study,
+        consequence: draft.consequence,
+        now,
+      });
+      this.refreshViews();
+      await this.app.workspace.getLeaf(false).openFile(file);
+    } catch (error) {
+      reportError(error, "could not create that deadline.");
+    }
+  }
+
+  /**
+   * Record an obligation as done.
+   *
+   * The date is asked for rather than assumed: a continuing review is usually
+   * recorded a few days after it happened, and dating it today would move every
+   * subsequent occurrence by that much if the schedule were counted from the
+   * completion. It is not — see `completion` — but the record should still say
+   * when the thing actually happened.
+   */
+  async completeObligation(note: EventNote): Promise<void> {
+    const today = toVaultDate(Date.now());
+    const on = await askText(this.app, {
+      title: "Record as done",
+      lede:
+        `${note.id}${note.title === "" ? "" : ` — ${note.title}`}. ` +
+        (note.recurrence === null
+          ? "This happens once, so it keeps its date and simply gains a completion."
+          : "The next occurrence is counted from the rule, not from today, so recording it late does not shift the cycle."),
+      label: "Completed on",
+      initial: today,
+      submitLabel: "Record",
+      validate: (value) =>
+        parseDate(value) === null ? "Give a date the calendar has, as YYYY-MM-DD." : "",
+    });
+    if (on === null) return;
+
+    try {
+      const { next } = await this.events.complete(note, on);
+      this.refreshViews();
+      this.notify(
+        next === ""
+          ? `${note.id} recorded as done on ${on}.`
+          : `${note.id} recorded as done on ${on}. Next due ${next}.`,
+        6000,
+      );
+    } catch (error) {
+      reportError(error, "could not record that as done.");
+    }
+  }
+
+  /**
+   * Write each computed next occurrence into its note.
+   *
+   * Confirmed first, listing every change. The board already works without
+   * this — the dates are computed on the fly — so the only thing it buys is a
+   * `due` another tool can read, which is not worth a silent write (rule 12).
+   */
+  async materialiseOccurrences(): Promise<void> {
+    const plans = this.events.plans();
+    if (plans.length === 0) {
+      this.notify(
+        "Every recurring obligation already carries the date its rule computes. Nothing to write.",
+        6000,
+      );
+      return;
+    }
+
+    const lines = plans
+      .map(
+        (plan) =>
+          `• ${plan.note.id} — ${plan.from === "" ? "no date" : plan.from} → ${plan.to}`,
+      )
+      .join("\n");
+    const ok = await confirm(
+      this.app,
+      `Write the computed next occurrence into ${plans.length} note${plans.length === 1 ? "" : "s"}?\n\n${lines}\n\nThis edits the due date in the frontmatter and is recorded in the audit ledger.`,
+      "Write dates",
+    );
+    if (!ok) return;
+
+    try {
+      const written = await this.events.materialise(plans);
+      this.refreshViews();
+      this.notify(`Wrote the next occurrence into ${written} note${written === 1 ? "" : "s"}.`, 6000);
+    } catch (error) {
+      reportError(error, "could not write those dates.");
+    }
+  }
+
+  /** Write the `.ics` file Outlook can import or subscribe to (§7 B3). */
+  async exportCalendar(): Promise<void> {
+    const now = Date.now();
+    const { count: entries } = this.events.calendarText(now);
+    const path = this.events.calendarPath();
+
+    if (entries === 0) {
+      this.notify("There is no dated event or obligation to put in a calendar yet.", 6000);
+      return;
+    }
+
+    const exists = this.app.vault.getAbstractFileByPath(path) !== null;
+    const ok = await confirm(
+      this.app,
+      `Write ${entries} deadline${entries === 1 ? "" : "s"} to ${path}?\n\n` +
+        (exists ? "The existing file is replaced, so a subscription picks up the new dates.\n\n" : "") +
+        "Entries carry the note id, title, date and the consequence the note states — never note content. " +
+        "The file stays in the vault until you point Outlook at it.",
+      exists ? "Replace" : "Write",
+    );
+    if (!ok) return;
+
+    try {
+      const written = await this.events.exportCalendar(now);
+      this.notify(`Wrote ${written.count} deadline${written.count === 1 ? "" : "s"} to ${written.path}.`, 8000);
+    } catch (error) {
+      reportError(error, "could not write the calendar file.");
+    }
+  }
+
+  /**
+   * Read an `.ics` already saved into the vault and make event notes from it.
+   *
+   * Vault files only: reading an arbitrary path would mean `fs`, which rule 8
+   * forbids. Saving the Outlook export into the vault first is one extra step
+   * and keeps every read inside Obsidian.
+   */
+  async importCalendar(): Promise<void> {
+    const choices: CalendarChoice[] = this.app.vault
+      .getFiles()
+      .filter((file) => file.extension.toLowerCase() === "ics")
+      .sort((a, b) => b.stat.mtime - a.stat.mtime)
+      .map((file) => ({
+        path: file.path,
+        detail: `${Math.max(1, Math.round(file.stat.size / 1024))} KB · modified ${toVaultDate(file.stat.mtime)}`,
+      }));
+
+    if (choices.length === 0) {
+      this.notify(
+        `No .ics file in the vault. Export one from Outlook, save it anywhere in the vault — ${this.settings.folders.exports}/ is the obvious place — and run this again.`,
+        10000,
+      );
+      return;
+    }
+
+    const chosen = await pickCalendarFile(this.app, choices);
+    if (chosen === null) return;
+
+    const file = this.app.vault.getAbstractFileByPath(chosen.path);
+    if (!(file instanceof TFile)) {
+      this.notify(`${chosen.path} is no longer there.`, 6000);
+      return;
+    }
+
+    try {
+      const text = await this.app.vault.read(file);
+      const preview = parseCalendar(text);
+      if (preview.events.length === 0) {
+        this.notify(
+          preview.problems.length > 0
+            ? `Nothing to import from ${chosen.path}: ${preview.problems[0]}`
+            : `No calendar entries found in ${chosen.path}.`,
+          9000,
+        );
+        return;
+      }
+
+      const ok = await confirm(
+        this.app,
+        `Create event notes from ${preview.events.length} entr${preview.events.length === 1 ? "y" : "ies"} in ${chosen.path}?\n\n` +
+          `They land in ${this.settings.folders.events}/ as \`type: event\`. Anything already imported under the same calendar id is skipped, and nothing already in the vault is changed.`,
+        "Import",
+      );
+      if (!ok) return;
+
+      const outcome = await this.events.importCalendar(text);
+      this.refreshViews();
+
+      const parts = [`${outcome.created.length} created`];
+      if (outcome.duplicates > 0) parts.push(`${outcome.duplicates} already present`);
+      if (outcome.problems.length > 0) parts.push(`${outcome.problems.length} skipped`);
+      this.notify(`Calendar import: ${parts.join(", ")}.`, 9000);
+    } catch (error) {
+      reportError(error, "could not read that calendar file.");
+    }
   }
 
   async saveSettings(): Promise<void> {

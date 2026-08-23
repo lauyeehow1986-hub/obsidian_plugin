@@ -331,4 +331,61 @@ describe("migrateSettings", () => {
       ).toBe(480);
     });
   });
+
+  describe("v5 -> v6: recurring obligations and the calendar", () => {
+    it("adds the events block to a v5 file without touching what was there", () => {
+      const result = migrateSettings({
+        schemaVersion: 5,
+        actor: "yh",
+        effort: { idleMinutes: 15, costCentre: "RC-2026-07", timer: null },
+      });
+      expect(result.settings.events.leadDays).toEqual([30, 7, 1]);
+      expect(result.settings.events.calendarFile).toBe("scdb-deadlines.ics");
+      expect(result.settings.effort.idleMinutes).toBe(15);
+      expect(result.settings.effort.costCentre).toBe("RC-2026-07");
+      expect(result.notes.join(" ")).toContain("v5 -> v6");
+    });
+
+    it("keeps custom lead times, sorted and deduplicated", () => {
+      const result = migrateSettings({ schemaVersion: 6, events: { leadDays: [7, 60, 7] } });
+      expect(result.settings.events.leadDays).toEqual([60, 7]);
+    });
+
+    it("will not accept an empty list of lead times", () => {
+      // No lead time means the first anyone hears of an IRB renewal is the day
+      // it lapses. A note can still opt out with `lead_days: []` of its own.
+      const result = migrateSettings({ schemaVersion: 6, events: { leadDays: [] } });
+      expect(result.settings.events.leadDays).toEqual([30, 7, 1]);
+      expect(result.notes.join(" ")).toContain("unusable");
+    });
+
+    it("drops nonsense entries but keeps the usable ones", () => {
+      const result = migrateSettings({
+        schemaVersion: 6,
+        events: { leadDays: [30, "soon", -4, 7] },
+      });
+      expect(result.settings.events.leadDays).toEqual([30, 7]);
+    });
+
+    it("clamps the reminder interval rather than resetting it", () => {
+      const result = migrateSettings({ schemaVersion: 6, events: { checkMinutes: 1 } });
+      expect(result.settings.events.checkMinutes).toBe(5);
+      expect(result.notes.join(" ")).toContain("Reminder interval was 1");
+    });
+
+    it("leaves the lapsed-obligation notice on unless it was switched off", () => {
+      expect(migrateSettings(null).settings.events.notifyOnOpen).toBe(true);
+      expect(
+        migrateSettings({ schemaVersion: 6, events: { notifyOnOpen: false } }).settings.events
+          .notifyOnOpen,
+      ).toBe(false);
+    });
+
+    it("resets an events block that is not a block at all", () => {
+      const result = migrateSettings({ schemaVersion: 6, events: 42 });
+      expect(result.settings.events.leadDays).toEqual([30, 7, 1]);
+      expect(result.notes.join(" ")).toContain("Event settings were not readable");
+    });
+  });
+
 });
