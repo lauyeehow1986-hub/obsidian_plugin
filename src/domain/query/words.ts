@@ -176,18 +176,32 @@ interface Entry<T> {
  */
 export class PhraseIndex<T> {
   private byFirst = new Map<string, Entry<T>[]>();
+  /**
+   * The same entries again, keyed by the whole phrase.
+   *
+   * Only for spotting a repeat in `add`. Scanning the bucket for one instead
+   * is quadratic in the bucket's size, and a vault of clinicians named
+   * "Dr … …" puts every one of them in the `dr` bucket — measured at 330 ms
+   * per parse for 2,000 names, on a box re-parsed at every keystroke.
+   */
+  private byPhrase = new Map<string, Entry<T>>();
 
   add(words: readonly string[], value: T): void {
     const first = words[0];
     if (first === undefined) return;
-    const bucket = this.byFirst.get(first) ?? [];
-    const existing = bucket.find((entry) => entry.words.join(" ") === words.join(" "));
+    const key = words.join(" ");
+    const existing = this.byPhrase.get(key);
     if (existing) {
       if (existing.value !== value) existing.value = null;
       return;
     }
-    bucket.push({ words: [...words], value });
-    this.byFirst.set(first, bucket);
+    // One object in both maps, so refusing an ambiguous phrase above is seen
+    // by `match` below.
+    const entry: Entry<T> = { words: [...words], value };
+    this.byPhrase.set(key, entry);
+    const bucket = this.byFirst.get(first);
+    if (bucket) bucket.push(entry);
+    else this.byFirst.set(first, [entry]);
   }
 
   /** The longest unambiguous phrase starting at `at`. */

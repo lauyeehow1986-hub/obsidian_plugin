@@ -81,9 +81,16 @@ export function negateBody(body: ChipBody): ChipBody {
 /**
  * Chips to a query.
  *
- * `base` carries what the board already had — its columns, its types when the
- * sentence named none — so typing into the search box refines the view rather
- * than resetting it.
+ * `base` carries what the board already had — its columns, and its types and
+ * sort when the sentence names neither — so typing into the search box refines
+ * the view rather than resetting it.
+ *
+ * `where` is the exception, and deliberately so: the filter is what the
+ * sentence is *for*, so it is built from the chips alone and never merged with
+ * a filter that was already there. Deleting a word must be able to remove a
+ * condition, which it could not if the two accumulated. The caller is
+ * therefore responsible for remembering the board it searched over — see
+ * `QueryBoard.applySearch`.
  */
 export function chipsToQuery(chips: readonly Chip[], base?: Partial<Query>): Query {
   const query: Query = { ...emptyQuery(), ...base };

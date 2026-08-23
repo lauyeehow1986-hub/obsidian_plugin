@@ -27,6 +27,8 @@ import { ResultTable } from "./ResultTable";
  *
  * The English box (§7 B4) sits on top and *rebuilds* the panels below rather
  * than filtering alongside them, so what runs is always what the panels show.
+ * Emptying the box puts the board back as it was, so that rebuild is a
+ * detour rather than a commitment.
  */
 
 const REQUEST_TYPE = "scdb-request";
@@ -58,14 +60,41 @@ export function QueryBoard({
   const [busy, setBusy] = useState(false);
   const [text, setText] = useState("");
   const [parsed, setParsed] = useState<ParsedText>(NOTHING_PARSED);
+  /** The board as it stood before the box was typed into. See `applySearch`. */
+  const [before, setBefore] = useState<{ query: Query; savedPath: string } | null>(null);
 
   const applySearch = (next: string): void => {
     setText(next);
-    const result = plugin.searchInEnglish(next, { types: query.types, columns: query.columns });
+    const searching = next.trim() !== "";
+
+    // Typing rebuilds the panels, so a filter built by hand would otherwise be
+    // destroyed by one keystroke with no way back. Keep the board as it was and
+    // restore it when the box is emptied, which makes searching something you
+    // can back out of rather than something you commit to.
+    const board = before?.query ?? query;
+    if (!searching) {
+      setParsed(NOTHING_PARSED);
+      setQuery(board);
+      // The view the search departed from comes back with it, so the picker
+      // never names a view the board is no longer showing.
+      setSavedPath(before?.savedPath ?? savedPath);
+      setBefore(null);
+      return;
+    }
+    if (before === null) setBefore({ query, savedPath });
+
+    const result = plugin.searchInEnglish(next, {
+      types: board.types,
+      columns: board.columns,
+      // Sort survives a search: the board opens sorted by dwell, and losing
+      // that the moment someone types is a silent reordering of the answer.
+      // A sort the sentence names wins over it (`chipsToQuery`).
+      sort: board.sort,
+    });
     setParsed(result.parsed);
     setQuery(result.query);
     // The query no longer matches the saved view it may have come from.
-    if (next.trim() !== "") setSavedPath("");
+    setSavedPath("");
   };
 
   // A command can open this board with a phrase already typed. Keyed on the
@@ -131,9 +160,11 @@ export function QueryBoard({
               const stored = plugin.views.byPath(path);
               if (!stored) return;
               setQuery(stored.view.query);
-              // The box no longer describes what is on screen, so it goes.
+              // The box no longer describes what is on screen, so it goes —
+              // and with it the board it was searching over.
               setText("");
               setParsed(NOTHING_PARSED);
+              setBefore(null);
             }}
           >
             <option value="">Ad hoc query</option>

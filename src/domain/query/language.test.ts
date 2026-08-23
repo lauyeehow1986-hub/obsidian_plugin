@@ -7,7 +7,7 @@ import {
   type Chip,
   type Vocabulary,
 } from "./language";
-import type { Query, Row } from "./model";
+import { andGroup, condition, type Query, type Row } from "./model";
 import { REQUEST_FIELDS } from "../request/queryFields";
 
 const STAGES = [
@@ -298,6 +298,31 @@ describe("what the box hands back to the board", () => {
     const query = chipsToQuery(parse("overdue").chips, base);
     expect(query.types).toEqual(["publication"]);
     expect(query.columns).toEqual(["title", "stage"]);
+  });
+
+  it("keeps the board's sort, so searching does not silently reorder it", () => {
+    // The Explore board opens sorted by dwell. Losing that on the first
+    // keystroke reorders the answer without saying so.
+    const base: Partial<Query> = { sort: [{ field: "dwell", direction: "desc" }] };
+    expect(chipsToQuery(parse("overdue").chips, base).sort).toEqual([
+      { field: "dwell", direction: "desc" },
+    ]);
+  });
+
+  it("lets the sentence override the board's sort", () => {
+    const base: Partial<Query> = { sort: [{ field: "dwell", direction: "desc" }] };
+    expect(chipsToQuery(parse("sorted by bounces").chips, base).sort).toEqual([
+      { field: "bounces", direction: "asc" },
+    ]);
+  });
+
+  it("builds the filter from the chips alone, never merged with the board's", () => {
+    // Deleting a word has to be able to remove a condition, which it could not
+    // if the sentence's filter accumulated onto one already there.
+    const base: Partial<Query> = { where: andGroup([condition("study", "is", "EuroHeart")]) };
+    const query = chipsToQuery(parse("overdue").chips, base);
+    expect(query.where?.clauses.length).toBe(1);
+    expect(chipsToQuery([], base).where).toBeNull();
   });
 
   it("lets the sentence override the board's types", () => {

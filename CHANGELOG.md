@@ -36,10 +36,34 @@ network, nothing that could not run on a laptop with the cable pulled.
   command that asks for a phrase and opens Explore showing what it parsed to.
 - A governance phrase is only offered when the field behind it exists, so the
   vocabulary shrinks honestly on a note type that has no `identifiers`.
-- Three pure modules — `domain/query/words.ts` (tokens and quantities),
-  `phrases.ts` (the entire vocabulary, declarative, in one readable table) and
-  `language.ts` (the scanner) — with 30 tests, including one that runs the
-  parsed query through the engine and checks the rows that come back.
+- Pure modules under `domain/query/` — `words.ts` (tokens and quantities),
+  `phrases.ts` (the entire vocabulary, declarative, in one readable table),
+  `context.ts`, `scan.ts`, `rules.ts`, `shaping.ts` and `language.ts` (the
+  scanner) — with 33 tests, including one that runs the parsed query through
+  the engine and checks the rows that come back.
+
+### Fixed — the English box, on second look
+
+Three things the first cut got wrong, all found by measuring rather than by
+reading, and all now covered by a test or a benchmark budget.
+
+- **The search box got slower as the square of the number of people in the
+  vault.** `PhraseIndex.add` deduplicated by scanning its bucket, and a vault of
+  clinicians named "Dr …" puts every one of them in the same bucket. Measured
+  at **332 ms per parse for 2,000 names — on a box re-parsed at every
+  keystroke, twice.** Keyed by phrase instead: **4 ms**, and linear. The
+  benchmark now names people the way a clinical vault does and fails over 50 ms
+  of work per keystroke, because the old synthetic `Person 0..39` could never
+  have shown this.
+- **Typing dropped the board's sort.** Explore opens sorted by dwell; the first
+  keystroke silently reordered the answer, because the sentence's query replaced
+  the board's rather than refining it. Sort now survives a search, and a sort
+  the sentence names still wins.
+- **Typing destroyed a filter built by hand, with no way back.** Emptying the
+  box now restores the board exactly as it was, saved view and all, so searching
+  is a detour rather than a commitment. The filter itself is still built from
+  the chips alone and deliberately so — deleting a word has to be able to remove
+  a condition, which it could not if the two accumulated.
 
 ### Added — email Tier 1, importing saved messages (§5.10)
 

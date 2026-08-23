@@ -38,6 +38,8 @@ export { buildRows, catalogueFor } from "./src/data/rows.ts";
 export { runQuery } from "./src/domain/query/evaluate.ts";
 export { REQUEST_FIELDS } from "./src/domain/request/queryFields.ts";
 export { andGroup, condition, emptyQuery } from "./src/domain/query/model.ts";
+export { buildVocabulary } from "./src/data/vocabulary.ts";
+export { chipsToQuery, parseQueryText } from "./src/domain/query/language.ts";
 `;
 
 const stubPlugin = {
@@ -73,6 +75,25 @@ const STAGES = ["intake", "triage", "awaiting-approval", "approved", "extraction
 const DAY = 86_400_000;
 const NOW = Date.UTC(2026, 7, 22);
 
+/**
+ * People, named the way a clinical vault names them.
+ *
+ * The honorific matters to the measurement, not just to the flavour. Every
+ * name here starts with "Dr", so every one of them lands in the same bucket of
+ * the search box's phrase index — which is exactly the shape that turned the
+ * index build quadratic. A pool of `Person 0..39` never showed it.
+ *
+ * The pool is larger than `VALUE_CAP` (500) on purpose, so the search bench
+ * measures the ceiling rather than a comfortable case.
+ */
+const SURNAMES = ["Tan", "Lim", "Chan", "Ng", "Wong", "Koh", "Teo", "Goh", "Sim", "Yeo"];
+const PEOPLE = 600;
+
+function person(index) {
+  const at = index % PEOPLE;
+  return `Dr ${String.fromCharCode(65 + (at % 26))}${at} ${SURNAMES[at % SURNAMES.length]}`;
+}
+
 function requestFrontmatter(index) {
   const start = NOW - (30 + (index % 400)) * DAY;
   const steps = 2 + (index % 6);
@@ -92,9 +113,9 @@ function requestFrontmatter(index) {
     workflow: "edata-request",
     workflow_version: 2,
     stage: history[history.length - 1].to,
-    blocked_on: index % 3 === 0 ? `[[Person ${index % 40}]]` : null,
+    blocked_on: index % 3 === 0 ? `[[${person(index)}]]` : null,
     blocked_since: new Date(start).toISOString().slice(0, 10),
-    requester: `[[Person ${index % 40}]]`,
+    requester: `[[${person(index + 7)}]]`,
     study: `[[Study ${index % 12}]]`,
     hat: "hod",
     received: new Date(start).toISOString().slice(0, 10),
@@ -115,7 +136,7 @@ function otherFrontmatter(index) {
     title: `Synthetic benchmark publication ${index}`,
     stage: index % 2 === 0 ? "under-review" : "published",
     journal: `Journal ${index % 20}`,
-    authors: [`[[Person ${index % 40}]]`],
+    authors: [`[[${person(index)}]]`],
     submitted: new Date(NOW - (index % 300) * DAY).toISOString().slice(0, 10),
     scdb_supported: index % 3 === 0,
   };
@@ -138,22 +159,26 @@ const app = {
   metadataCache: { getFileCache: (file) => cache.get(file.path) ?? null },
 };
 
+const SPEC = {
+  id: "edata-request",
+  version: 2,
+  label: "eData request",
+  stages: STAGES.map((id, position) => ({
+    id,
+    label: id,
+    owner: "scdb",
+    slaDays: [2, 3, 14, 1, 10, 3, null][position],
+    terminal: id === "delivered",
+  })),
+  transitions: [],
+  gates: [],
+  retired: {},
+};
+
 const workflows = {
-  forRequest: () => ({
-    id: "edata-request",
-    version: 2,
-    label: "eData request",
-    stages: STAGES.map((id, position) => ({
-      id,
-      label: id,
-      owner: "scdb",
-      slaDays: [2, 3, 14, 1, 10, 3, null][position],
-      terminal: id === "delivered",
-    })),
-    transitions: [],
-    gates: [],
-    retired: {},
-  }),
+  forRequest: () => SPEC,
+  // The search box takes its stage words from here (§7 B4).
+  usable: () => [SPEC],
 };
 
 /* ------------------------------------------------------------------- run -- */
@@ -202,15 +227,52 @@ const result = time("runQuery (filter+group+aggs)", () =>
   mod.runQuery(rows, query, catalogue, { now: NOW }),
 ).value;
 
+/* --------------------------------------------- the English box, per keystroke -- */
+
+// B4 re-parses on every keystroke, and `searchInEnglish` does it twice when
+// the sentence changes which note types are in play. So the number that
+// matters is not one parse — it is what a held-down key costs.
+const vocab = time("buildVocabulary", () => mod.buildVocabulary(deps, ["scdb-request"]));
+
+// Take the name out of the vocabulary rather than writing one here, so the
+// bench cannot quietly start measuring a sentence that no longer matches
+// anything — a parse that understands nothing is fast and worthless.
+const who = vocab.value.values.blocked_on?.[0] ?? "nobody";
+const SENTENCE = `requests stuck in awaiting-approval more than 2 weeks waiting on ${who}`;
+
+const parse = time("parseQueryText", () => mod.parseQueryText(SENTENCE, vocab.value));
+const keystroke = 2 * (vocab.ms + parse.ms);
+const names = Object.values(vocab.value.values).reduce((total, list) => total + list.length, 0);
+
 const reindex = noteBuild.ms + requestBuild.ms;
 console.log(
   `\nrows: ${rows.length} · fields: ${catalogue.length} · matched: ${result.matched} · groups: ${result.groups.length}`,
 );
-console.log(`\nre-index total ${reindex.toFixed(0)} ms — budget 1000 ms\n`);
+console.log(
+  `names indexed: ${names} · chips: ${parse.value.chips.length} · ignored: ${parse.value.ignored.length}`,
+);
+console.log(`\nre-index total ${reindex.toFixed(0)} ms — budget 1000 ms`);
+console.log(`worst-case keystroke ${keystroke.toFixed(0)} ms — budget 50 ms\n`);
 
-writeFileSync(join(dir, "result.json"), JSON.stringify({ notes: NOTES, reindex }, null, 2));
+writeFileSync(
+  join(dir, "result.json"),
+  JSON.stringify({ notes: NOTES, reindex, keystroke }, null, 2),
+);
 
 if (reindex > 1000) {
   console.error("Re-index is over the A2 budget.");
+  process.exit(1);
+}
+
+// A search box that stutters is a search box nobody uses. This caught a
+// quadratic phrase-index build that only showed up once the vault held
+// several hundred people whose names all begin "Dr".
+if (keystroke > 50) {
+  console.error("The English search box is too slow per keystroke.");
+  process.exit(1);
+}
+
+if (parse.value.chips.length !== 4 || parse.value.ignored.length !== 0) {
+  console.error(`The bench sentence no longer parses: ${SENTENCE}`);
   process.exit(1);
 }
