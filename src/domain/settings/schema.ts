@@ -5,9 +5,10 @@
  * An upgrade must never lose settings (CLAUDE.md §10).
  */
 
+import type { AttachmentPolicy } from "../comms/emlThread";
 import type { TimerState } from "../effort/timer";
 
-export const CURRENT_SETTINGS_VERSION = 6;
+export const CURRENT_SETTINGS_VERSION = 7;
 
 /** The three hats. Mode is the organising metaphor, not a cosmetic filter (§7 A3). */
 export const MODES = ["biostat", "hod", "research-core"] as const;
@@ -83,6 +84,28 @@ export interface CommsConfig {
   chaseDays: number;
   /** What the composer opens by default. Clipboard is always offered too. */
   channel: "email" | "teams" | "clipboard";
+  /**
+   * Your own mailboxes, for reading saved `.eml` files (§5.10, email Tier 1).
+   *
+   * Empty until you fill it in, and the importer **refuses** while it is —
+   * which is deliberate. Direction is what `awaiting` is computed from, and
+   * `awaiting` is the whole point of a correspondence note: get it backwards
+   * and an unanswered chase-up reads as a closed loop. There is no heuristic
+   * that can tell your mailbox from anyone else's, so the plugin asks rather
+   * than guesses. List every address you receive on, work and any alias.
+   */
+  myAddresses: string[];
+  /**
+   * Which attachments an import saves into `_attachments/`.
+   *
+   * "attachments" — the files the sender actually attached. "all" adds the
+   * images embedded in the message body, which on institutional mail means a
+   * copy of the department crest for every message ever imported. "none" keeps
+   * the text and names what was left behind.
+   */
+  emlAttachments: AttachmentPolicy;
+  /** Attachments larger than this are named in the note and not copied in. */
+  emlMaxAttachmentKb: number;
 }
 
 export interface BriefingConfig {
@@ -163,7 +186,16 @@ export function defaultEvents(): EventsConfig {
 }
 
 export function defaultComms(): CommsConfig {
-  return { uriCeiling: 1800, chaseDays: 7, channel: "email" };
+  return {
+    uriCeiling: 1800,
+    chaseDays: 7,
+    channel: "email",
+    // Nothing is enabled on first install (rule 3). An empty address list is
+    // also what makes the `.eml` importer refuse until it is told who you are.
+    myAddresses: [],
+    emlAttachments: "attachments",
+    emlMaxAttachmentKb: 10 * 1024,
+  };
 }
 
 export function defaultBriefing(): BriefingConfig {

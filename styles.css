@@ -1586,3 +1586,91 @@
 .scdb-deadlines .scdb-card__meta {
   flex-wrap: wrap;
 }
+
+/* ------------------------------------------------- imported email (§5.10) -- */
+
+/*
+ * The review list for a `.eml` import. It is a consent dialog before it is a
+ * list: §2 rule 5 wants the payload visible and refusable, so the checkbox and
+ * the subject lead, and everything a thread will actually do to the vault sits
+ * under them where it can be read before the button is pressed.
+ */
+.scdb-eml__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--scdb-1);
+  /* Capped rather than unbounded: forty saved messages must not push the
+   * Import button off a laptop screen, where it cannot be reached at all. */
+  max-height: 50vh;
+  overflow-y: auto;
+  margin-bottom: var(--scdb-2);
+}
+
+.scdb-eml__thread {
+  padding: var(--scdb-1);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+}
+
+/* Unticked is a state, not a disabled control — it stays readable so the
+ * decision can be reversed by someone re-reading what they just excluded. */
+.scdb-eml__thread--off {
+  opacity: 0.55;
+}
+
+.scdb-eml__head {
+  display: flex;
+  gap: var(--scdb-1);
+  align-items: baseline;
+  cursor: pointer;
+}
+
+.scdb-eml__subject {
+  font-weight: 600;
+}
+
+.scdb-eml__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin: 6px 0 0 24px;
+  font-size: var(--font-ui-smaller);
+}
+
+.scdb-eml__messages {
+  margin: 6px 0 0 24px;
+  padding: 0;
+  list-style: none;
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+}
+
+.scdb-eml__messages li {
+  padding: 1px 0;
+}
+
+.scdb-eml__files {
+  margin: 6px 0 0 24px;
+  font-size: var(--font-ui-smaller);
+  overflow-wrap: anywhere;
+}
+
+.scdb-eml__problems {
+  margin-bottom: var(--scdb-2);
+  font-size: var(--font-ui-smaller);
+}
+
+.scdb-eml__problems summary {
+  cursor: pointer;
+  color: var(--text-muted);
+}
+
+/* At sidebar width the 24px indent costs more than the alignment buys. */
+@media (max-width: 400px) {
+  .scdb-eml__meta,
+  .scdb-eml__messages,
+  .scdb-eml__files {
+    margin-left: 0;
+  }
+}

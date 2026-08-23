@@ -1,0 +1,28 @@
+Message-ID: <scdb-sample-root@example.org>
+Date: Mon, 10 Aug 2026 09:05:00 +0800
+From: SCDB Owner <yh@example.org>
+To: Dr A Tan <a.tan@example.org>
+Cc: Example Coordinator <coordinator@example.org>
+Subject: REQ-2026-004 - QC outcomes table
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="scdb-sample-1"
+
+This is a multi-part message in MIME format.
+--scdb-sample-1
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 7bit
+
+Dear Dr Tan,
+
+The QC outcomes table for REQ-2026-004 is attached. Could you confirm the
+definitions before we release the extract?
+
+Thanks,
+SCDB
+--scdb-sample-1
+Content-Type: text/csv; name="qc-outcomes.csv"
+Content-Transfer-Encoding: base64
+Content-Disposition: attachment; filename="qc-outcomes.csv"
+
+Y2FzZV9pZCxvdXRjb21lCjEscGFzcwoyLHBhc3MKMyxmYWlsCg==
+--scdb-sample-1--

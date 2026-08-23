@@ -67,6 +67,8 @@ import { AgendaModal, type AgendaSend } from "./ui/AgendaModal.js";
 import { CaptureModal, captureFailed } from "./ui/CaptureModal.js";
 import { PersonPicker } from "./ui/PersonPicker.js";
 import { RhythmWriter } from "./services/rhythmWriter.js";
+import { EmlImport } from "./services/emlImport.js";
+import { reviewEmlImport, sizeLabel } from "./ui/EmlImportModal.js";
 import { copyToClipboard, launchUri, reportLaunch } from "./services/protocol.js";
 import {
   agendaCandidates,
@@ -156,6 +158,8 @@ export default class ScdbCockpitPlugin extends Plugin {
   timer!: TimerService;
   /** Events, recurring obligations and the calendar bridge (§7 B3). */
   events!: EventStore;
+  /** Reading saved `.eml` files into correspondence threads (§5.10, Tier 1). */
+  emlImport!: EmlImport;
 
   /** The mode HUD (§7 A3). Null until `onload` has run. */
   private statusBar: HTMLElement | null = null;
@@ -274,6 +278,19 @@ export default class ScdbCockpitPlugin extends Plugin {
       notes: this.notes,
       audit: this.audit,
       folder: (key) => this.settings.folders[key],
+      actor: () => this.settings.actor,
+    });
+
+    this.emlImport = new EmlImport({
+      app: this.app,
+      notes: this.notes,
+      audit: this.audit,
+      correspondenceFolder: () => this.settings.folders.correspondence,
+      requestIds: () => this.index.all().map((entry) => entry.request.id),
+      peopleNames: () => this.peopleNames(),
+      ownAddresses: () => this.settings.comms.myAddresses,
+      attachmentPolicy: () => this.settings.comms.emlAttachments,
+      maxAttachmentKb: () => this.settings.comms.emlMaxAttachmentKb,
       actor: () => this.settings.actor,
     });
 
@@ -679,6 +696,12 @@ export default class ScdbCockpitPlugin extends Plugin {
       id: "import-calendar",
       name: "Import events from a calendar file",
       callback: () => void this.importCalendar(),
+    });
+
+    this.addCommand({
+      id: "import-eml",
+      name: "Import saved email files",
+      callback: () => void this.importEml(),
     });
 
     this.addCommand({
@@ -2320,6 +2343,119 @@ export default class ScdbCockpitPlugin extends Plugin {
       this.notify(`Calendar import: ${parts.join(", ")}.`, 9000);
     } catch (error) {
       reportError(error, "could not read that calendar file.");
+    }
+  }
+
+  /**
+   * Person-note names, so an imported correspondent links to the note that
+   * exists rather than to a near-miss of it.
+   *
+   * Names only, matched exactly and case-folded in `partyFor`. Nothing fuzzier
+   * — attributing a governance holdup to somebody because a substring matched
+   * is a guess a governance instrument must not make.
+   */
+  private peopleNames(): string[] {
+    const prefix = `${this.settings.folders.people}/`;
+    return this.app.vault
+      .getMarkdownFiles()
+      .filter((file) => file.path.startsWith(prefix))
+      .map((file) => file.basename);
+  }
+
+  /**
+   * Read `.eml` files already in the vault into correspondence threads
+   * (§5.10, email Tier 1).
+   *
+   * The whole vault is scanned rather than one file being picked, because the
+   * working shape of this is "drag a few messages in, run the command": every
+   * message already recorded is skipped on its `Message-ID`, so running it
+   * again after adding three more files costs nothing and does nothing twice.
+   *
+   * Nothing is fetched. Nothing is sent. No mailbox is opened.
+   */
+  async importEml(): Promise<void> {
+    if (!this.emlImport.canDetermineDirection()) {
+      // Refusing rather than guessing. `awaiting` is what the whole
+      // correspondence note type exists to compute, and a wrong direction
+      // turns an unanswered chase-up into a closed loop.
+      this.notify(
+        "Add your own email addresses in SCDB Cockpit settings first. Without them the plugin " +
+          "cannot tell a message you sent from one you received, and that decides who a thread " +
+          "is waiting on.",
+        12000,
+      );
+      return;
+    }
+
+    const files = this.emlImport.candidates();
+    if (files.length === 0) {
+      this.notify(
+        `No .eml file in the vault. Drag messages out of Outlook into a folder here — ` +
+          `${this.settings.folders.correspondence}/ is the obvious place — and run this again. ` +
+          `Classic Outlook saves .msg, which this cannot read; new Outlook and the web app give .eml.`,
+        14000,
+      );
+      return;
+    }
+
+    // A cap, so a vault that has accumulated a year of saved mail does not
+    // parse thousands of files behind a modal that has not opened yet. The
+    // newest are the ones somebody just dragged in.
+    const CAP = 300;
+    const chosen = files.slice(0, CAP);
+
+    const working = new Notice(
+      `SCDB: reading ${chosen.length} email file${chosen.length === 1 ? "" : "s"}…`,
+      0,
+    );
+    let preview;
+    try {
+      preview = await this.emlImport.preview(chosen);
+    } catch (error) {
+      working.hide();
+      reportError(error, "could not read those email files.");
+      return;
+    }
+    working.hide();
+
+    if (preview.actions.length === 0) {
+      const total = chosen.reduce((bytes, file) => bytes + file.stat.size, 0);
+      this.notify(
+        preview.duplicates > 0
+          ? `Nothing new: all ${preview.duplicates} message${preview.duplicates === 1 ? " is" : "s are"} already on a thread.`
+          : `Read ${chosen.length} file${chosen.length === 1 ? "" : "s"} (${sizeLabel(total)}) and found no message to import.`,
+        9000,
+      );
+      return;
+    }
+
+    const choice = await reviewEmlImport(
+      this.app,
+      preview,
+      this.emlImport.attachmentsFolder(),
+    );
+    if (choice === null) return;
+
+    try {
+      const outcome = await this.emlImport.apply(choice.actions);
+      this.refreshViews();
+
+      const parts = [
+        `${outcome.messages} message${outcome.messages === 1 ? "" : "s"}`,
+        `${outcome.threadsCreated} new thread${outcome.threadsCreated === 1 ? "" : "s"}`,
+      ];
+      if (outcome.threadsUpdated > 0) parts.push(`${outcome.threadsUpdated} updated`);
+      if (outcome.attachments > 0) {
+        parts.push(`${outcome.attachments} attachment${outcome.attachments === 1 ? "" : "s"}`);
+      }
+      if (files.length > CAP) {
+        parts.push(`${files.length - CAP} older file${files.length - CAP === 1 ? "" : "s"} not read`);
+      }
+      this.notify(`Imported: ${parts.join(", ")}. The .eml files were left where they are.`, 10000);
+
+      for (const problem of outcome.problems) this.notify(problem, 10000);
+    } catch (error) {
+      reportError(error, "could not write those threads.");
     }
   }
 

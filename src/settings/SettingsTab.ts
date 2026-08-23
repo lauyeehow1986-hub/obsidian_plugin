@@ -1,5 +1,6 @@
 import { App, Notice, PluginSettingTab, Setting } from "obsidian";
 import { backupAge } from "../domain/backup/snapshots.js";
+import type { AttachmentPolicy } from "../domain/comms/emlThread.js";
 import { describeAlerts } from "../domain/events/schedule.js";
 import { allModes, modeInfo } from "../domain/settings/mode.js";
 import { MODES } from "../domain/settings/schema.js";
@@ -86,6 +87,7 @@ export class ScdbSettingsTab extends PluginSettingTab {
       );
 
     this.messagesSection(containerEl);
+    this.emailImportSection(containerEl);
     this.briefingSection(containerEl);
     this.effortSection(containerEl);
     this.eventsSection(containerEl);
@@ -203,6 +205,104 @@ export class ScdbSettingsTab extends PluginSettingTab {
         "body to make the tone yours. Available placeholders: {{name}}, {{date}}, " +
         "{{count}}, {{summary}}, {{items}}, {{actor}} — and deliberately nothing that " +
         "could reach note content into a link.",
+    });
+  }
+
+  /**
+   * Importing saved email files (§5.10, email Tier 1).
+   *
+   * Its own section rather than a few more rows under Messages, because the two
+   * halves of correspondence pull in opposite directions: composing sends
+   * nothing and touches nothing, while importing puts full message bodies and
+   * attachments into the vault. §5.10 permits that and names the consequence —
+   * the vault becomes a regulated data store — and a setting with that
+   * consequence deserves to be read rather than skimmed past.
+   */
+  private emailImportSection(containerEl: HTMLElement): void {
+    const comms = this.plugin.settings.comms;
+    containerEl.createEl("h3", { text: "Importing saved email" });
+
+    containerEl.createEl("p", {
+      cls: "setting-item-description",
+      text:
+        "Drag messages out of Outlook into this vault and the plugin reads them into " +
+        "correspondence threads, so replies age in the same holdup view as everything " +
+        "else. No mailbox is opened, nothing is fetched and nothing is sent — it reads " +
+        "files that are already here. Classic Outlook saves .msg, which this cannot " +
+        "read; new Outlook and the web app give .eml.",
+    });
+
+    new Setting(containerEl)
+      .setName("My email addresses")
+      .setDesc(
+        "One per line, or comma separated. Used only to tell a message you sent from " +
+          "one you received — which is what decides whether a thread is waiting on you " +
+          "or on them. The import refuses to run until at least one is set, because " +
+          "there is no way to guess this and getting it backwards silently closes " +
+          "follow-ups that are still open.",
+      )
+      .addTextArea((text) => {
+        text.inputEl.rows = 3;
+        text.setPlaceholder("you@institution.edu");
+        text.setValue(comms.myAddresses.join("\n")).onChange(async (value) => {
+          this.plugin.settings.comms.myAddresses = [
+            ...new Set(
+              value
+                .split(/[\n,;]+/)
+                .map((entry) => entry.trim().toLowerCase())
+                .filter((entry) => entry.includes("@")),
+            ),
+          ];
+          await this.plugin.saveSettings();
+        });
+      });
+
+    new Setting(containerEl)
+      .setName("Attachments")
+      .setDesc(
+        "Where a message's files go. Embedded images are the crest and signature logo " +
+          "on every message from a large institution, so they are left out unless you " +
+          "ask for them. Whatever is left behind is named in the note.",
+      )
+      .addDropdown((dropdown) =>
+        dropdown
+          .addOptions({
+            attachments: "Save attached files",
+            all: "Save attached files and embedded images",
+            none: "Save none, just name them",
+          })
+          .setValue(comms.emlAttachments)
+          .onChange(async (value) => {
+            this.plugin.settings.comms.emlAttachments = value as AttachmentPolicy;
+            await this.plugin.saveSettings();
+          }),
+      );
+
+    new Setting(containerEl)
+      .setName("Largest attachment to save")
+      .setDesc(
+        "In KB. Anything bigger is named in the note and left in the message file, so a " +
+          "60 MB slide deck does not quietly land in every backup snapshot.",
+      )
+      .addText((text) =>
+        text.setValue(String(comms.emlMaxAttachmentKb)).onChange(async (value) => {
+          const parsed = Number.parseInt(value, 10);
+          if (!Number.isFinite(parsed)) return;
+          this.plugin.settings.comms.emlMaxAttachmentKb = Math.min(
+            200 * 1024,
+            Math.max(1, parsed),
+          );
+          await this.plugin.saveSettings();
+        }),
+      );
+
+    containerEl.createEl("p", {
+      cls: "setting-item-description",
+      text:
+        "§5.10 permits full message bodies and attachments in the vault, and names the " +
+        "consequence: this vault is therefore a regulated data store, not a notebook. " +
+        "It stays on this machine, never enters the plugin's repository, and " +
+        "correspondence fields stay out of exports by default.",
     });
   }
 

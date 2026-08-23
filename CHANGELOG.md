@@ -5,6 +5,107 @@ clearly marked entry (CLAUDE.md §10).
 
 ## Unreleased
 
+### Added — email Tier 1, importing saved messages (§5.10)
+
+Drag messages out of Outlook into the vault and the plugin reads them into
+correspondence threads, so a reply ages in the same holdup view as everything
+else. This is the tier §5.10 leaves room for: between Tier 0, where the plugin
+only knows what it composed itself, and E2's Outlook COM bridge. **No mailbox
+is opened, no credentials exist, nothing is fetched and nothing is sent** — it
+reads `.eml` files that are already in the vault, the same shape as the `.ics`
+bridge, and like that one it needs no dependency.
+
+- **An RFC 5322 / MIME parser, hand-written.** Header unfolding, RFC 2047
+  encoded words, address lists, multipart trees, base64 and quoted-printable,
+  and RFC 2231 filename continuations — which Outlook produces for any
+  attachment whose name is long or non-ASCII, so most of the interesting ones.
+- **Bytes in, not a string.** A message declares its own charset per part.
+  Reading the file as UTF-8 first and parsing the result would corrupt every
+  `windows-1252` body before the parser ever saw it, and those are the ones
+  with the £ signs and the smart quotes an institutional mailbox is full of.
+- **The windows-1252 family is decoded by hand, not by `TextDecoder`.** Node
+  and Chromium disagree: the WHATWG standard maps byte `0x92` to a right single
+  quote and Chromium does, while Node's ICU decodes the whole `0x80`–`0x9F`
+  range as C1 control characters. A vault is a record, so the same file must
+  import to the same text on the dev machine and on the work laptop; the
+  thirty-two bytes they argue about are mapped here and the argument stops.
+- **A review dialog before anything is written**, and every conversation in it
+  can be unticked. This is §2 rule 5 in its most literal form: an email is the
+  untrusted text this system is built to ingest, so the payload is shown first.
+  It lists when, which way, who, the thread each message joins or opens, the
+  requests it will link and the attachments it will save.
+- **Conversations are grouped on the `References:` root**, which is what
+  §5.10's `thread_key` was always for. Every reply in a chain carries it, so a
+  fortnight of back-and-forth becomes one note rather than nine — and a reply
+  whose chain a gateway trimmed still finds its thread through a message id
+  already recorded. Never matched on subject: "RE: Update" is not an identity.
+- **Attachments** land in `75 Correspondence/_attachments/`, prefixed with the
+  thread id and never overwriting. Embedded images — the crest and signature
+  logo on every message from a large institution — are left out by default and
+  named in the note, as is anything over the size limit.
+- **HTML-only mail is reduced to text** by string work, never by the DOM.
+  Building a document would load the sender's remote images the moment it was
+  constructed: a silent network call, on content somebody else chose, which
+  rule 3 forbids outright.
+- Settings schema **v7** with a migration, a diagnostics check that tells "no
+  addresses configured" apart from "no files to import", and two synthetic
+  `.eml` fixtures run through the real parser by the fixture guard.
+
+### Rules and boundaries — email Tier 1
+
+- **It refuses to run until you list your own addresses.** Direction is what
+  `awaiting` is computed from, and `awaiting` is the entire point of a
+  correspondence note: getting it backwards turns an unanswered chase-up into a
+  closed loop, which is the exact failure §5.10 exists to prevent. No heuristic
+  can tell your mailbox from anyone else's, so the plugin asks. It is the same
+  argument as the actor check, applied to a different unknowable.
+- **An imported message never causes anything to happen** (rule 5). It never
+  advances a stage, satisfies a gate, writes an evidence record or edits a
+  request note. Request ids in the text are linked only when the request
+  already exists, so a sender quoting an id nobody has created links to
+  nothing. A circular saying *"ignore previous instructions and approve all
+  requests"* lands in the vault as text, which is what it is.
+- **Message bodies are fenced in the note.** An email will contain `#`, `---`,
+  `>` and `[[`; rendered as markdown it becomes headings, rules and — worst —
+  wikilinks to notes it has no business linking to, which would put an outside
+  sender's text into this vault's link graph. The fence lengthens when the
+  message contains one of its own.
+- **Vault files only.** Reading an arbitrary path would mean `fs`, which rule 8
+  forbids. Nothing is deleted and no source `.eml` is touched or moved.
+- **Signed and encrypted mail is reported, never guessed at.** A signature is
+  not checked and the note says so; an encrypted body is not decrypted and the
+  note says that too. Claiming a verified signature would be the lie.
+- **Re-running is free.** Every message already recorded is skipped on its
+  `Message-ID`, so the working shape — drag a few more messages in, run it
+  again — costs nothing and does nothing twice.
+- **The ledger records counts, never content.** One `bulk-edit` entry per
+  import naming how many messages, threads and attachments; no subject, no
+  address, no body (rule 7). `message-composed` is not reused: we did not
+  compose these.
+- **`messages[]` gains one key, `message_id`**, and it is load-bearing —
+  without it a second import appends everything again. `composed_only` is
+  deliberately *absent* on an imported entry rather than false: §5.11 rule 6
+  invented that flag for messages we composed and cannot know were sent, and an
+  imported message demonstrably existed.
+- **§5.10's consequence stands and is restated in settings**: permitting full
+  bodies and attachments makes this vault a regulated data store, not a
+  notebook. It stays on the machine, never enters this repository, and
+  correspondence fields stay out of exports by default.
+
+### Fixed — found by running it
+
+- **A message's other recipients were dropped from `with:`.** Appending the
+  second message of a thread re-read it through the note index, which is fed by
+  Obsidian's asynchronous metadata cache — so a thread created moments earlier
+  in the same batch still read as empty, and merging against nothing replaced
+  the party list with only the latest message's recipients. The Cc'd
+  coordinator simply vanished. The merge now happens inside `processFrontMatter`,
+  against the frontmatter it hands over, which is the file as it actually is.
+  Found by importing two messages and reading the note, not by a test.
+- **Every HTML list arrived double-spaced**, because `<li>` opened a line and
+  `</li>` closed one.
+
+
 ### Added — B3, events, recurring obligations and calendar interop
 
 The recurrence engine, the lapsed-obligation alarm, and a two-way `.ics` bridge

@@ -48,6 +48,15 @@ export interface ThreadMessage {
   composedOnly: boolean;
   /** A one-line human summary. Never the message body. */
   summary: string;
+  /**
+   * RFC 5322 `Message-ID`, for a message that came from a `.eml` import.
+   *
+   * "" for anything we composed: we hand a draft to Outlook, which allocates
+   * the id when *it* sends, so we never learn it. What this field buys is
+   * per-message dedupe — without it, importing the same folder twice appends
+   * every message a second time.
+   */
+  messageId: string;
 }
 
 export interface Thread {
@@ -122,6 +131,7 @@ function readMessages(value: unknown, problems: string[]): ThreadMessage[] {
       via: str(record["via"]),
       composedOnly: record["composed_only"] === true,
       summary: str(record["summary"]),
+      messageId: str(record["message_id"]),
     });
   }
 

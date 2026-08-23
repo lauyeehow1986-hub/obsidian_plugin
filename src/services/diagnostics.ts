@@ -507,6 +507,7 @@ async function integrations(plugin: ScdbCockpitPlugin): Promise<ReportSection> {
       await mermaidProbe(plugin),
       clipboardProbe(),
       protocolCheck(plugin),
+      emailImportCheck(plugin),
       check(
         "R and Python interpreters",
         "unavailable",
@@ -545,6 +546,39 @@ function protocolCheck(plugin: ScdbCockpitPlugin): Check {
     reachable
       ? 'Whether Outlook is the registered mailto: handler is a question only this machine can answer — "Test mailto:" in settings opens a throwaway draft so you can see.'
       : "Nothing is lost: the composer still copies. This is expected on anything that is not desktop Obsidian.",
+  );
+}
+
+/**
+ * Whether saved email can be imported, and whether there is anything to import.
+ *
+ * Both halves matter on a machine with no console. "Nothing happened when I ran
+ * it" has two causes — no addresses configured, so the importer refuses, and no
+ * `.eml` in the vault, so there is nothing to read — and they look identical
+ * from the outside.
+ */
+function emailImportCheck(plugin: ScdbCockpitPlugin): Check {
+  const addresses = plugin.settings.comms.myAddresses.length;
+  const files = plugin.app.vault
+    .getFiles()
+    .filter((file) => file.extension.toLowerCase() === "eml").length;
+
+  if (addresses === 0) {
+    return check(
+      "Importing saved email",
+      "unavailable",
+      "No addresses of your own are set, so the importer refuses: it cannot tell a message you sent from one you received.",
+      "Settings → Importing saved email. Getting the direction wrong would silently close follow-ups that are still open, so it asks rather than guesses.",
+    );
+  }
+
+  return check(
+    "Importing saved email",
+    "ok",
+    `${addresses} address${addresses === 1 ? "" : "es"} configured; ${files} .eml file${files === 1 ? "" : "s"} in the vault.`,
+    files === 0
+      ? "Classic Outlook saves .msg, which this cannot read; new Outlook and the web app give .eml. Drag one in and run the import."
+      : "Messages already recorded are skipped on their Message-ID, so running the import again is safe.",
   );
 }
 

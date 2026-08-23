@@ -23,6 +23,14 @@
 
 import { load } from "js-yaml";
 import { agedOutreach, CORRESPONDENCE_TYPE, parseThread } from "../src/domain/comms/thread";
+import { parseEml } from "../src/domain/comms/eml";
+import {
+  alreadyRecorded,
+  newThreadFromEml,
+  planMessage,
+  threadForMessage,
+  type PlanOptions,
+} from "../src/domain/comms/emlThread";
 import { CAPTURE_TYPE } from "../src/domain/capture/capture";
 import { execFileSync } from "node:child_process";
 import { readdirSync, readFileSync, statSync } from "node:fs";
@@ -465,5 +473,118 @@ describe("the ban on committing correspondence has no exception", () => {
     // fresh clone would silently come up short.
     const inside = files.filter((file) => file.rel.split("/").includes("75 Correspondence"));
     expect(inside.map((file) => file.rel)).toEqual([]);
+  });
+});
+
+describe("the shipped .eml fixtures, through the real parser (§5.10)", () => {
+  // Read as bytes, because that is how the plugin reads them: the reply is
+  // declared iso-8859-1 and carries windows-1252 punctuation, which is exactly
+  // what decoding the file as UTF-8 first would destroy.
+  const emls = files
+    .filter((file) => file.rel.endsWith(".eml"))
+    .map((file) => ({
+      rel: file.rel,
+      bytes: readFileSync(join(VAULT, file.rel)),
+    }));
+
+  const MINE = new Set(["yh@example.org"]);
+  const options: PlanOptions = {
+    ownAddresses: MINE,
+    knownRequestIds: ["REQ-2026-004"],
+    knownPeople: ["Dr A Tan"],
+    attachments: "attachments",
+    maxAttachmentKb: 10240,
+    fallbackAt: Date.parse("2026-08-20T00:00:00Z"),
+  };
+
+  const parsed = emls.map((file) => ({
+    rel: file.rel,
+    message: parseEml(new Uint8Array(file.bytes)),
+  }));
+
+  it("ships a worked example of both directions", () => {
+    expect(parsed.length).toBeGreaterThanOrEqual(2);
+    const directions = parsed.map(
+      (entry) => planMessage(entry.message, entry.rel, options).direction,
+    );
+    expect(new Set(directions)).toEqual(new Set(["inbound", "outbound"]));
+  });
+
+  it.each(parsed.map((entry) => entry.rel))("%s parses with nothing unreadable", (rel) => {
+    const entry = parsed.find((candidate) => candidate.rel === rel)!;
+    expect(entry.message.problems).toEqual([]);
+    expect(entry.message.from.length).toBeGreaterThan(0);
+    expect(entry.message.date).not.toBeNull();
+  });
+
+  it("decodes the windows-1252 punctuation an iso-8859-1 header really means", () => {
+    // Pinned here as well as in the unit tests because Node and Chromium
+    // disagree about these bytes, and a vault is a record: the same file must
+    // import to the same text on the dev machine and on the work laptop.
+    const reply = parsed.find((entry) => entry.rel.endsWith("sample-reply.eml"))!;
+    expect(reply.message.body).toContain("right — please proceed");
+    expect(reply.message.body).toContain("£200");
+    expect(reply.message.body).toContain("don’t");
+  });
+
+  it("keeps the attachment as bytes and names it", () => {
+    const outbound = parsed.find((entry) => entry.rel.endsWith("sample-outbound.eml"))!;
+    expect(outbound.message.attachments).toHaveLength(1);
+    expect(outbound.message.attachments[0]!.filename).toBe("qc-outcomes.csv");
+    expect(new TextDecoder().decode(outbound.message.attachments[0]!.bytes)).toContain(
+      "case_id,outcome",
+    );
+  });
+
+  it("puts the reply on the same thread as the message it answers", () => {
+    // The reason a fortnight of back-and-forth is one note and not nine.
+    const keys = parsed.map((entry) => planMessage(entry.message, entry.rel, options).threadKey);
+    expect(new Set(keys).size).toBe(1);
+  });
+
+  it("links only the request the vault actually has", () => {
+    const outbound = parsed.find((entry) => entry.rel.endsWith("sample-outbound.eml"))!;
+    expect(planMessage(outbound.message, outbound.rel, options).requests).toEqual([
+      "REQ-2026-004",
+    ]);
+    // A request nobody has created is mentioned in the text and linked to
+    // nothing (§2 rule 5: an email never causes anything to exist).
+    expect(
+      planMessage(outbound.message, outbound.rel, { ...options, knownRequestIds: [] }).requests,
+    ).toEqual([]);
+  });
+
+  it("writes a thread the correspondence reader accepts without complaint", () => {
+    const outbound = parsed.find((entry) => entry.rel.endsWith("sample-outbound.eml"))!;
+    const plan = planMessage(outbound.message, outbound.rel, options);
+    const note = newThreadFromEml(plan, "THR-2026-0099", "01FIXTUREULID");
+    const read = parseThread(note.frontmatter, "THR-2026-0099");
+
+    expect(read.problems).toEqual([]);
+    expect(read.thread.awaiting).toBe("them");
+    expect(read.thread.threadKey).toBe("scdb-sample-root@example.org");
+  });
+
+  it("recognises the reply as already imported the second time round", () => {
+    const outbound = parsed.find((entry) => entry.rel.endsWith("sample-outbound.eml"))!;
+    const reply = parsed.find((entry) => entry.rel.endsWith("sample-reply.eml"))!;
+
+    const first = planMessage(outbound.message, outbound.rel, options);
+    const note = newThreadFromEml(first, "THR-2026-0099", "01FIXTUREULID");
+    const thread = parseThread(note.frontmatter, "THR-2026-0099").thread;
+
+    const second = planMessage(reply.message, reply.rel, options);
+    expect(threadForMessage([thread], second)?.id).toBe("THR-2026-0099");
+    expect(alreadyRecorded(thread, second)).toBe(false);
+    expect(alreadyRecorded(thread, first)).toBe(true);
+  });
+
+  it("keeps the message text out of the frontmatter", () => {
+    // A `messages:` list is read back into briefings and exports. Rule 7 keeps
+    // content out of anything derived; only the subject goes in.
+    const reply = parsed.find((entry) => entry.rel.endsWith("sample-reply.eml"))!;
+    const plan = planMessage(reply.message, reply.rel, options);
+    const note = newThreadFromEml(plan, "THR-2026-0099", "01FIXTUREULID");
+    expect(JSON.stringify(note.frontmatter)).not.toContain("recharge");
   });
 });

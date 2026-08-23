@@ -13,9 +13,9 @@ the chase-up composer and outreach ageing. B2 adds the time and effort HUD — a
 crash-safe status-bar timer, the monthly effort log, retroactive editing, and
 roll-ups per person, activity, study and cost centre. B3 adds deadlines and
 recurring obligations — a recurrence engine, the lapsed-obligation alarm, and a
-two-way calendar bridge to Outlook that needs no mailbox access. Bases is never
-a dependency: on an Obsidian without it, every view still works. Not yet
-released.
+two-way calendar bridge to Outlook that needs no mailbox access, and reading
+saved `.eml` messages into correspondence threads. Bases is never a dependency:
+on an Obsidian without it, every view still works. Not yet released.
 
 The design lives in [CLAUDE.md](CLAUDE.md) — architecture, the vault contract,
 build phases, and the rules that constrain them.
@@ -109,6 +109,45 @@ Every message is recorded as **composed, not sent** — `composed_only: true` in
 the note, `message-composed` in the audit ledger. We handed a draft to a handler;
 you may have closed it. An audit trail that claimed otherwise would be worse than
 none.
+
+### Reading saved email
+
+Drag messages out of Outlook into the vault, run **Import saved email files**,
+and they become correspondence threads — so a reply that arrived ages in the
+same holdup view as everything else, without the plugin ever touching your
+mailbox. No credentials, no API, no app registration. It reads `.eml` files that
+are already in the vault; a file goes in, notes come out.
+
+**Set your own email addresses in settings first.** The import refuses until you
+do, and that is deliberate: which way a message went is what decides whether a
+thread is waiting on you or on them, no heuristic can tell your mailbox from
+anyone else's, and getting it backwards silently closes a follow-up that is
+still open.
+
+Everything it will do is shown before it does any of it, and each conversation
+can be unticked:
+
+- Replies are grouped into **one thread** by their `References` chain, not by
+  subject line, so a fortnight of back-and-forth is one note.
+- A request id in the text is linked **only if that request already exists**. An
+  imported message never advances a stage, satisfies a gate or edits a request —
+  an email is untrusted text, and here it stays text.
+- The message body goes into the note fenced, so a `[[wikilink]]` a sender wrote
+  does not join your graph.
+- Attachments go to `75 Correspondence/_attachments/`. Images embedded in the
+  message — the crest on every institutional signature — are left out by default
+  and named in the note instead, as is anything over the size limit.
+- Running it again is free: messages already recorded are skipped on their
+  `Message-ID`. Drop new files in and re-run.
+
+**Which Outlook you have decides whether this is any use.** New Outlook and the
+web app hand you `.eml` when you drag a message out. Classic Outlook gives
+`.msg`, a different format entirely, which this does not read.
+
+One consequence worth stating plainly, because §5.10 of the design does: keeping
+full message bodies and attachments makes the vault a **regulated data store**,
+not a notebook. It stays on the machine, and correspondence fields stay out of
+exports by default.
 
 ## Time and effort
 

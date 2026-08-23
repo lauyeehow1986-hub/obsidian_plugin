@@ -388,4 +388,54 @@ describe("migrateSettings", () => {
     });
   });
 
+  describe("v6 -> v7: importing saved email files", () => {
+    it("starts with no addresses, so the importer refuses until told who you are", () => {
+      // Not a shy default. Direction is what `awaiting` is computed from, and
+      // guessing it backwards turns an unanswered chase-up into a closed loop.
+      expect(migrateSettings(null).settings.comms.myAddresses).toEqual([]);
+    });
+
+    it("keeps a v6 file's message settings while adding the new ones", () => {
+      const result = migrateSettings({
+        schemaVersion: 6,
+        comms: { uriCeiling: 1400, chaseDays: 10, channel: "teams" },
+      });
+      expect(result.settings.comms.uriCeiling).toBe(1400);
+      expect(result.settings.comms.channel).toBe("teams");
+      expect(result.settings.comms.emlAttachments).toBe("attachments");
+      expect(result.notes.join(" ")).toContain("Migrated v6 -> v7");
+    });
+
+    it("lower-cases and deduplicates the addresses", () => {
+      const result = migrateSettings({
+        schemaVersion: 7,
+        comms: { myAddresses: ["YH@Example.org", " yh@example.org "] },
+      });
+      expect(result.settings.comms.myAddresses).toEqual(["yh@example.org"]);
+    });
+
+    it("drops an entry that is not an address, and says so", () => {
+      const result = migrateSettings({
+        schemaVersion: 7,
+        comms: { myAddresses: ["yh@example.org", "just my name", "a@b.org, c@d.org"] },
+      });
+      expect(result.settings.comms.myAddresses).toEqual(["yh@example.org"]);
+      expect(result.notes.join(" ")).toContain("were not addresses");
+    });
+
+    it("resets an unknown attachment policy rather than honouring it", () => {
+      const result = migrateSettings({
+        schemaVersion: 7,
+        comms: { emlAttachments: "everything" },
+      });
+      expect(result.settings.comms.emlAttachments).toBe("attachments");
+      expect(result.notes.join(" ")).toContain("Unknown attachment setting");
+    });
+
+    it("clamps an unusable attachment size limit", () => {
+      const result = migrateSettings({ schemaVersion: 7, comms: { emlMaxAttachmentKb: 0 } });
+      expect(result.settings.comms.emlMaxAttachmentKb).toBe(1);
+    });
+  });
+
 });

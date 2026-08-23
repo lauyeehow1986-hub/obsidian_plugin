@@ -257,7 +257,7 @@ const checks = [
   // Pinned deliberately: this line failing means the schema moved, which is
   // the moment to check a migration step went with it (§10 — an upgrade must
   // never lose settings). Bump it only after writing that step.
-  ["settings carry a schema version", instance.settings.schemaVersion === 6],
+  ["settings carry a schema version", instance.settings.schemaVersion === 7],
   ["the hat filter defaults to the mode you are wearing", instance.settings.hatFilter === "mode"],
   // §7 B2. No timer on a fresh install, and every timer action reachable from
   // the keyboard — the status-bar segment is a shortcut, not the only door.
@@ -294,6 +294,35 @@ const checks = [
   [
     "nothing is materialised on an empty vault",
     instance.events.plans().length === 0,
+  ],
+  // §5.10 email Tier 1. The importer reads files that are already in the vault
+  // and refuses until it knows which mailboxes are yours — a wrong direction
+  // inverts every follow-up, so it asks rather than guesses.
+  ["importing saved email is reachable from the palette", commands.includes("import-eml")],
+  [
+    "no addresses of your own on a fresh install",
+    instance.settings.comms.myAddresses.length === 0,
+  ],
+  [
+    "so the importer refuses rather than guessing which way a message went",
+    instance.emlImport.canDetermineDirection() === false,
+  ],
+  [
+    "and starts working the moment it is told who you are",
+    (() => {
+      instance.settings.comms.myAddresses = ["yh@example.org"];
+      const ready = instance.emlImport.canDetermineDirection();
+      instance.settings.comms.myAddresses = [];
+      return ready === true;
+    })(),
+  ],
+  [
+    "attachments land in the folder §5 names",
+    instance.emlImport.attachmentsFolder() === "75 Correspondence/_attachments",
+  ],
+  [
+    "there is nothing to import from an empty vault",
+    instance.emlImport.candidates().length === 0,
   ],
   [
     // Mode is the organising metaphor (§7 A3): every hat needs a command, or

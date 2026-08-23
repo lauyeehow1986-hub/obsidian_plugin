@@ -26,6 +26,7 @@ import {
   type FolderKey,
   type ScdbSettings,
 } from "./schema.js";
+import { ATTACHMENT_POLICIES, type AttachmentPolicy } from "../comms/emlThread.js";
 import { MIN_IDLE_MINUTES, type TimerState } from "../effort/timer.js";
 
 export interface MigrationResult {
@@ -230,6 +231,14 @@ export function migrateSettings(raw: unknown): MigrationResult {
     );
   }
 
+  if (storedVersion > 0 && storedVersion < 7) {
+    notes.push(
+      "Migrated v6 -> v7: added importing saved email files. It stays refused " +
+        "until you list your own email addresses, because which way a message " +
+        "went cannot be guessed and getting it wrong inverts every follow-up.",
+    );
+  }
+
   merged.schemaVersion = CURRENT_SETTINGS_VERSION;
 
   const changed = JSON.stringify(raw) !== JSON.stringify(merged);
@@ -264,7 +273,11 @@ function repairComms(value: unknown, notes: string[]): CommsConfig {
     return base;
   }
 
-  const clamp = (key: "uriCeiling" | "chaseDays", min: number, max: number): number => {
+  const clamp = (
+    key: "uriCeiling" | "chaseDays" | "emlMaxAttachmentKb",
+    min: number,
+    max: number,
+  ): number => {
     const raw = value[key];
     if (typeof raw !== "number" || !Number.isFinite(raw)) return base[key];
     const clamped = Math.min(max, Math.max(min, Math.round(raw)));
@@ -282,7 +295,54 @@ function repairComms(value: unknown, notes: string[]): CommsConfig {
     uriCeiling: clamp("uriCeiling", 200, 8000),
     chaseDays: clamp("chaseDays", 1, 365),
     channel: known ? channel : base.channel,
+    myAddresses: repairAddresses(value["myAddresses"], notes),
+    emlAttachments: repairAttachmentPolicy(value["emlAttachments"], notes),
+    emlMaxAttachmentKb: clamp("emlMaxAttachmentKb", 1, 200 * 1024),
   };
+}
+
+/**
+ * Clean the address list without inventing one.
+ *
+ * Anything without an `@` is dropped rather than kept hopefully: a half-typed
+ * address that never matches makes every message you sent look inbound, and the
+ * symptom — threads that close themselves — reads as a bug in the ageing rather
+ * than a typo in a setting.
+ */
+function repairAddresses(value: unknown, notes: string[]): string[] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) {
+    notes.push("Your own email addresses were not a list; reset to empty.");
+    return [];
+  }
+
+  const cleaned = [
+    ...new Set(
+      value
+        .filter((entry): entry is string => typeof entry === "string")
+        .map((entry) => entry.trim().toLowerCase())
+        .filter((entry) => entry.includes("@") && !/[\s,;<>]/.test(entry)),
+    ),
+  ];
+
+  const dropped = value.length - cleaned.length;
+  if (dropped > 0) {
+    notes.push(
+      `Dropped ${dropped} entr${dropped === 1 ? "y" : "ies"} from your own email addresses that were not addresses.`,
+    );
+  }
+  return cleaned;
+}
+
+function repairAttachmentPolicy(value: unknown, notes: string[]): AttachmentPolicy {
+  if (value === undefined) return "attachments";
+  if (typeof value === "string" && (ATTACHMENT_POLICIES as readonly string[]).includes(value)) {
+    return value as AttachmentPolicy;
+  }
+  notes.push(
+    `Unknown attachment setting ${JSON.stringify(value)}; saving attached files only.`,
+  );
+  return "attachments";
 }
 
 function repairBriefing(value: unknown, notes: string[]): BriefingConfig {
