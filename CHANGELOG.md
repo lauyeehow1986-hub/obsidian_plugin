@@ -51,6 +51,67 @@ bridge, and like that one it needs no dependency.
   addresses configured" apart from "no files to import", and two synthetic
   `.eml` fixtures run through the real parser by the fixture guard.
 
+### Added — reading classic Outlook `.msg` as well (§5.10)
+
+Which format the work laptop produces is not a choice: new Outlook and the web
+app save `.eml`, classic Outlook saves `.msg`. Both are now read, so the feature
+does not depend on which Outlook happens to be installed.
+
+`.msg` is not a message in any textual sense — it is a **compound file** (the
+container `.doc`, `.xls` and `.msi` also use) holding MAPI properties, one
+stream per property, named after the property's numeric tag. There is no RFC
+5322 anywhere in it. Three new pure modules, still **no dependency**:
+
+- **`domain/comms/cfb.ts`** — the container: sectors, allocation table, mini
+  stream for the short values, and a red-black directory tree. Every chain walk
+  is bounded and every offset checked, because this parses a binary that arrived
+  by email. Verified against twelve compound files this project did not write —
+  Windows Installer packages, up to 32 MB — as well as against its own fixtures,
+  because testing a parser only against its author's writer proves the two agree,
+  not that either is right.
+- **`domain/comms/rtf.ts`** — LZFu decompression and RTF reduction. Plenty of
+  internal Outlook mail has neither a plain-text nor an HTML body property, only
+  a compressed RTF one, and skipping it would import those conversations with no
+  text at all. HTML encapsulated in RTF is recovered and reduced by the same
+  `htmlToText` the `.eml` path uses, so an HTML message reads identically
+  whichever way it was saved.
+- **`domain/comms/msg.ts`** — the MAPI layer, which returns **the same
+  `EmlMessage` the `.eml` parser returns**. That is the whole design: threading,
+  deduplication, the review dialog, attachment policy and note writing are all
+  shared, so a conversation saved half one way and half the other lands in one
+  thread rather than two. Verified end to end in Obsidian with exactly that case.
+
+Decisions worth recording:
+
+- **The original headers win where they exist.** A received message usually
+  keeps its whole internet header block in `PidTagTransportMessageHeaders`, and
+  that is preferred over every MAPI equivalent — it is what the message actually
+  travelled with, so the `Message-ID` and `References` chain match the `.eml`
+  path exactly rather than approximately.
+- **Synthesised identity is labelled, never disguised.** Drafts and some
+  internal items carry no `Message-ID` at all. Rather than fabricate one that
+  looks real, the thread is grouped on Exchange's conversation id as
+  `msg-conv:…` and the message gets a content-derived `msg-local:…` id so a
+  second import still recognises it. Both live in their own namespace, and the
+  review dialog says "no message id in the file, matched on content".
+- **An Exchange sender is not an address.** Internally
+  `PidTagSenderEmailAddress` holds an X.500 directory name. Where no SMTP
+  address can be recovered the sender is recorded by name with none, and a
+  problem is raised — direction is decided by matching the sender against your
+  own mailboxes, and inventing an address would quietly answer a question the
+  file cannot.
+- **Blind copies are dropped.** A `Bcc` list exists only in the sender's own
+  copy; writing it into a thread note would disclose what the recipients were
+  never shown.
+- **`via:` records which format each message came from**, because the two are
+  not equally authoritative about identity.
+- The `.msg` reader adds **14.5 KB** to the bundle (343.5 KB → 358.0 KB).
+
+**Still to check on the target machine:** every `.msg` used in development was
+synthesised from the specification, because a real one is mailbox content and
+cannot enter this repository. One real message dragged out of classic Outlook
+will confirm it, and the diagnostics self-test now counts both formats.
+
 ### Rules and boundaries — email Tier 1
 
 - **It refuses to run until you list your own addresses.** Direction is what

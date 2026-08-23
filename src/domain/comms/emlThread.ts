@@ -1,5 +1,8 @@
 /**
- * A parsed `.eml` mapped onto the correspondence contract (CLAUDE.md §5.10).
+ * A parsed message mapped onto the correspondence contract (CLAUDE.md §5.10).
+ *
+ * Both formats arrive here as the same `EmlMessage`, so nothing below cares
+ * whether it came from an `.eml` or a `.msg` — see `domain/comms/msg.ts`.
  *
  * The schema in §5.10 was written for exactly this: *"designed so a sync
  * populates it without migrating anything."* Nothing here invents a note type
@@ -300,12 +303,18 @@ export function alreadyRecorded(thread: Thread, plan: EmlPlan): boolean {
  *
  * `message_id` is the one addition to §5.10's shape, and it is load-bearing:
  * without it, importing the same folder twice appends every message again.
+ *
+ * `via` names the format the message was read from, because the two are not
+ * equally authoritative about identity: an `.eml` carries the real
+ * `Message-ID`, while a `.msg` sometimes has none and the id had to be
+ * synthesised. A reader who needs to know how much weight the dedupe carries
+ * can see it in the note.
  */
 export function importedMessageEntry(plan: EmlPlan): Record<string, unknown> {
   const entry: Record<string, unknown> = {
     at: toVaultMinute(plan.at),
     dir: plan.direction,
-    via: "eml-import",
+    via: `${plan.message.format}-import`,
     // One line, the subject as sent. Never the body — a `messages:` list is
     // read back into briefings and exports (rule 7).
     summary: plan.message.subject === "" ? "(no subject)" : plan.message.subject,
@@ -385,7 +394,7 @@ export function newThreadFromEml(
 function threadPreamble(): string {
   return [
     "Imported from saved email files. Nothing was fetched and nothing was sent —",
-    "the plugin read `.eml` files that were already in this vault.",
+    "the plugin read message files that were already in this vault.",
     "",
   ].join("\n");
 }

@@ -325,6 +325,22 @@ const checks = [
     instance.emlImport.candidates().length === 0,
   ],
   [
+    // Which format the work laptop produces is decided by which Outlook is
+    // installed, not by anything the user picks, so both have to be offered.
+    "both saved-mail formats are offered, newest first, whatever the case",
+    (() => {
+      const original = instance.app.vault.getFiles;
+      instance.app.vault.getFiles = () => [
+        { extension: "md", stat: { mtime: 9 } },
+        { extension: "eml", stat: { mtime: 2 } },
+        { extension: "MSG", stat: { mtime: 3 } },
+      ];
+      const found = instance.emlImport.candidates().map((file) => file.extension.toLowerCase());
+      instance.app.vault.getFiles = original;
+      return found.length === 2 && found[0] === "msg" && found[1] === "eml";
+    })(),
+  ],
+  [
     // Mode is the organising metaphor (§7 A3): every hat needs a command, or
     // two of the three are only reachable by mouse.
     "every hat has a command",

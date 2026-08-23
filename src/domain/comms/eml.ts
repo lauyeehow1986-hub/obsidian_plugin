@@ -680,6 +680,16 @@ export interface EmlMessage {
   /** True for `multipart/signed` or `multipart/encrypted`. Nothing is verified. */
   signed: boolean;
   encrypted: boolean;
+  /**
+   * Which file format this came out of.
+   *
+   * Recorded because the two are not equally trustworthy about identity: an
+   * `.eml` carries the real `Message-ID` and `References` chain, while a `.msg`
+   * sometimes has neither and has to fall back on a synthesised id. The note
+   * says which, so a thread built on synthesised identity is legible as such
+   * rather than looking like the real thing.
+   */
+  format: "eml" | "msg";
   /** Plain-English notes on anything that could not be read. Never swallowed. */
   problems: string[];
 }
@@ -734,6 +744,7 @@ export function parseEml(bytes: Uint8Array): EmlMessage {
     attachments: collectAttachments(leaves, bodyPart),
     signed,
     encrypted,
+    format: "eml",
     problems,
   };
 

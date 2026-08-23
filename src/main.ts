@@ -158,7 +158,7 @@ export default class ScdbCockpitPlugin extends Plugin {
   timer!: TimerService;
   /** Events, recurring obligations and the calendar bridge (§7 B3). */
   events!: EventStore;
-  /** Reading saved `.eml` files into correspondence threads (§5.10, Tier 1). */
+  /** Reading saved `.eml` and `.msg` files into correspondence threads (§5.10, Tier 1). */
   emlImport!: EmlImport;
 
   /** The mode HUD (§7 A3). Null until `onload` has run. */
@@ -2363,7 +2363,7 @@ export default class ScdbCockpitPlugin extends Plugin {
   }
 
   /**
-   * Read `.eml` files already in the vault into correspondence threads
+   * Read saved message files already in the vault into correspondence threads
    * (§5.10, email Tier 1).
    *
    * The whole vault is scanned rather than one file being picked, because the
@@ -2390,9 +2390,9 @@ export default class ScdbCockpitPlugin extends Plugin {
     const files = this.emlImport.candidates();
     if (files.length === 0) {
       this.notify(
-        `No .eml file in the vault. Drag messages out of Outlook into a folder here — ` +
+        `No .eml or .msg file in the vault. Drag messages out of Outlook into a folder here — ` +
           `${this.settings.folders.correspondence}/ is the obvious place — and run this again. ` +
-          `Classic Outlook saves .msg, which this cannot read; new Outlook and the web app give .eml.`,
+          `Either format works: new Outlook and the web app save .eml, classic Outlook saves .msg.`,
         14000,
       );
       return;
@@ -2451,7 +2451,7 @@ export default class ScdbCockpitPlugin extends Plugin {
       if (files.length > CAP) {
         parts.push(`${files.length - CAP} older file${files.length - CAP === 1 ? "" : "s"} not read`);
       }
-      this.notify(`Imported: ${parts.join(", ")}. The .eml files were left where they are.`, 10000);
+      this.notify(`Imported: ${parts.join(", ")}. The message files were left where they are.`, 10000);
 
       for (const problem of outcome.problems) this.notify(problem, 10000);
     } catch (error) {

@@ -2,13 +2,22 @@
  * Importing saved email files into correspondence threads (CLAUDE.md §5.10,
  * email Tier 1).
  *
- * The vault side. Everything decided is decided in `domain/comms/eml*`; this
- * reads files through Obsidian, writes notes and attachments back through
- * Obsidian, and nothing else.
+ * The vault side. Everything decided is decided in `domain/comms/eml*` and
+ * `domain/comms/msg*`; this reads files through Obsidian, writes notes and
+ * attachments back through Obsidian, and nothing else.
+ *
+ * **Two formats, one pipeline.** New Outlook and the web app save a message as
+ * `.eml`; classic Outlook saves `.msg`, a compound binary with no RFC 5322 in
+ * it at all. Both parsers return the same `EmlMessage`, so everything from
+ * threading to the review dialog to the note writing is shared, and a
+ * conversation saved half one way and half the other still lands in one thread.
+ * The format is chosen by looking at the file's first bytes rather than its
+ * extension, because a message renamed by hand is common and a signature is
+ * not a guess.
  *
  * Four rules shape it, all of them from §2:
  *
- *  - **Vault files only.** The picker offers `.eml` files that are already in
+ *  - **Vault files only.** The picker offers message files that are already in
  *    the vault. Reading an arbitrary path would mean `fs`, which rule 8 forbids
  *    — dragging the message out of Outlook into the vault first is one extra
  *    step and keeps every read inside Obsidian's own API.
@@ -32,6 +41,7 @@ import { ensureFolder } from "../data/vaultPaths";
 import { ulid } from "../domain/id/ulid";
 import { toVaultMinute } from "../domain/time/dates";
 import { parseEml, type EmlMessage } from "../domain/comms/eml";
+import { isMsgFile, parseMsg } from "../domain/comms/msg";
 import {
   alreadyRecorded,
   appendEmlToThread,
@@ -46,7 +56,14 @@ import {
 import { nextThreadId } from "../domain/comms/threadUpdate";
 import { CORRESPONDENCE_TYPE, parseThread, type Thread } from "../domain/comms/thread";
 
-export const EML_EXTENSION = "eml";
+/**
+ * The extensions offered for import.
+ *
+ * `.eml` from new Outlook and the web app, `.msg` from classic Outlook. Which
+ * one a given work laptop produces is decided by which Outlook is installed,
+ * not by anything the user chooses, so both have to be read.
+ */
+export const MAIL_EXTENSIONS = ["eml", "msg"] as const;
 
 export interface EmlImportDeps {
   app: App;
@@ -102,11 +119,12 @@ export class EmlImport {
     return normalizePath(`${this.deps.correspondenceFolder()}/_attachments`);
   }
 
-  /** Every `.eml` in the vault, newest first. */
+  /** Every saved message file in the vault, newest first. */
   candidates(): TFile[] {
+    const wanted = new Set<string>(MAIL_EXTENSIONS);
     return this.deps.app.vault
       .getFiles()
-      .filter((file) => file.extension.toLowerCase() === EML_EXTENSION)
+      .filter((file) => wanted.has(file.extension.toLowerCase()))
       .sort((a, b) => b.stat.mtime - a.stat.mtime);
   }
 
@@ -236,13 +254,20 @@ export class EmlImport {
     return preview;
   }
 
-  /** Parse one file, or null when it is not a message. */
+  /**
+   * Parse one file, or null when it is not a message.
+   *
+   * The parser is chosen by the file's own first bytes — a compound file starts
+   * with a fixed eight-byte signature — not by its extension. A message saved
+   * with the wrong suffix, or renamed on the way through a shared drive, is
+   * common enough that trusting the name would fail for no good reason.
+   */
   private async read(file: TFile): Promise<EmlMessage | null> {
     try {
-      const buffer = await this.deps.app.vault.readBinary(file);
-      const message = parseEml(new Uint8Array(buffer));
+      const bytes = new Uint8Array(await this.deps.app.vault.readBinary(file));
+      const message = isMsgFile(bytes) ? parseMsg(bytes) : parseEml(bytes);
       // No sender and no subject and no body is not a message, it is a file
-      // that happens to be named `.eml`.
+      // that happens to carry a message file's extension.
       if (message.from.length === 0 && message.subject === "" && message.body === "") return null;
       return message;
     } catch {
@@ -298,7 +323,7 @@ export class EmlImport {
           subject: "correspondence-import",
           // Counts and ids only — never a subject, an address or a body.
           detail:
-            `${outcome.messages} message${outcome.messages === 1 ? "" : "s"} imported from .eml ` +
+            `${outcome.messages} message${outcome.messages === 1 ? "" : "s"} imported from saved mail ` +
             `into ${outcome.threadsCreated} new and ${outcome.threadsUpdated} existing thread` +
             `${outcome.threadsUpdated === 1 ? "" : "s"}, ${outcome.attachments} attachment` +
             `${outcome.attachments === 1 ? "" : "s"} saved`,

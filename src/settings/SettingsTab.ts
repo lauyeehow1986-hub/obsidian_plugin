@@ -228,8 +228,8 @@ export class ScdbSettingsTab extends PluginSettingTab {
         "Drag messages out of Outlook into this vault and the plugin reads them into " +
         "correspondence threads, so replies age in the same holdup view as everything " +
         "else. No mailbox is opened, nothing is fetched and nothing is sent — it reads " +
-        "files that are already here. Classic Outlook saves .msg, which this cannot " +
-        "read; new Outlook and the web app give .eml.",
+        "files that are already here. Both formats are read: new Outlook and the web app " +
+        "save .eml, classic Outlook saves .msg.",
     });
 
     new Setting(containerEl)

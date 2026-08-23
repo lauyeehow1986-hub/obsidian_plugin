@@ -140,9 +140,22 @@ can be unticked:
 - Running it again is free: messages already recorded are skipped on their
   `Message-ID`. Drop new files in and re-run.
 
-**Which Outlook you have decides whether this is any use.** New Outlook and the
-web app hand you `.eml` when you drag a message out. Classic Outlook gives
-`.msg`, a different format entirely, which this does not read.
+**Either Outlook works.** New Outlook and the web app hand you `.eml` when you
+drag a message out; classic Outlook gives `.msg`, a completely different
+format — a compound binary of MAPI properties with no email headers in it at
+all. Both are read, and the parser is chosen by looking at the file rather than
+its extension, so a message renamed along the way still works.
+
+Two things are weaker for `.msg`, and the review dialog says so per message:
+
+- Where Outlook kept the original internet headers — which it does for anything
+  that arrived from outside — threading is identical to `.eml`, and a
+  conversation saved half one way and half the other lands in **one** thread.
+- Where it did not (drafts, some internal Exchange mail), there is no
+  `Message-ID` to work from. The thread is grouped on Exchange's conversation
+  id, and each message gets an id derived from its own contents so re-importing
+  still recognises it. Those are marked `msg-local:` rather than dressed up as
+  real message ids.
 
 One consequence worth stating plainly, because §5.10 of the design does: keeping
 full message bodies and attachments makes the vault a **regulated data store**,

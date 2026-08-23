@@ -559,9 +559,12 @@ function protocolCheck(plugin: ScdbCockpitPlugin): Check {
  */
 function emailImportCheck(plugin: ScdbCockpitPlugin): Check {
   const addresses = plugin.settings.comms.myAddresses.length;
-  const files = plugin.app.vault
-    .getFiles()
-    .filter((file) => file.extension.toLowerCase() === "eml").length;
+  const counted = { eml: 0, msg: 0 };
+  for (const file of plugin.app.vault.getFiles()) {
+    const extension = file.extension.toLowerCase();
+    if (extension === "eml" || extension === "msg") counted[extension] += 1;
+  }
+  const files = counted.eml + counted.msg;
 
   if (addresses === 0) {
     return check(
@@ -575,9 +578,10 @@ function emailImportCheck(plugin: ScdbCockpitPlugin): Check {
   return check(
     "Importing saved email",
     "ok",
-    `${addresses} address${addresses === 1 ? "" : "es"} configured; ${files} .eml file${files === 1 ? "" : "s"} in the vault.`,
+    `${addresses} address${addresses === 1 ? "" : "es"} configured; ` +
+      `${counted.eml} .eml and ${counted.msg} .msg file${files === 1 ? "" : "s"} in the vault.`,
     files === 0
-      ? "Classic Outlook saves .msg, which this cannot read; new Outlook and the web app give .eml. Drag one in and run the import."
+      ? "Drag a message out of Outlook into the vault and run the import. Either format works: new Outlook and the web app save .eml, classic Outlook saves .msg."
       : "Messages already recorded are skipped on their Message-ID, so running the import again is safe.",
   );
 }

@@ -127,6 +127,14 @@ function Review({
                     {plan.message.date === null && (
                       <span class="scdb-muted"> · no date in the file, using the file's own</span>
                     )}
+                    {plan.message.messageId.startsWith("msg-local:") && (
+                      // Some .msg files — drafts, internal Exchange items —
+                      // carry no Message-ID at all, so one is derived from what
+                      // the message contains. Worth saying: it is what stops a
+                      // second import duplicating the message, and it is
+                      // weaker than the real thing.
+                      <span class="scdb-muted"> · no message id in the file, matched on content</span>
+                    )}
                   </li>
                 ))}
               </ul>
