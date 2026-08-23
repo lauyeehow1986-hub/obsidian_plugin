@@ -1,0 +1,31 @@
+# Closed vocabularies for the effort log (CLAUDE.md §5.3).
+#
+# `activity` is closed on purpose. Free text gives you "extraction",
+# "Extraction", "data extraction" and "pulling data" as four categories, and the
+# roll-up that was meant to justify a post then says nothing.
+#
+# This file overrides the list the plugin ships with. Delete it and the built-in
+# list applies; write nonsense in it and the built-in list applies with a
+# warning in settings and in the diagnostics report — never an empty vocabulary,
+# because that would refuse every activity and stop the timer writing anything.
+
+activities:
+  - intake
+  - scoping
+  - governance-admin
+  - extraction
+  - qc
+  - analysis
+  - reporting
+  - meeting
+  # Earns its place: the number that justifies process improvement to people
+  # who otherwise hear only anecdotes.
+  - rework
+  - teaching
+  - other
+
+# Offered as suggestions in the timer dialog. Free text is still accepted — a
+# cost centre that only exists on next month's spreadsheet must still be typeable.
+cost_centres:
+  - RC-2026-07
+  - RC-2026-08

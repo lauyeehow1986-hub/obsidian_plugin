@@ -14,14 +14,17 @@ import {
   defaultBackup,
   defaultBriefing,
   defaultComms,
+  defaultEffort,
   defaultSettings,
   isMode,
   type BackupConfig,
   type BriefingConfig,
   type CommsConfig,
+  type EffortConfig,
   type FolderKey,
   type ScdbSettings,
 } from "./schema.js";
+import { MIN_IDLE_MINUTES, type TimerState } from "../effort/timer.js";
 
 export interface MigrationResult {
   settings: ScdbSettings;
@@ -166,6 +169,7 @@ export function migrateSettings(raw: unknown): MigrationResult {
 
   merged.comms = repairComms(merged.comms, notes);
   merged.briefing = repairBriefing(merged.briefing, notes);
+  merged.effort = repairEffort(merged.effort, notes);
 
   // Folders: fill gaps, keep customised values, drop nothing.
   const folders: Record<string, unknown> = isRecord(merged.folders) ? { ...merged.folders } : {};
@@ -205,6 +209,13 @@ export function migrateSettings(raw: unknown): MigrationResult {
       "Migrated v3 -> v4: added message composition and the daily briefing. " +
         "The briefing is off until you turn it on, and nothing is ever sent — " +
         "the plugin composes a draft and hands it to Outlook or Teams.",
+    );
+  }
+
+  if (storedVersion > 0 && storedVersion < 5) {
+    notes.push(
+      "Migrated v4 -> v5: added the effort timer. No timer is running, and the " +
+        "activity vocabulary comes from _config/vocabularies.yaml when you write one.",
     );
   }
 
@@ -282,6 +293,76 @@ function repairBriefing(value: unknown, notes: string[]): BriefingConfig {
       typeof horizon === "number" && Number.isFinite(horizon)
         ? Math.min(730, Math.max(1, Math.round(horizon)))
         : base.horizonDays,
+  };
+}
+
+/**
+ * Repair the effort block, and be strict about the timer.
+ *
+ * A malformed timer becomes **no timer**, never a repaired one. Every other
+ * field here is a preference and can be nudged back into range; a timer is a
+ * claim about hours worked, and inventing a plausible one from a half-written
+ * `data.json` would put minutes nobody worked into a log that justifies posts.
+ * Losing an unreadable session is the cheaper mistake, and it is announced.
+ */
+function repairEffort(value: unknown, notes: string[]): EffortConfig {
+  const base = defaultEffort();
+  if (!isRecord(value)) {
+    if (value !== undefined) notes.push("Effort settings were not readable; reset to defaults.");
+    return base;
+  }
+
+  const idle = value["idleMinutes"];
+  const idleMinutes =
+    typeof idle === "number" && Number.isFinite(idle)
+      ? Math.min(480, Math.max(MIN_IDLE_MINUTES, Math.round(idle)))
+      : base.idleMinutes;
+  if (typeof idle === "number" && idle !== idleMinutes) {
+    notes.push(`Effort idle threshold was ${idle} minutes; using ${idleMinutes}.`);
+  }
+
+  const costCentre = typeof value["costCentre"] === "string" ? value["costCentre"] : base.costCentre;
+
+  const timer = readTimer(value["timer"]);
+  if (value["timer"] != null && timer === null) {
+    notes.push("A stored timer could not be read and was discarded. No time was recorded for it.");
+  }
+
+  return { idleMinutes, costCentre, timer };
+}
+
+/** A stored timer, or null when anything about it is not what it should be. */
+function readTimer(value: unknown): TimerState | null {
+  if (!isRecord(value)) return null;
+
+  const status = value["status"];
+  if (status !== "running" && status !== "paused") return null;
+
+  const numbers = ["startedAt", "segmentFrom", "banked", "beat"] as const;
+  for (const key of numbers) {
+    const n = value[key];
+    if (typeof n !== "number" || !Number.isFinite(n) || n < 0) return null;
+  }
+
+  const binding = value["binding"];
+  if (!isRecord(binding)) return null;
+  const text = (key: string): string =>
+    typeof binding[key] === "string" ? (binding[key] as string) : "";
+
+  return {
+    status,
+    startedAt: value["startedAt"] as number,
+    segmentFrom: value["segmentFrom"] as number,
+    banked: value["banked"] as number,
+    beat: value["beat"] as number,
+    binding: {
+      person: text("person"),
+      ref: text("ref"),
+      activity: text("activity"),
+      study: text("study"),
+      costCentre: text("costCentre"),
+      note: text("note"),
+    },
   };
 }
 

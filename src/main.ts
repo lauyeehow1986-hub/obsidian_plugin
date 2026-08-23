@@ -87,6 +87,25 @@ import {
 } from "./domain/comms/thread.js";
 import { markAnswered, threadToContinue } from "./domain/comms/threadUpdate.js";
 import { briefingDue } from "./domain/briefing/briefing.js";
+import { EffortLog } from "./services/effortLog.js";
+import { HEARTBEAT_MS, TimerService, type StopOutcome } from "./services/timerService.js";
+import {
+  DIMENSION_LABELS,
+  formatMinutes,
+  rollUpCsv,
+  type EffortDimension,
+  type RollUpBucket,
+} from "./domain/effort/aggregate.js";
+import { compareToEstimate } from "./domain/effort/aggregate.js";
+import { activityOrFallback, defaultActivityFor } from "./domain/effort/vocabulary.js";
+import {
+  emptyBinding,
+  timerLabel,
+  type TimerBinding,
+  type TimerState,
+} from "./domain/effort/timer.js";
+import type { TimeEntry } from "./domain/effort/entry.js";
+import { askBinding, askEntry, askIdle, askRecovery } from "./ui/TimerModals.js";
 
 /** One row of a bulk migration, as the migration board hands it over. */
 export interface MigrationRun {
@@ -115,11 +134,28 @@ export default class ScdbCockpitPlugin extends Plugin {
   backup!: BackupService;
   /** Captures, correspondence threads and the daily briefing (§7 B1). */
   rhythm!: RhythmWriter;
+  /** The monthly effort tables in `80 Time/` (§5.3). */
+  effort!: EffortLog;
+  /** The running timer (§7 B2). */
+  timer!: TimerService;
 
   /** The mode HUD (§7 A3). Null until `onload` has run. */
   private statusBar: HTMLElement | null = null;
   /** The backup nag (§7 A4). A separate segment so it can be absent entirely. */
   private backupBar: HTMLElement | null = null;
+  /** The effort timer (§7 B2). Hidden until a timer is running. */
+  private timerBar: HTMLElement | null = null;
+
+  /**
+   * Bumped whenever a month file in `80 Time/` changes on disk.
+   *
+   * The effort board reads whole files rather than the note index, so a
+   * re-render alone does not refetch them — a Preact effect keyed on the month
+   * has no reason to re-run. Without this counter the table sat on "Nothing
+   * recorded" immediately after the timer wrote a row into the file it was
+   * looking at, which is the one moment it has to be right.
+   */
+  effortVersion = 0;
 
   /**
    * Core Bases (Obsidian >= 1.10) is a progressive enhancement — never a
@@ -161,6 +197,33 @@ export default class ScdbCockpitPlugin extends Plugin {
       pluginVersion: () => this.manifest.version,
     });
 
+    this.effort = new EffortLog({
+      app: this.app,
+      audit: this.audit,
+      timeFolder: () => this.settings.folders.time,
+      configFolder: () => this.settings.folders.config,
+      actor: () => this.settings.actor,
+    });
+
+    this.timer = new TimerService({
+      app: this.app,
+      log: this.effort,
+      settings: () => this.settings,
+      save: () => this.saveSettings(),
+      refresh: () => this.refreshViews(),
+      askStop: (entry, title) =>
+        askEntry(this.app, entry, {
+          title,
+          lede: "This is what will be written to the effort log. Fix it now while it is fresh.",
+          submitLabel: "Record",
+          discardLabel: "Discard",
+          activities: this.effort.vocabularies().activities,
+          costCentres: this.effort.vocabularies().costCentres,
+        }),
+      askIdle: (gap, state) => askIdle(this.app, gap, state),
+      askRecovery: (recovery) => askRecovery(this.app, recovery),
+    });
+
     this.rhythm = new RhythmWriter({
       app: this.app,
       notes: this.notes,
@@ -185,13 +248,30 @@ export default class ScdbCockpitPlugin extends Plugin {
     this.registerCommands();
     this.addRibbonIcon("layout-dashboard", "SCDB Cockpit", () => void this.activateCockpit());
     this.statusBar = this.addStatusBarItem();
+    this.timerBar = this.addStatusBarItem();
     this.backupBar = this.addStatusBarItem();
     this.renderStatusBar();
+
+    // The heartbeat is the crash-safety story (§7 B2): state is written on
+    // every beat, so a crash costs at most one minute. It also repaints the
+    // status bar, which is why it runs even when no timer is going.
+    this.registerInterval(
+      window.setInterval(() => {
+        if (this.timer.current() === null) return;
+        void this.timer.tick();
+      }, HEARTBEAT_MS),
+    );
 
     // The metadata cache is not populated until layout is ready; indexing
     // before that produces an empty board on every startup.
     this.app.workspace.onLayoutReady(() =>
-      void this.reindex().then(() => this.maybeWriteBriefing()),
+      void this.reindex()
+        .then(() => this.effort.loadVocabularies())
+        // Recovery asks before the briefing writes: a timer left running is a
+        // question about time already spent, and it should not be behind a
+        // note the plugin generated on the way past.
+        .then(() => this.timer.recoverOnLoad())
+        .then(() => this.maybeWriteBriefing()),
     );
     this.registerWatchers();
 
@@ -442,6 +522,60 @@ export default class ScdbCockpitPlugin extends Plugin {
     });
 
     this.addCommand({
+      id: "start-timer",
+      name: "Start the timer",
+      // Not Mod+Shift+T: that is Obsidian's own "Reopen last closed tab", and
+      // the core binding wins silently — verified by pressing it in 1.12.7 and
+      // watching nothing happen. Same trap as Ctrl+1..3 above. The hotkeys pane
+      // still lets the user take it if they would rather.
+      hotkeys: [{ modifiers: ["Mod", "Alt"], key: "T" }],
+      callback: () => void this.startTimer(),
+    });
+
+    this.addCommand({
+      id: "toggle-timer",
+      name: "Pause or resume the timer",
+      checkCallback: (checking) => {
+        if (this.timer.current() === null) return false;
+        if (!checking) void this.timer.toggle();
+        return true;
+      },
+    });
+
+    this.addCommand({
+      id: "stop-timer",
+      name: "Stop the timer and record the time",
+      checkCallback: (checking) => {
+        if (this.timer.current() === null) return false;
+        if (!checking) void this.timer.stop();
+        return true;
+      },
+    });
+
+    this.addCommand({
+      id: "time-this-request",
+      name: "Start the timer on this request",
+      checkCallback: (checking) => {
+        const entry = this.currentRequest();
+        if (checking) return entry !== null && this.timer.current() === null;
+        if (entry) void this.startTimer(entry.request.id, entry.request.study ?? "");
+        return true;
+      },
+    });
+
+    this.addCommand({
+      id: "add-time-entry",
+      name: "Add a time entry",
+      callback: () => void this.addTimeEntry(),
+    });
+
+    this.addCommand({
+      id: "open-effort",
+      name: "Open the effort table",
+      callback: () => void this.activateCockpit("effort"),
+    });
+
+    this.addCommand({
       id: "reindex",
       name: "Rebuild the note index",
       callback: () => void this.reindex(true),
@@ -481,13 +615,32 @@ export default class ScdbCockpitPlugin extends Plugin {
     this.registerEvent(
       this.app.vault.on("modify", (file) => {
         if (this.workflows.isSpecPath(file.path)) void this.reloadWorkflows();
+        this.effortFileChanged(file.path, refresh);
       }),
     );
     this.registerEvent(
       this.app.vault.on("create", (file) => {
         if (this.workflows.isSpecPath(file.path)) void this.reloadWorkflows();
+        this.effortFileChanged(file.path, refresh);
       }),
     );
+  }
+
+  /**
+   * The effort log and the vocabulary are plain files, not notes, so the
+   * metadata cache never mentions them. Watched on the vault directly, and the
+   * board is repainted when a month is edited by hand — the file is the record,
+   * and a table showing something else is worse than no table.
+   */
+  private effortFileChanged(path: string, refresh: () => void): void {
+    if (this.effort.isVocabularyPath(path)) {
+      void this.effort.loadVocabularies().then(refresh);
+      return;
+    }
+    if (this.effort.isEffortPath(path)) {
+      this.effortVersion += 1;
+      refresh();
+    }
   }
 
   private async reloadWorkflows(): Promise<void> {
@@ -543,7 +696,41 @@ export default class ScdbCockpitPlugin extends Plugin {
       button.createSpan({ cls: "scdb-mode__all", text: "all" });
     }
     button.addEventListener("click", () => void this.setMode(nextMode(this.settings.mode)));
+    this.renderTimerBar();
     this.renderBackupBar();
+  }
+
+  /**
+   * The effort timer segment (§7 B2).
+   *
+   * Absent entirely when nothing is running: a permanent "no timer" chip is a
+   * permanent reproach, and the status bar is shared with every other plugin.
+   * Clicking it stops and records; the palette holds pause and resume, because
+   * a single click should do the thing you most often want and never be the
+   * one that loses a session.
+   */
+  private renderTimerBar(): void {
+    const bar = this.timerBar;
+    if (bar === null) return;
+    bar.empty();
+
+    const state = this.timer.current();
+    if (state === null) {
+      bar.hide();
+      return;
+    }
+
+    bar.show();
+    bar.addClass("scdb-timer");
+    const label = timerLabel(state, Date.now());
+    const button = bar.createEl("button", {
+      cls: state.status === "paused" ? "scdb-timer__button scdb-timer__button--paused" : "scdb-timer__button",
+      attr: { type: "button", "aria-label": `${label}. Click to stop and record.` },
+    });
+    // Glyph plus words, never colour alone (§6).
+    button.createSpan({ cls: "scdb-timer__glyph", text: state.status === "paused" ? "❙❙" : "▶" });
+    button.createSpan({ text: label });
+    button.addEventListener("click", () => void this.timer.stop());
   }
 
   /**
@@ -719,6 +906,8 @@ export default class ScdbCockpitPlugin extends Plugin {
       spec,
       onOpenNote: () => void this.app.workspace.getLeaf(false).openFile(entry.file),
       onMove: () => this.moveRequest(request),
+      loadEffort: async () => (await this.effortForRequest(request)).comparison,
+      onStartTimer: () => void this.startTimer(request.id, request.study),
     }).open();
   }
 
@@ -1593,6 +1782,125 @@ export default class ScdbCockpitPlugin extends Plugin {
     } catch {
       return false;
     }
+  }
+
+  // --- effort and the timer (§7 B2) --------------------------------------------
+
+  /** A plain notice. Kept on the plugin so boards do not import `Notice` themselves. */
+  notify(message: string, ms = 5000): void {
+    new Notice(message, ms);
+  }
+
+  /**
+   * The binding a fresh timer starts from.
+   *
+   * The activity comes from the hat being worn (§7 A3) but is always shown and
+   * always editable — mode sets a default, never a silent attribution.
+   */
+  private startingBinding(ref = "", study = ""): TimerBinding {
+    const vocab = this.effort.vocabularies();
+    return {
+      ...emptyBinding(this.settings.actor),
+      ref,
+      study,
+      activity: activityOrFallback(vocab, defaultActivityFor(this.settings.mode)),
+      costCentre: this.settings.effort.costCentre,
+    };
+  }
+
+  /** Live request ids, offered in the reference field. Suggestions, not a whitelist. */
+  private timerSuggestions(): string[] {
+    return this.index
+      .views({ now: Date.now() })
+      .filter((view) => !view.metrics.completed)
+      .map((view) => view.request.id);
+  }
+
+  async startTimer(ref = "", study = ""): Promise<void> {
+    if (this.timer.current() !== null) {
+      new Notice("A timer is already running. Stop it first from the status bar.", 5000);
+      return;
+    }
+    const binding = await askBinding(this.app, this.startingBinding(ref, study), {
+      title: "Start timer",
+      activities: this.effort.vocabularies().activities,
+      costCentres: this.effort.vocabularies().costCentres,
+      suggestions: this.timerSuggestions(),
+    });
+    if (binding === null) return;
+    await this.timer.start(binding);
+  }
+
+  /**
+   * Record time for work already done (§7 B2, retroactive editing).
+   *
+   * The same dialog as the stop prompt, deliberately: forgetting to start the
+   * timer is the common case, and the entry it produces has to be the same
+   * shape as one the timer wrote or the roll-ups would tell two stories.
+   */
+  async addTimeEntry(month?: string): Promise<void> {
+    const vocab = this.effort.vocabularies();
+    const now = new Date();
+    const today = toVaultMinute(now.getTime()).slice(0, 10);
+    const draft: TimeEntry = {
+      // Today, unless the effort table is looking at some other month — in
+      // which case the first of that month, because "add an entry to the month
+      // I have open" is what the button in that toolbar means.
+      date: month === undefined || month === today.slice(0, 7) ? today : `${month}-01`,
+      start: "",
+      end: "",
+      mins: 30,
+      person: this.settings.actor,
+      ref: "",
+      activity: activityOrFallback(vocab, defaultActivityFor(this.settings.mode)),
+      study: "",
+      costCentre: this.settings.effort.costCentre,
+      note: "",
+    };
+
+    const outcome: StopOutcome = await askEntry(this.app, draft, {
+      title: "Add time entry",
+      lede: "For the timer you forgot to start. Clock times are optional; the minutes are not.",
+      submitLabel: "Record",
+      activities: vocab.activities,
+      costCentres: vocab.costCentres,
+    });
+    if (outcome.kind !== "save") return;
+
+    try {
+      await this.timer.write(outcome.entry);
+      this.refreshViews();
+    } catch {
+      // `write` has already said why in a notice, naming every reason at once.
+    }
+  }
+
+  /** Time recorded against a request, and how it sits against the estimate (§5.1). */
+  async effortForRequest(request: RequestNote): Promise<{
+    minutes: number;
+    comparison: ReturnType<typeof compareToEstimate>;
+  }> {
+    const entries = await this.effort.allEntries();
+    const wanted = request.id.trim().toLowerCase();
+    const minutes = entries
+      .filter((entry) => entry.ref.trim().toLowerCase() === wanted)
+      .reduce((sum, entry) => sum + entry.mins, 0);
+    return { minutes, comparison: compareToEstimate(request.effortEstimateHours, minutes) };
+  }
+
+  /** Write the roll-up the board is showing to a CSV in `95 Exports/`. */
+  async exportEffortRollUp(
+    month: string,
+    buckets: readonly RollUpBucket[],
+    dimension: EffortDimension,
+  ): Promise<void> {
+    await this.exportDocument({
+      basename: `effort ${month} by ${DIMENSION_LABELS[dimension].toLowerCase()}`,
+      extension: "csv",
+      content: rollUpCsv(buckets, dimension),
+      subject: `EFFORT-${month}`,
+      rows: buckets.length,
+    });
   }
 
   async saveSettings(): Promise<void> {

@@ -1411,3 +1411,117 @@
     transition: none;
   }
 }
+
+/* ------------------------------------------------------ the effort timer -- */
+/* §7 B2. The status-bar segment is absent unless a timer is running: a
+   permanent "no timer" chip is a permanent reproach, and the status bar is
+   shared with every other plugin. Glyph plus words, never colour alone (§6). */
+
+.scdb-timer__button {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  padding: 0 6px;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  cursor: pointer;
+}
+
+.scdb-timer__button:hover {
+  color: var(--text-normal);
+}
+
+.scdb-timer__glyph {
+  color: var(--scdb-on-track);
+}
+
+.scdb-timer__button--paused .scdb-timer__glyph {
+  color: var(--text-muted);
+}
+
+/* A row of small fields — the date/start/end/minutes group. Wraps rather than
+   scrolls, so the dialog is usable at a narrow window (§6, responsive). */
+.scdb-field-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--scdb-2);
+}
+
+.scdb-field-row > .scdb-field {
+  flex: 1 1 120px;
+  min-width: 0;
+}
+
+.scdb-field--inline {
+  flex-direction: row;
+  gap: var(--scdb-1);
+  align-items: center;
+  margin: 0;
+}
+
+.scdb-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--scdb-2);
+  align-items: center;
+}
+
+.scdb-toolbar__spacer {
+  flex: 1 1 auto;
+}
+
+.scdb-rowactions {
+  display: flex;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+/* One button per option, each carrying its own consequence. A dropdown would
+   hide the wording that makes the choice answerable. */
+.scdb-choices {
+  display: flex;
+  flex-direction: column;
+  gap: var(--scdb-1);
+}
+
+.scdb-choice {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--scdb-2);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  background: var(--background-primary);
+  text-align: left;
+  cursor: pointer;
+}
+
+.scdb-choice:hover {
+  border-color: var(--interactive-accent);
+}
+
+.scdb-choice__label {
+  color: var(--text-normal);
+  font-weight: 600;
+}
+
+.scdb-choice__detail {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+/* The effort table carries nine columns, which is more than a sidebar can hold.
+   It scrolls inside its own box rather than pushing the board sideways. */
+.scdb-effort .scdb-table {
+  display: block;
+  overflow-x: auto;
+}
+
+@media (max-width: 500px) {
+  .scdb-effort .scdb-table {
+    font-size: var(--font-ui-smaller);
+  }
+}

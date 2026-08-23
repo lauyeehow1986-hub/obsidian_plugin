@@ -19,6 +19,7 @@ import { OverviewBoard } from "./OverviewBoard";
 import { count, displayName, duration, presentState } from "./format";
 import { MigrationBoard, strandedCount } from "./MigrationBoard";
 import { QueryBoard } from "./QueryBoard";
+import { EffortBoard } from "./EffortBoard";
 import { groupOutreachByParty, type AgedThread } from "../domain/comms/thread";
 import { describeHoldup, mergeHoldup } from "../domain/comms/holdup";
 
@@ -31,6 +32,7 @@ export type CockpitTab =
   | "ageing"
   | "analytics"
   | "explore"
+  | "effort"
   | "migration"
   | "health";
 
@@ -41,6 +43,7 @@ const TABS: { id: CockpitTab; label: string }[] = [
   { id: "ageing", label: "Ageing" },
   { id: "analytics", label: "Analytics" },
   { id: "explore", label: "Explore" },
+  { id: "effort", label: "Effort" },
   { id: "migration", label: "Migration" },
   { id: "health", label: "Health" },
 ];
@@ -541,6 +544,7 @@ export function CockpitPanel({
         {tab === "ageing" && <AgeingBoard views={views} plugin={plugin} />}
         {tab === "analytics" && <AnalyticsBoard views={views} plugin={plugin} />}
         {tab === "explore" && <QueryBoard plugin={plugin} />}
+        {tab === "effort" && <EffortBoard plugin={plugin} />}
         {tab === "migration" && <MigrationBoard plugin={plugin} />}
         {tab === "health" && <HealthBoard views={views} plugin={plugin} />}
       </div>

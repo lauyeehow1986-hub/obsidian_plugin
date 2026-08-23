@@ -16,6 +16,18 @@
  */
 
 import { sha256 } from "./sha256";
+import {
+  escapeCell,
+  isTableRow,
+  splitCells,
+  tableHeader,
+  unescapeCell,
+} from "../table/cells";
+
+// The ledger and the effort log (§5.3) are both markdown tables a human may
+// have typed into, so the cell escaping is shared rather than reimplemented.
+// Re-exported because the ledger's file format is what these belong to.
+export { escapeCell, unescapeCell };
 
 export const AUDIT_ACTIONS = [
   "stage-change",
@@ -71,34 +83,7 @@ export const CHAIN_GENESIS = "scdb-audit-chain-v1";
 
 const COLUMNS = ["ts", "actor", "action", "subject", "detail", "chain"] as const;
 
-export const LEDGER_HEADER =
-  `| ${COLUMNS.join(" | ")} |\n| ${COLUMNS.map(() => "---").join(" | ")} |`;
-
-/**
- * Make a value safe for a markdown table cell, reversibly. A raw pipe would
- * split the row and a newline would end it, so both are escaped rather than
- * dropped — the ledger must survive a reason typed with a pipe in it.
- */
-export function escapeCell(value: string): string {
-  return value
-    .replace(/\\/g, "\\\\")
-    .replace(/\|/g, "\\|")
-    .replace(/\r\n?|\n/g, "\\n")
-    .trim();
-}
-
-export function unescapeCell(value: string): string {
-  let out = "";
-  for (let i = 0; i < value.length; i++) {
-    if (value[i] === "\\" && i + 1 < value.length) {
-      const next = value[++i]!;
-      out += next === "n" ? "\n" : next;
-    } else {
-      out += value[i];
-    }
-  }
-  return out.trim();
-}
+export const LEDGER_HEADER = tableHeader(COLUMNS);
 
 /** The exact text the chain is computed over — the cells as they appear in the file. */
 function canonicalise(entry: AuditEntry): string {
@@ -142,27 +127,6 @@ export interface ParsedLedger {
   malformed: number[];
 }
 
-const SEPARATOR_RE = /^\|[\s:|-]+\|$/;
-
-/** Split a table row on unescaped pipes. */
-function splitCells(line: string): string[] {
-  const cells: string[] = [];
-  let current = "";
-  // Skip the leading pipe; the trailing one closes the final cell.
-  for (let i = 1; i < line.length; i++) {
-    const ch = line[i]!;
-    if (ch === "\\" && i + 1 < line.length) {
-      current += ch + line[++i];
-    } else if (ch === "|") {
-      cells.push(current);
-      current = "";
-    } else {
-      current += ch;
-    }
-  }
-  return cells;
-}
-
 /**
  * Read a ledger file. Prose above or below the table is ignored, so a human can
  * annotate a month without breaking verification.
@@ -173,8 +137,7 @@ export function parseLedger(text: string): ParsedLedger {
 
   text.split(/\r?\n/).forEach((raw, index) => {
     const line = raw.trim();
-    if (!line.startsWith("|") || !line.endsWith("|")) return;
-    if (SEPARATOR_RE.test(line)) return;
+    if (!isTableRow(line)) return;
 
     const cells = splitCells(line).map(unescapeCell);
     if (cells.length !== COLUMNS.length) {

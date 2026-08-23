@@ -4,13 +4,15 @@ An Obsidian plugin for running a clinical data collection facility: data-request
 tracking with governance gates, effort measurement, publications, and the audit
 trail behind all of it. Offline-first, no telemetry, no network calls by default.
 
-**Status: phase B1.** Track A is complete: request tracking end to end (A1),
+**Status: phase B2.** Track A is complete: request tracking end to end (A1),
 the query engine behind the Explore board (A2), core Bases layered on where it
 exists (A2b), the cockpit and its analytics (A3), and encrypted backup with
 restore, verification, a diagnostics self-test and an integrity check (A4).
 B1 adds the daily rhythm — quick capture, a daily briefing, meeting agendas,
-the chase-up composer and outreach ageing. Bases is never a dependency: on an
-Obsidian without it, every view still works. Not yet released.
+the chase-up composer and outreach ageing. B2 adds the time and effort HUD — a
+crash-safe status-bar timer, the monthly effort log, retroactive editing, and
+roll-ups per person, activity, study and cost centre. Bases is never a
+dependency: on an Obsidian without it, every view still works. Not yet released.
 
 The design lives in [CLAUDE.md](CLAUDE.md) — architecture, the vault contract,
 build phases, and the rules that constrain them.
@@ -104,6 +106,47 @@ Every message is recorded as **composed, not sent** — `composed_only: true` in
 the note, `message-composed` in the audit ledger. We handed a draft to a handler;
 you may have closed it. An audit trail that claimed otherwise would be worse than
 none.
+
+## Time and effort
+
+`Ctrl+Alt+T` starts a timer bound to a request, a study, or whatever you are
+actually doing. It lives in the status bar; one click stops it and shows the
+entry before it is written, so the activity and the note get fixed while the
+session is still in mind. Pause and resume bank each stretch separately — the
+minutes recorded are the minutes worked, not the minutes between the clock
+times, which is why the log stores all three.
+
+Entries land in one markdown table per month in `80 Time/`, readable and
+diffable with the plugin uninstalled:
+
+```
+| date       | start | end   | mins | person | ref          | activity | study     | cost_centre | note |
+| 2026-07-14 | 09:12 | 10:05 |   38 | yh     | REQ-2026-014 | scoping  | EuroHeart | RC-2026-07  |      |
+```
+
+The **Effort** tab rolls them up by person, activity, study, cost centre,
+reference, day or month, and exports the roll-up to CSV. A request's detail shows
+its time against `effort_estimate_hours`.
+
+Three things worth knowing:
+
+- **Everyone forgets to stop a timer**, so fixing it afterwards is a first-class
+  feature rather than an apology. Add, edit, delete or split any past entry, in
+  the same dialog the timer stops with. A split shares the recorded minutes
+  between the halves in proportion, so the total never changes.
+- **A crash costs at most a minute.** The timer writes itself down every sixty
+  seconds. If Obsidian stops while one is running, the next start asks what to
+  do with it and offers both totals — up to the last check-in, or the whole span
+  — because only you know which is true.
+- **A gap is a question, never an assumption.** If the machine sleeps or Obsidian
+  is closed mid-session, you are asked to keep, drop or split the gap. Note the
+  honest limit: what that detects is a missed check-in, not you being away from
+  the keyboard, which no API available here can see.
+
+The activity list is a closed vocabulary — free text gives you "extraction",
+"Extraction" and "pulling data" as three categories and a roll-up that says
+nothing. Edit `_config/vocabularies.yaml` to use your own; a file that cannot be
+read falls back to the built-in list and tells you so in settings.
 
 ## Encrypted backup, and how to restore one
 

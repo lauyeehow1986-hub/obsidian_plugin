@@ -22,6 +22,11 @@ const Module = require("node:module");
 
 class Component {
   registerEvent() {}
+  // Obsidian clears these on unload. The harness only needs it to exist —
+  // the effort timer's heartbeat is registered through it (§7 B2).
+  registerInterval(id) {
+    return id;
+  }
 }
 
 /**
@@ -193,6 +198,19 @@ if (typeof PluginClass !== "function") {
   process.exit(1);
 }
 
+// The effort timer's heartbeat is registered as `window.setInterval`, which is
+// what Obsidian's own guidance says to use so the id is a plain number. Node
+// has the timer but no `window`, so the harness supplies one — a gap in the
+// stub, not in the plugin. The intervals are unref'd: a smoke run must exit.
+globalThis.window ??= {
+  setInterval: (...args) => {
+    const id = setInterval(...args);
+    if (typeof id === "object" && typeof id.unref === "function") id.unref();
+    return id;
+  },
+  clearInterval: (id) => clearInterval(id),
+};
+
 const instance = new PluginClass(stubApp(), { id: "scdb-cockpit", version: "0.0.0" });
 
 let loadError = null;
@@ -239,8 +257,23 @@ const checks = [
   // Pinned deliberately: this line failing means the schema moved, which is
   // the moment to check a migration step went with it (§10 — an upgrade must
   // never lose settings). Bump it only after writing that step.
-  ["settings carry a schema version", instance.settings.schemaVersion === 4],
+  ["settings carry a schema version", instance.settings.schemaVersion === 5],
   ["the hat filter defaults to the mode you are wearing", instance.settings.hatFilter === "mode"],
+  // §7 B2. No timer on a fresh install, and every timer action reachable from
+  // the keyboard — the status-bar segment is a shortcut, not the only door.
+  ["no timer is running on a fresh install", instance.settings.effort.timer === null],
+  [
+    "the timer can be started, paused and stopped from the palette",
+    ["start-timer", "toggle-timer", "stop-timer", "add-time-entry"].every((id) =>
+      commands.includes(id),
+    ),
+  ],
+  ["the effort log is wired", typeof instance.effort?.months === "function"],
+  ["the effort log reads no months on an empty vault", instance.effort.months().length === 0],
+  [
+    "the activity vocabulary falls back to the built-in list",
+    instance.effort.vocabularies().activities.includes("rework"),
+  ],
   [
     // Mode is the organising metaphor (§7 A3): every hat needs a command, or
     // two of the three are only reachable by mouse.

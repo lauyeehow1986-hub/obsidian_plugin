@@ -1,4 +1,6 @@
 import type { App } from "obsidian";
+import { useEffect, useState } from "preact/hooks";
+import type { EstimateComparison } from "../domain/effort/aggregate";
 import type { RequestMetrics } from "../domain/request/dwell";
 import type { RequestNote } from "../domain/request/request";
 import { resolveStage, type WorkflowSpec } from "../domain/request/workflow";
@@ -12,6 +14,9 @@ interface Props {
   spec: WorkflowSpec | null;
   onOpenNote: () => void;
   onMove: () => void;
+  /** Time recorded against this request, read from `80 Time/` on open (§7 B2). */
+  loadEffort: () => Promise<EstimateComparison>;
+  onStartTimer: () => void;
 }
 
 function Fact({ label, children }: { label: string; children: preact.ComponentChildren }) {
@@ -23,8 +28,29 @@ function Fact({ label, children }: { label: string; children: preact.ComponentCh
   );
 }
 
-function DetailPanel({ request, metrics, spec, onOpenNote, onMove }: Props) {
+function DetailPanel({
+  request,
+  metrics,
+  spec,
+  onOpenNote,
+  onMove,
+  loadEffort,
+  onStartTimer,
+}: Props) {
   const stage = spec ? resolveStage(spec, request.stage) : null;
+  // Loaded rather than passed: the effort log is a set of monthly files, not
+  // part of the note index, so reading it is a file read and not free.
+  const [effort, setEffort] = useState<EstimateComparison | null>(null);
+  useEffect(() => {
+    let live = true;
+    void loadEffort().then((result) => {
+      if (live) setEffort(result);
+    });
+    return () => {
+      live = false;
+    };
+  }, [loadEffort]);
+
   const state = presentState(metrics.stageSla.state);
   const dueState = presentState(metrics.dueSla.state);
 
@@ -66,6 +92,20 @@ function DetailPanel({ request, metrics, spec, onOpenNote, onMove }: Props) {
             <span class={`scdb-state ${dueState.className}`}>
               <span aria-hidden="true">{dueState.glyph}</span> {dueState.label}
             </span>
+          )}
+        </Fact>
+        <Fact label="Effort">
+          {effort === null ? (
+            <span class="scdb-muted">reading the effort log…</span>
+          ) : (
+            <>
+              {effort.text}
+              {effort.state === "over" && (
+                <span class="scdb-state scdb-state--at-risk">
+                  <span aria-hidden="true">!</span> over estimate
+                </span>
+              )}
+            </>
           )}
         </Fact>
         <Fact label="Requester">{displayName(request.requester)}</Fact>
@@ -163,6 +203,9 @@ function DetailPanel({ request, metrics, spec, onOpenNote, onMove }: Props) {
         <button type="button" class="scdb-control" onClick={onOpenNote}>
           Open note
         </button>
+        <button type="button" class="scdb-control" onClick={onStartTimer}>
+          Start timer
+        </button>
         <button type="button" class="mod-cta" onClick={onMove}>
           Move stage
         </button>
@@ -191,6 +234,10 @@ export class RequestDetailModal extends PreactModal {
         onMove={() => {
           this.close();
           this.options.onMove();
+        }}
+        onStartTimer={() => {
+          this.close();
+          this.options.onStartTimer();
         }}
       />
     );

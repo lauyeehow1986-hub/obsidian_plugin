@@ -5,7 +5,9 @@
  * An upgrade must never lose settings (CLAUDE.md §10).
  */
 
-export const CURRENT_SETTINGS_VERSION = 4;
+import type { TimerState } from "../effort/timer";
+
+export const CURRENT_SETTINGS_VERSION = 5;
 
 /** The three hats. Mode is the organising metaphor, not a cosmetic filter (§7 A3). */
 export const MODES = ["biostat", "hod", "research-core"] as const;
@@ -55,6 +57,7 @@ export interface ScdbSettings {
   backup: BackupConfig;
   comms: CommsConfig;
   briefing: BriefingConfig;
+  effort: EffortConfig;
   /** Unrecognised keys are preserved verbatim — see rule 8, never destroy data. */
   [extra: string]: unknown;
 }
@@ -88,6 +91,34 @@ export interface BriefingConfig {
   lastDate: string;
   /** How far ahead the "coming up" section looks. */
   horizonDays: number;
+}
+
+/**
+ * The effort timer and what it writes (§7 B2).
+ *
+ * The running timer lives here rather than in a file of its own because it has
+ * to survive a crash, and `data.json` is already written on every settings
+ * change. Persisting it is the whole crash-safety story: the alternative is a
+ * timer that exists only in memory, which is the one place a crash reaches.
+ */
+export interface EffortConfig {
+  /**
+   * Minutes of silence before the timer asks what happened.
+   *
+   * What this actually detects is the machine sleeping or Obsidian not running
+   * — a missed heartbeat — **not** the user staring out of the window. Real
+   * user-idle detection needs Electron APIs a plugin cannot reach, and claiming
+   * to measure attention would be a lie the numbers could not support.
+   */
+  idleMinutes: number;
+  /** Pre-filled on new entries, so chargeback coding is not retyped daily. */
+  costCentre: string;
+  /** The running timer, or null. Never invented on load; see the migration. */
+  timer: TimerState | null;
+}
+
+export function defaultEffort(): EffortConfig {
+  return { idleMinutes: 10, costCentre: "", timer: null };
 }
 
 export function defaultComms(): CommsConfig {
@@ -169,6 +200,7 @@ export function defaultSettings(): ScdbSettings {
     backup: defaultBackup(),
     comms: defaultComms(),
     briefing: defaultBriefing(),
+    effort: defaultEffort(),
   };
 }
 

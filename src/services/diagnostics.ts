@@ -25,6 +25,7 @@ import { PUBLICATION_TYPE, parsePublication } from "../domain/publication/public
 import { describeFindings, summariseIntegrity } from "../domain/integrity/links";
 import { collectIntegrityFindings } from "./integrity";
 import { toVaultMinute } from "../domain/time/dates";
+import { formatMinutes } from "../domain/effort/aggregate";
 import type ScdbCockpitPlugin from "../main.js";
 
 /** How long the Mermaid probe waits for an SVG before giving up. */
@@ -36,11 +37,74 @@ export async function collectDiagnostics(plugin: ScdbCockpitPlugin): Promise<Dia
     await index(plugin),
     validation(plugin),
     await ledger(plugin),
+    await effort(plugin),
     await integrity(plugin),
     await backup(plugin),
     await integrations(plugin),
   ];
   return { generatedAt: toVaultMinute(Date.now()), sections };
+}
+
+/* --------------------------------------------------------------- effort -- */
+
+/**
+ * The effort log (§7 B2).
+ *
+ * Reported because it is a set of plain markdown tables the user may type into,
+ * and a row the parser skips is a row missing from a roll-up that will later be
+ * put in front of a funding committee. Silence there is expensive.
+ */
+async function effort(plugin: ScdbCockpitPlugin): Promise<ReportSection> {
+  const months = plugin.effort.months();
+  const entries = await plugin.effort.allEntries(months);
+  const minutes = entries.reduce((sum, entry) => sum + entry.mins, 0);
+  const problems = await plugin.effort.problems();
+  const skipped = problems.reduce((sum, file) => sum + file.problems.length, 0);
+  const vocab = plugin.effort.vocabularies();
+  const vocabProblems = plugin.effort.vocabularyProblems();
+  const timer = plugin.timer.current();
+
+  const checks: Check[] = [
+    check(
+      "Effort log",
+      "ok",
+      `${entries.length} entries across ${months.length} month${months.length === 1 ? "" : "s"} in ` +
+        `${plugin.settings.folders.time} (${formatMinutes(minutes)}).`,
+    ),
+    check(
+      "Rows the parser skipped",
+      skipped === 0 ? "ok" : "warn",
+      skipped === 0
+        ? "None — every row reads as a time entry."
+        : problems
+            .map((file) => `${file.path}: ${file.problems.map((p) => `line ${p.line}`).join(", ")}`)
+            .join("; "),
+      skipped === 0
+        ? undefined
+        : "Those rows are not counted in any roll-up. Open the Effort tab, which names what is wrong with each.",
+    ),
+    check(
+      "Activity vocabulary",
+      vocabProblems.length === 0 ? "ok" : "warn",
+      vocab.fromFile
+        ? `${vocab.activities.length} activities from ${plugin.effort.vocabularyPath()}.`
+        : `${vocab.activities.length} activities, the built-in list.`,
+      vocabProblems.length === 0 ? undefined : vocabProblems.join(" "),
+    ),
+  ];
+
+  if (timer !== null) {
+    checks.push(
+      check(
+        "Timer",
+        "ok",
+        `${timer.status} on ${timer.binding.ref || timer.binding.activity}, ` +
+          `${formatMinutes(Math.round(plugin.timer.elapsed() / 60000))} so far.`,
+      ),
+    );
+  }
+
+  return { title: "Time and effort", checks };
 }
 
 /* ------------------------------------------------------------- versions -- */

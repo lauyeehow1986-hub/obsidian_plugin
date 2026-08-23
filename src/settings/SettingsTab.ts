@@ -86,6 +86,7 @@ export class ScdbSettingsTab extends PluginSettingTab {
 
     this.messagesSection(containerEl);
     this.briefingSection(containerEl);
+    this.effortSection(containerEl);
     this.backupSection(containerEl);
 
     // Surfacing migration notes here rather than only in the console: on the
@@ -242,6 +243,53 @@ export class ScdbSettingsTab extends PluginSettingTab {
           ? "No briefing has been written yet. \"Write today's briefing\" in the command palette makes one now."
           : `Last briefing: ${briefing.lastDate}.`,
     });
+  }
+
+  /** The effort timer (§7 B2). */
+  private effortSection(containerEl: HTMLElement): void {
+    const effort = this.plugin.settings.effort;
+    containerEl.createEl("h3", { text: "Time and effort" });
+
+    new Setting(containerEl)
+      .setName("Ask about a gap after")
+      .setDesc(
+        "Minutes of silence before the timer asks what happened. What this detects is the " +
+          "machine sleeping or Obsidian not running — a missed heartbeat — not you being away " +
+          "from the keyboard, which no API here can see. Two minutes is the floor: the timer " +
+          "checks in once a minute, so anything shorter would ask on every check.",
+      )
+      .addText((text) =>
+        text.setValue(String(effort.idleMinutes)).onChange(async (value) => {
+          const parsed = Number.parseInt(value, 10);
+          if (!Number.isFinite(parsed)) return;
+          this.plugin.settings.effort.idleMinutes = Math.min(480, Math.max(1, parsed));
+          await this.plugin.saveSettings();
+        }),
+      );
+
+    new Setting(containerEl)
+      .setName("Default cost centre")
+      .setDesc("Pre-filled on new entries, so chargeback coding is not retyped every day.")
+      .addText((text) =>
+        text.setValue(effort.costCentre).onChange(async (value) => {
+          this.plugin.settings.effort.costCentre = value.trim();
+          await this.plugin.saveSettings();
+        }),
+      );
+
+    const vocab = this.plugin.effort.vocabularies();
+    const problems = this.plugin.effort.vocabularyProblems();
+    containerEl.createEl("p", {
+      cls: "setting-item-description",
+      text:
+        `Activities: ${vocab.activities.join(", ")}. ` +
+        (vocab.fromFile
+          ? `Read from ${this.plugin.settings.folders.config}/vocabularies.yaml.`
+          : `The built-in list. Write ${this.plugin.settings.folders.config}/vocabularies.yaml to change it.`),
+    });
+    for (const problem of problems) {
+      containerEl.createEl("p", { cls: "setting-item-description", text: problem });
+    }
   }
 
   /**

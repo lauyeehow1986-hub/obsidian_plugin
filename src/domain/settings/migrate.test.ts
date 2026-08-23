@@ -280,4 +280,55 @@ describe("migrateSettings", () => {
       expect(result.settings.briefing.horizonDays).toBe(30);
     });
   });
+  describe("v4 -> v5: the effort timer", () => {
+    it("adds the effort block with no timer running", () => {
+      const result = migrateSettings({ schemaVersion: 4, actor: "yh" });
+      expect(result.settings.effort).toEqual({ idleMinutes: 10, costCentre: "", timer: null });
+      expect(result.settings.schemaVersion).toBe(CURRENT_SETTINGS_VERSION);
+      expect(result.notes.join(" ")).toContain("v4 -> v5");
+    });
+
+    it("keeps a timer that reads properly", () => {
+      const timer = {
+        status: "running",
+        startedAt: 1,
+        segmentFrom: 1,
+        banked: 0,
+        beat: 2,
+        binding: { person: "yh", ref: "REQ-1", activity: "qc", study: "", costCentre: "", note: "" },
+      };
+      const result = migrateSettings({ schemaVersion: 5, effort: { idleMinutes: 10, costCentre: "", timer } });
+      expect(result.settings.effort.timer).toEqual(timer);
+    });
+
+    it("discards a timer it cannot read rather than repairing one", () => {
+      // A timer is a claim about hours worked. Inventing a plausible one from a
+      // half-written data.json would put minutes nobody worked into a log that
+      // justifies posts.
+      for (const broken of [
+        { status: "sprinting", startedAt: 1, segmentFrom: 1, banked: 0, beat: 2, binding: {} },
+        { status: "running", startedAt: "nine", segmentFrom: 1, banked: 0, beat: 2, binding: {} },
+        { status: "running", startedAt: 1, segmentFrom: 1, banked: 0, beat: 2 },
+      ]) {
+        const result = migrateSettings({ schemaVersion: 5, effort: { timer: broken } });
+        expect(result.settings.effort.timer).toBeNull();
+        expect(result.notes.join(" ")).toContain("discarded");
+      }
+    });
+
+    it("says nothing about a timer that was simply absent", () => {
+      const result = migrateSettings({ schemaVersion: 5, effort: { timer: null } });
+      expect(result.notes.join(" ")).not.toContain("discarded");
+    });
+
+    it("clamps the idle threshold rather than resetting it", () => {
+      // Floored at two heartbeats: a one-minute threshold fires on every
+      // ordinary beat, so the dialog would appear once a minute forever.
+      expect(migrateSettings({ schemaVersion: 5, effort: { idleMinutes: 0 } }).settings.effort.idleMinutes).toBe(2);
+      expect(migrateSettings({ schemaVersion: 5, effort: { idleMinutes: 1 } }).settings.effort.idleMinutes).toBe(2);
+      expect(
+        migrateSettings({ schemaVersion: 5, effort: { idleMinutes: 9999 } }).settings.effort.idleMinutes,
+      ).toBe(480);
+    });
+  });
 });

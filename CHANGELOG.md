@@ -5,6 +5,118 @@ clearly marked entry (CLAUDE.md §10).
 
 ## Unreleased
 
+### Added — B2, the time and effort HUD
+
+A status-bar timer, a monthly effort log, retroactive editing and roll-ups
+(§5.3, §7 B2).
+
+- **The timer** starts from `Ctrl+Alt+T` or the palette, bound to a request, a
+  study or free text, with an activity category. Pause and resume bank each
+  segment separately, so the minutes recorded are the minutes worked while the
+  clock times still bound the whole session. One click on the status-bar segment
+  stops and records; the palette holds pause and resume, because a single click
+  should do the thing you most often want and never be the one that loses an
+  afternoon.
+- **Crash-safe.** State is written on every change and on a **60-second
+  heartbeat**, which is the whole of B2's "loses at most a minute". A timer found
+  still going at startup raises a recovery dialog offering the total up to the
+  last heartbeat, the total up to now, carrying on, or recording nothing — both
+  numbers, because Obsidian stopping at 11:00 on a session started at 09:00 could
+  be two hours of work or two hours of a closed laptop, and no API here can tell
+  them apart.
+- **Gap handling, described honestly.** What a missed heartbeat detects is the
+  machine sleeping or Obsidian not running — **not** you being away from the
+  keyboard, which needs Electron APIs a plugin cannot reach. The dialog says
+  that, and offers keep / discard / split. Never silently recorded, never
+  silently discarded: both are decisions, and neither is ours.
+- **Retroactive editing is first-class**, in the same dialog the timer stops
+  with, because forgetting to start it is the common case and a thinner "add
+  what you forgot" form would be exactly the afterthought B2 warns against. Add,
+  edit, delete and **split** a past entry; a split apportions the recorded
+  minutes by span so the total does not change.
+- **Roll-ups** by person, activity, study, cost centre, reference, day or month,
+  with an export to CSV in `95 Exports/` carrying both minutes and hours.
+- **Estimate vs actual** on the request detail: "2m of 6h estimated", flagged
+  once it goes over. The wording is deliberately flat — an estimate that turned
+  out low is information about the estimate as often as about the work, and a
+  tool that reads as a reprimand is a tool whose timer stops being started.
+- **The activity vocabulary is closed and configurable** —
+  `_config/vocabularies.yaml`, falling back to §5.3's shipped list. A file that
+  cannot be read falls back to the built-in list **and says so**, never to an
+  empty vocabulary: that would refuse every activity and turn a typo in a config
+  file into a day of lost entries.
+- Settings schema **v5** with a migration: adds the effort block. A stored timer
+  that cannot be read becomes **no timer**, never a repaired one — every other
+  field here is a preference and can be nudged back into range, but a timer is a
+  claim about hours worked, and inventing a plausible one from a half-written
+  `data.json` would put minutes nobody worked into a log that justifies posts.
+
+### Rules and boundaries — B2
+
+- **§5.3 says the effort log is append-only; B2 asks for retroactive editing.**
+  Those are in genuine tension and the resolution is deliberate: "append-only"
+  describes how the *timer* writes — it adds a row and never rewrites the month
+  — not a claim that the log is evidentiary. That is the audit ledger's job, and
+  the ledger has a hash chain precisely because it makes that claim and this
+  file does not. A log you cannot correct is a log that gets abandoned in the
+  first week, and an abandoned log justifies no posts at all.
+- **So editing is allowed, and logged.** Changing or removing a row appends a
+  `bulk-edit` entry to the ledger with **counts only** — no dates, no
+  references, no note text (rule 7). A new row is not logged: appending is the
+  tool doing its job, while rewriting hours that may later justify a post or a
+  chargeback line is consequential, and §5.6 does not allow silent consequential
+  actions.
+- **An edit names the line it thinks it is changing and refuses if the file has
+  moved on.** The month may be open in the editor; writing to a line number read
+  thirty seconds ago would overwrite a row nobody meant to touch (rule 8). A
+  batch with one stale line applies none of it.
+- **Anything the parser does not understand survives a rewrite verbatim** —
+  prose, annotations, hand-written rows, rows with the wrong column count. The
+  whole file is rewritten, so everything we do not understand has to come out
+  the other side unchanged. Rows it cannot read are reported by line number in
+  the Effort tab and in diagnostics, and counted in no roll-up.
+- **`mins` is stored, not derived from the clock times.** A paused timer means
+  the minutes worked are not the minutes elapsed; recomputing would silently
+  inflate every interrupted entry. Minutes *exceeding* the span are reported,
+  because that one cannot happen.
+- **A session under a minute records nothing** and says so. Rounding it up would
+  be inventing time.
+- **The idle threshold is floored at two minutes.** The gap since the last beat
+  is one heartbeat long by definition, so a one-minute setting would put the
+  dialog on screen once a minute forever — and a question asked that often is
+  one people answer without reading.
+- **No effort fixture is committed.** `**/80 Time/` is unconditionally
+  gitignored, for the same reason `75 Correspondence/` is: a real vault's time
+  log is exactly what must never reach a public repo, and a rule with no
+  exceptions is the only kind that still holds at the end of a long day. The
+  Effort tab's empty state is therefore what a fresh clone sees, which is also
+  what a real first install sees. `_config/vocabularies.yaml` **is** committed —
+  it is configuration, not content.
+
+### Fixed — B2, found by running it
+
+Four things, all found driving the plugin in Obsidian 1.12.7 against the test
+vault rather than by a test.
+
+- **`Ctrl+Shift+T` never fired.** It is Obsidian's own *Reopen last closed tab*,
+  and the core binding wins silently — the identical trap as `Ctrl+1..3` in A3.
+  The default is now `Ctrl+Alt+T`; the hotkeys pane still lets you take the
+  other one.
+- **The effort table did not notice the timer writing into it.** The month files
+  are read whole rather than indexed, so a re-render had nothing to re-read
+  from: the board sat on "Nothing recorded" seconds after recording something,
+  which is the one moment it has to be right. A version counter, bumped when a
+  file in `80 Time/` changes on disk, now drives the refetch — so a month edited
+  by hand in the editor updates the board too.
+- **The recovery dialog offered "Record 0m" twice.** After a quick restart the
+  vouched and optimistic totals round to the same number, and two rows saying
+  the same thing with different small print reads as a broken dialog. They
+  collapse into one when they agree, and a recovery that would record nothing
+  now says so instead of closing in silence.
+- **The delete confirmation read "2026-08-23 –, 45m"** for an entry added by
+  hand with no clock times. The one dialog that must be unambiguous should not
+  look like a rendering fault.
+
 ### Added — B1, the daily rhythm pack
 
 Five features that share the A2 query engine and, together, are what make the
