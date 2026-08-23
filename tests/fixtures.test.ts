@@ -315,3 +315,32 @@ describe("captures", () => {
     }
   });
 });
+
+describe("the ban on committing correspondence has no exception", () => {
+  // §5.10 permits full message bodies and attachments in `75 Correspondence/`,
+  // which makes it the folder most able to carry something real into a public
+  // repo. The protection is an unconditional gitignore rule, so these fixtures
+  // live in `75 Correspondence-fixtures/` — a name that rule never covered —
+  // rather than behind a `!` exception. An exception is a rule you have to
+  // remember; a rename is one you cannot forget.
+  const gitignore = readFileSync(join(__dirname, "..", ".gitignore"), "utf8");
+
+  it("still bans the real folder name outright", () => {
+    expect(gitignore).toContain("**/75 Correspondence/");
+  });
+
+  it("un-ignores nothing", () => {
+    const exceptions = gitignore
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line.startsWith("!"));
+    expect(exceptions).toEqual([]);
+  });
+
+  it("keeps every fixture out of a folder that would be ignored", () => {
+    // Checked against the filesystem, not against git: a file git is ignoring
+    // is exactly the file nobody would notice had gone wrong.
+    const inside = files.filter((file) => file.rel.split("/").includes("75 Correspondence"));
+    expect(inside.map((file) => file.rel)).toEqual([]);
+  });
+});

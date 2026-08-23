@@ -18,19 +18,16 @@ main.js
 **/75 Correspondence/
 **/94 Runs/
 
-# The one narrowing of the rule above, and only this one.
+# There is deliberately NO `!` exception to the list above — not for test-vault,
+# not for anything. `75 Correspondence/` is the highest-risk folder in a real
+# vault (§5.10 permits full message bodies and attachments in it), and a rule
+# with no exceptions is the only kind that still holds at the end of a long day.
 #
-# `75 Correspondence/` is blanket-ignored because §5.10 permits full message
-# bodies and attachments there — it is the highest-risk folder in a real vault.
-# But the synthetic threads in `test-vault/` document that contract the same way
-# the synthetic requests document §5.1, and the fixture tests assert on them, so
-# a fresh clone without them fails. They are covered by the same guard as every
-# other fixture: `tests/fixtures.test.ts` refuses any address outside RFC 2606's
-# reserved example domains, and refuses a `body` key on any message.
-#
-# `82 Audit/`, `80 Time/`, `95 Exports/` and `94 Runs/` stay ignored even under
-# test-vault: those are generated output, not contract documentation.
-!/test-vault/75 Correspondence/
+# The synthetic threads that document that contract therefore live in
+# `test-vault/75 Correspondence-fixtures/`, which is a different folder name and
+# so was never ignored in the first place. Drop a real thread into a folder
+# actually called `75 Correspondence/` — anywhere, including under test-vault —
+# and it stays out of this repo.
 
 # Obsidian per-machine state (never useful in the repo)
 **/.obsidian/workspace*

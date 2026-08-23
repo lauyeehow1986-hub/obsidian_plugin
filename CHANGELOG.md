@@ -75,6 +75,17 @@ plugin worth opening in the morning.
   logging every such click would bury the entries that matter.
 - **A message body is never stored on a thread note** — a one-line summary
   goes in, because thread notes are read back into briefings and exports.
+- **`75 Correspondence/` stays gitignored everywhere, with no exception.** The
+  synthetic threads that document §5.10 were first committed behind a `!` rule
+  narrowed to `test-vault/`; they now live in `75 Correspondence-fixtures/`
+  instead, a folder name the ban never covered. Same files, same tests, but the
+  rule protecting the highest-risk folder in a real vault is once again
+  unconditional — an exception is a rule you have to remember, and the moment
+  it matters is the moment you are tired. Three tests hold the line: the ban is
+  present, no line in `.gitignore` starts with `!`, and no fixture sits in a
+  path segment called `75 Correspondence`. The plugin still *writes* new threads
+  to the real folder, so anything generated while developing stays out of git by
+  itself.
 
 ### Vault contract — B1
 
