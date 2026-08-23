@@ -76,6 +76,17 @@ describe("groupByStage", () => {
     const orphan = stuck("REQ-X", "pre-triage", 3, null);
     expect(groupByStage([orphan], spec).map((g) => g.stageId)).toContain("pre-triage");
   });
+
+  it("heads the orphan column with a humanised label, keeping the raw id as the key", () => {
+    // The id is what the note says and what everything joins on; the label is
+    // what a reader sees. Only the label is prettified — grouping, keys and the
+    // migration board all still work off `pre-triage`.
+    const group = groupByStage([stuck("REQ-X", "pre-triage", 3, null)], spec).find(
+      (g) => g.stageId === "pre-triage",
+    )!;
+    expect(group.label).toBe("Pre triage");
+    expect(group.stageId).toBe("pre-triage");
+  });
 });
 
 describe("groupByBlockingParty", () => {

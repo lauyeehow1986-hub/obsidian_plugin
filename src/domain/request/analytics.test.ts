@@ -107,8 +107,11 @@ describe("queueByStage", () => {
   });
 
   it("shows a stage the spec has dropped rather than silently omitting it", () => {
+    // Labelled "Invented stage", not "invented-stage": the bar is humanised like
+    // every other, and the fact that no spec declares it is said outright on the
+    // health table rather than implied by leaving a slug on the axis.
     const series = queueByStage([stuck("REQ-X", "invented-stage", 3)], spec);
-    expect(valueFor(series, "invented-stage")).toBe(1);
+    expect(valueFor(series, "Invented stage")).toBe(1);
   });
 });
 

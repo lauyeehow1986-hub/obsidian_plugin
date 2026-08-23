@@ -5,8 +5,10 @@ import {
   isBackwardMove,
   isKnownStage,
   isTransitionDeclared,
+  humaniseStageId,
   parseWorkflowSpec,
   resolveStage,
+  stageLabelOf,
 } from "./workflow";
 
 function errors(raw: unknown): string[] {
@@ -149,5 +151,53 @@ describe("transitions", () => {
     expect(isBackwardMove(spec, "qc", "extraction")).toBe(true);
     expect(isBackwardMove(spec, "extraction", "qc")).toBe(false);
     expect(isBackwardMove(spec, "triage", "nonsense")).toBe(false);
+  });
+});
+
+describe("stageLabelOf", () => {
+  const spec = testSpec({ retired: { "pending-approval": "awaiting-approval" } });
+
+  it("prints the declared label for a live stage", () => {
+    expect(stageLabelOf(spec, "awaiting-approval")).toBe("Awaiting approval");
+    expect(stageLabelOf(spec, "qc")).toBe("QC");
+  });
+
+  it("humanises a retired stage instead of resolving it", () => {
+    // Both halves matter. "Pending approval" is readable, and it is NOT
+    // "Awaiting approval": resolving through `retired:` would put two different
+    // stages under one name and hide that REQ-2026-007 needs migrating (§5.2).
+    expect(stageLabelOf(spec, "pending-approval")).toBe("Pending approval");
+    expect(stageLabelOf(spec, "pending-approval")).not.toBe(
+      stageLabelOf(spec, "awaiting-approval"),
+    );
+  });
+
+  it("humanises a stage dropped without any mapping", () => {
+    expect(stageLabelOf(spec, "scoping")).toBe("Scoping");
+  });
+
+  it("humanises with no spec at all", () => {
+    // A vault with no workflow file still renders boards; it must not render
+    // slugs in the one place a spec would have supplied prose.
+    expect(stageLabelOf(null, "pending-approval")).toBe("Pending approval");
+  });
+});
+
+describe("humaniseStageId", () => {
+  it("is sentence case, matching the declared labels", () => {
+    expect(humaniseStageId("pending-approval")).toBe("Pending approval");
+    expect(humaniseStageId("awaiting_second_review")).toBe("Awaiting second review");
+    expect(humaniseStageId("triage")).toBe("Triage");
+  });
+
+  it("collapses runs of separators rather than emitting double spaces", () => {
+    expect(humaniseStageId("on--hold")).toBe("On hold");
+    expect(humaniseStageId("  spaced  out  ")).toBe("Spaced out");
+  });
+
+  it("returns an id that humanises to nothing untouched", () => {
+    // A blank cell reads as "no data"; an ugly one reads as "look at this".
+    expect(humaniseStageId("")).toBe("");
+    expect(humaniseStageId("---")).toBe("---");
   });
 });

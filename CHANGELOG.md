@@ -162,6 +162,33 @@ by driving the plugin in Obsidian 1.12.7 against the test vault.
   output like the `.base` dashboards, and committing one means every morning's
   test run dirties the tree.
 
+### Changed — stage labels a reader can read
+
+- **A stage the workflow spec no longer declares is now humanised, not printed
+  raw.** `pending-approval` reads as "Pending approval" and `scoping` as
+  "Scoping", on the health table, the queue columns and the analytics bars —
+  wherever `stageLabelOf` reaches. It is still **not** resolved through
+  `retired:`: showing "Awaiting approval" would put two different stages under
+  one name and hide that REQ-2026-007 needs migrating (§5.2).
+
+  The old behaviour leaned on the slug itself as the warning — a lowercase,
+  hyphenated cell sitting in a column of sentence-case labels was meant to look
+  wrong. It read as a rendering fault instead, and on the health table it was
+  the *only* cue, because a stage with a `retired:` mapping resolves and so
+  never reaches "Notes that need attention". So the cue is now said outright:
+  the health table marks the row **· not in v2**, and the queue card keeps the
+  "migrate" chip it already carried. A signal you have to notice a hyphen to
+  read is not a signal.
+
+  Stage **ids** are untouched. Grouping, keys, history, gates and the migration
+  board all still join on `pending-approval`; only the printed label changed.
+
+  Not changed: the generated `.base` files still show the raw value in their
+  stage-label formula. Bases' expression language has no string transform to
+  hang this on, and those files are never overwritten once written, so the
+  browse layer keeps showing the literal frontmatter — which is arguably its
+  job. Worth revisiting if it ever reads as an inconsistency.
+
 ### Answered — an open question from §11
 
 **Outlook is registered as the `mailto:` handler on the dev machine**, and the

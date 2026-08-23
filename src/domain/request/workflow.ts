@@ -278,15 +278,36 @@ export function resolveStage(spec: WorkflowSpec, stageId: string): StageSpec | n
  * The label to print for a stage id, for a board or a chart.
  *
  * Deliberately does **not** follow `retired:`. A request sitting in a stage the
- * spec has dropped keeps showing its raw id, so it stays visibly odd wherever
- * it appears — the same rule the generated `.base` files follow, and the same
- * argument as the "migrate" chip on the cockpit cards (§5.2). Printing the
- * successor's label would show two different stages under one name and hide the
- * fact that a note needs migrating.
+ * spec has dropped is *humanised, not resolved*: `pending-approval` prints as
+ * "Pending approval", never as "Awaiting approval". Printing the successor's
+ * label would show two different stages under one name and hide the fact that a
+ * note needs migrating.
+ *
+ * Humanising is presentation only, and it costs nothing that was load-bearing.
+ * The signal that a note is stranded is carried explicitly — the migration
+ * board, the "migrate" chip on a cockpit card, the "not in v2" marker on the
+ * health table (§5.2) — not by leaving a slug on screen and trusting the reader
+ * to notice a hyphen. A dropped stage still reads as a stage nobody declared,
+ * because its name is not one of the declared ones.
  */
 export function stageLabelOf(spec: WorkflowSpec | null, stageId: string): string {
-  if (spec === null) return stageId;
-  return spec.stages.find((stage) => stage.id === stageId)?.label ?? stageId;
+  const declared = spec?.stages.find((stage) => stage.id === stageId);
+  return declared ? declared.label : humaniseStageId(stageId);
+}
+
+/**
+ * `pending-approval` → "Pending approval".
+ *
+ * Sentence case, not title case, because the declared labels are sentence case
+ * ("SCDB triage", "Awaiting approval"); a fallback in Title Case would read as a
+ * different kind of thing sitting in the same column. An id that humanises to
+ * nothing (empty, or punctuation only) is returned untouched — a blank cell
+ * would be worse than an ugly one.
+ */
+export function humaniseStageId(stageId: string): string {
+  const words = stageId.replace(/[-_]+/g, " ").replace(/\s+/g, " ").trim();
+  if (words === "") return stageId;
+  return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
 /** True when the spec knows this stage id, live or retired. */

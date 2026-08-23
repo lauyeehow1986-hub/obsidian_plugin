@@ -334,7 +334,16 @@ function HealthBoard({ views, plugin }: { views: RequestView[]; plugin: ScdbCock
             <tbody>
               {stats.map((row) => (
                 <tr key={row.stageId}>
-                  <td>{stageLabelOf(spec, row.stageId)}</td>
+                  <td>
+                    {stageLabelOf(spec, row.stageId)}
+                    {/* The label is humanised now, so "pending-approval" no longer
+                        announces itself as a dropped stage by looking like a slug.
+                        Say it outright instead: this row is dwell time accumulated
+                        in a stage the current spec does not declare. */}
+                    {spec !== null && !spec.stages.some((s) => s.id === row.stageId) ? (
+                      <span class="scdb-muted"> · not in v{spec.version}</span>
+                    ) : null}
+                  </td>
                   <td class="scdb-num">{duration(row.medianClosedMs)}</td>
                   <td class="scdb-num">{row.closedCount}</td>
                   <td class="scdb-num">{row.openCount}</td>

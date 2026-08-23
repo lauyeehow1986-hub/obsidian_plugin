@@ -15,7 +15,7 @@
 import type { RequestMetrics, SlaState } from "./dwell";
 import { worstSlaState } from "./dwell";
 import type { RequestNote } from "./request";
-import type { WorkflowSpec } from "./workflow";
+import { humaniseStageId, type WorkflowSpec } from "./workflow";
 
 /** A request paired with its freshly computed metrics. */
 export interface RequestView {
@@ -75,7 +75,13 @@ export function groupByStage(
 
   const ordered = spec ? spec.stages.map((s) => ({ id: s.id, label: s.label })) : [];
   for (const key of byStage.keys()) {
-    if (!ordered.some((s) => s.id === key)) ordered.push({ id: key, label: key });
+    // Humanised, matching every other stage label on screen. A column headed
+    // "pending-approval" next to one headed "Awaiting approval" reads as a
+    // rendering fault rather than as the governance signal it was meant to be;
+    // the card in it carries a "migrate" chip, which is the signal that works.
+    if (!ordered.some((s) => s.id === key)) {
+      ordered.push({ id: key, label: humaniseStageId(key) });
+    }
   }
 
   return ordered.map(({ id, label }) => {
