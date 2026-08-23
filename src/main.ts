@@ -73,6 +73,9 @@ import { AgendaModal, type AgendaSend } from "./ui/AgendaModal.js";
 import { CaptureModal, captureFailed } from "./ui/CaptureModal.js";
 import { PersonPicker } from "./ui/PersonPicker.js";
 import { RhythmWriter } from "./services/rhythmWriter.js";
+import { planExtraction } from "./domain/extract/plan.js";
+import { reviewExtraction } from "./ui/ExtractModal.js";
+import { ExtractWriter } from "./services/extractWriter.js";
 import { EmlImport } from "./services/emlImport.js";
 import { reviewEmlImport, sizeLabel } from "./ui/EmlImportModal.js";
 import { copyToClipboard, launchUri, reportLaunch } from "./services/protocol.js";
@@ -159,6 +162,8 @@ export default class ScdbCockpitPlugin extends Plugin {
   backup!: BackupService;
   /** Captures, correspondence threads and the daily briefing (§7 B1). */
   rhythm!: RhythmWriter;
+  /** Reading actions, decisions and deadlines out of minutes (§7 B6). */
+  extract!: ExtractWriter;
   /** The monthly effort tables in `80 Time/` (§5.3). */
   effort!: EffortLog;
   /** The running timer (§7 B2). */
@@ -292,6 +297,16 @@ export default class ScdbCockpitPlugin extends Plugin {
       audit: this.audit,
       folder: (key) => this.settings.folders[key],
       actor: () => this.settings.actor,
+    });
+
+    this.extract = new ExtractWriter({
+      app: this.app,
+      notes: this.notes,
+      audit: this.audit,
+      folder: (key) => this.settings.folders[key],
+      actor: () => this.settings.actor,
+      people: () => this.peopleNames(),
+      mode: () => this.settings.mode,
     });
 
     this.emlImport = new EmlImport({
@@ -569,6 +584,17 @@ export default class ScdbCockpitPlugin extends Plugin {
       id: "meeting-agenda",
       name: "Build a meeting agenda for someone",
       callback: () => void this.openAgenda(),
+    });
+
+    this.addCommand({
+      id: "extract-minutes",
+      name: "Extract actions from these minutes",
+      checkCallback: (checking) => {
+        const file = this.app.workspace.getActiveFile();
+        if (file === null || file.extension !== "md") return false;
+        if (!checking) void this.extractMinutes(file);
+        return true;
+      },
     });
 
     this.addCommand({
@@ -1366,6 +1392,55 @@ export default class ScdbCockpitPlugin extends Plugin {
       notes: dated as AgendaNote[],
       chaseDays: this.settings.comms.chaseDays,
     };
+  }
+
+  /**
+   * Read a set of minutes, show what was found, write what survives review.
+   *
+   * The dialog is not a formality. Minutes are typed fast and often pasted
+   * from somebody else's email, so §2 rule 5 applies to them exactly as it
+   * does to a policy circular: what the parser proposes is a proposal, and it
+   * reaches the vault only through a human ticking it.
+   */
+  private async extractMinutes(file: TFile): Promise<void> {
+    try {
+      const source = await this.extract.read(file);
+      const choice = await reviewExtraction(this.app, {
+        filename: file.basename,
+        anchor: source.anchor,
+        anchorFrom: source.anchorFrom,
+        people: source.people,
+        existing: source.existing,
+        scan: (anchor) => this.extract.scan(source, anchor),
+        folders: {
+          events: this.settings.folders.events,
+          inbox: this.settings.folders.inbox,
+        },
+      });
+      if (choice === null) return;
+
+      const plan = planExtraction(choice.items, choice.chosen, source.existing);
+      const result = await this.extract.apply(source, plan);
+      this.refreshViews();
+
+      const parts: string[] = [];
+      if (result.created.length > 0) {
+        parts.push(`${result.created.length} note${result.created.length === 1 ? "" : "s"} created`);
+      }
+      if (result.decisions > 0) {
+        parts.push(
+          `${result.decisions} decision${result.decisions === 1 ? "" : "s"} recorded on the minutes`,
+        );
+      }
+      new Notice(
+        parts.length === 0
+          ? "SCDB: nothing was extracted."
+          : `SCDB: ${parts.join("; ")}. The minutes themselves are unchanged.`,
+        6000,
+      );
+    } catch (error) {
+      reportError(error, "could not extract from these minutes.");
+    }
   }
 
   /**

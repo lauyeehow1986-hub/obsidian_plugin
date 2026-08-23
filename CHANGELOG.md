@@ -5,6 +5,86 @@ clearly marked entry (CLAUDE.md §10).
 
 ## Unreleased
 
+### Added — B6, extraction from meeting notes
+
+Minutes are where work goes to die: the note gets written, the meeting ends, and
+three actions sit in a paragraph nobody reopens. A new command, **Extract
+actions from these minutes**, reads a note by rule and offers what it found.
+
+**Rules and regex only**, as §7 B6 requires. The same note always yields the
+same items, and a wrong reading traces to a line of code rather than to a
+model's mood. Lines are read when they open with a marker — Action, Task,
+Follow-up, Decision, Agreed, Decided, Deadline, Due, Milestone — followed by a
+colon or a dash, or when they are an unticked checkbox. A ticked one is counted
+and left alone.
+
+- **Where an item lands is derived, never chosen.** With a date it becomes an
+  event in `60 Events/`, so the deadline board and the lead-time reminders
+  already watch it; without one it becomes a capture in `00 Inbox/`, which is
+  what §5.14 says that folder is for. One rule, shown on every row, so adding a
+  date is the whole of how something gets promoted.
+- **A decision gets no note of its own.** It is a record, not work, and one note
+  per decision buries the vault. It is recorded on the meeting note's manifest,
+  where the body stays the authority — the row says "this was read out of line
+  12", not "this is what was decided".
+- **The minutes are never rewritten.** Everything extraction records about a set
+  of minutes goes in its frontmatter: an `extractions` manifest of what came out
+  and where it went, and `extracted` for when it was last looked at. Not one
+  character of the prose is touched (rule 8, §5.1).
+
+**Dates resolve against the meeting, never against today.** Extracting minutes
+from six weeks ago turns "by Friday" into that Friday. The anchor comes from the
+note's own `date:` or from a date in its filename, and the dialog exposes it as
+an editable field that re-reads every line — so minutes that carry no date are
+fixed once rather than item by item. Where no anchor can be had, relative
+deadlines refuse and say why instead of guessing.
+
+- **`03/04/2026` is refused, not parsed.** It is 3 April to the writer and
+  4 March to an American colleague, and nothing in the text settles it. A
+  deadline a month wrong is worse than one the user had to type.
+- Weekday resolution errs later, not earlier: "by Friday" in a Friday meeting
+  means the Friday coming. Erring the other way creates an action that is
+  overdue the moment it is written.
+- A date written without a year takes the meeting's, unless that would put it
+  more than 60 days in the past — in which case it meant next year.
+- How a date was read travels with it, and the dialog shows it. "read from a
+  weekday" is a different kind of claim from a date transcribed verbatim.
+
+**No name is invented.** An owner is only written as a wikilink when it resolves
+to somebody the vault already knows — `[[Dr Tan]]` created beside an existing
+`[[Dr A Tan]]` splits one clinician in two, and the holdup view, whose whole
+value is grouping everything one person is sitting on, would quietly show half
+of it. Three forms are read, in falling order of confidence: a wikilink the user
+typed (honoured verbatim, flagged when there is no note behind it), an
+`@handle` matched on initials or surname, and the "Tan to chase the DUA" idiom
+minutes are actually written in. Two people called Tan means no owner and a
+stated reason.
+
+**Nothing reaches the vault without review.** Minutes are typed fast and often
+pasted from somebody else's email, so §2 rule 5 applies to them exactly as it
+does to a policy circular: the parser proposes, and every candidate is shown
+with the line it came from, editable in place, and tickable. Correcting a
+title in the dialog does not change an item's identity — that is the source
+line, so a correction cannot cause a second copy later.
+
+Every created note carries `source` and `source_line` back to the minutes it
+came from. The line counts from the start of the note's **body**, not of the
+file, and deliberately so: the manifest this same run appends to the
+frontmatter would otherwise invalidate every number it had just written — eight
+items add roughly fifty lines above the prose.
+
+**Running it twice is safe.** The manifest is keyed on the words rather than the
+line number, so editing the paragraph above an action does not resurrect the
+lot. Anything already extracted is held back and shown separately with a link to
+where it went, whether or not it is ticked — honouring a tick there would defeat
+the check.
+
+Every run appends a `bulk-edit` entry to the audit ledger (§5.6) naming the
+meeting and counts by destination, and nothing else: the words live on the
+meeting note, where a reader can see the line they came from (rule 7). The
+ledger entry goes in before the first note is created, and a run that fails
+part-way appends a `correction` saying how far it got.
+
 ### Added — B5, the publications tracker
 
 The manuscript half of the job, and the number §5.4 calls the single most useful

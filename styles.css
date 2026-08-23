@@ -1861,3 +1861,118 @@
     gap: var(--scdb-1);
   }
 }
+
+/* ------------------------------------------- B6: extraction from minutes -- */
+
+/* The review dialog. Density matters here more than anywhere else in the
+ * plugin: a set of minutes can yield a dozen candidates, and a row that takes
+ * three lines turns reviewing into scrolling — at which point people stop
+ * reading and just press the button, which is the one outcome this dialog
+ * exists to prevent. */
+
+.scdb-extract__anchor {
+  margin-bottom: var(--scdb-2);
+}
+
+/* The panel is bounded, not the list.
+ *
+ * A `max-height` on the list alone is what breaks at laptop height: the list
+ * keeps its 52vh while the header above it grows (the lede wraps to three
+ * lines at sidebar width), and the buttons underneath are pushed outside the
+ * modal where no amount of scrolling reaches them. Bounding the panel and
+ * letting the list flex into whatever is left keeps the footer on screen at
+ * any window size. Verified at 620x720. */
+.scdb-extract {
+  max-height: 68vh;
+}
+
+.scdb-extract__list {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--scdb-1);
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.scdb-extract__item {
+  display: flex;
+  gap: var(--scdb-1);
+  padding: var(--scdb-1);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  background: var(--background-secondary);
+}
+
+/* Unticked rows stay legible rather than disappearing: what you decided not
+ * to extract is part of the review, and a row you cannot read is a row you
+ * cannot change your mind about. */
+.scdb-extract__item--off {
+  opacity: 0.55;
+}
+
+.scdb-extract__body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.scdb-extract__body input[type="text"] {
+  width: 100%;
+}
+
+.scdb-extract__controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--scdb-1);
+  align-items: center;
+}
+
+.scdb-extract__controls select,
+.scdb-extract__controls input[type="date"] {
+  font-size: var(--font-ui-smaller);
+}
+
+.scdb-extract__where {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+/* The line it came from, verbatim. B6 requires every item to link back to its
+ * source line, and showing the original is how a wrong reading gets caught. */
+.scdb-extract__src {
+  overflow-wrap: anywhere;
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+}
+
+.scdb-extract__problem {
+  margin: 0;
+  color: var(--scdb-at-risk);
+  font-size: var(--font-ui-smaller);
+}
+
+.scdb-extract__done {
+  margin-top: var(--scdb-2);
+  font-size: var(--font-ui-smaller);
+}
+
+/* Stays reachable while the list above it scrolls — same reason as the
+ * agenda dialog's, found the same way: by shrinking the window. */
+.scdb-extract .scdb-modal__actions {
+  position: sticky;
+  bottom: 0;
+  align-items: center;
+  background: var(--background-primary);
+}
+
+/* Sidebar and narrow-window: the controls stack rather than squeeze the date
+ * field down to nothing (§6). */
+@media (max-width: 620px) {
+  .scdb-extract__controls {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}

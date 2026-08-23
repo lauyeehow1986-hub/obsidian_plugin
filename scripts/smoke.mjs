@@ -308,6 +308,17 @@ const checks = [
     instance.settings.publications.citationFormat === "vancouver",
   ],
   ["the publication writer is wired", typeof instance.publicationWriter?.transition === "function"],
+  // §7 B6. Extraction reads a note and proposes; nothing is written until the
+  // review dialog is confirmed, so the smoke check is that the command is
+  // reachable and the writer is wired, not that anything happened.
+  ["extraction from minutes is reachable from the palette", commands.includes("extract-minutes")],
+  ["the extract writer is wired", typeof instance.extract?.apply === "function"],
+  [
+    "extraction refuses to run without an active note",
+    registeredCommands
+      .filter((command) => command.id === "extract-minutes")
+      .every((command) => command.checkCallback?.(true) === false),
+  ],
   // §5.10 email Tier 1. The importer reads files that are already in the vault
   // and refuses until it knows which mailboxes are yours — a wrong direction
   // inverts every follow-up, so it asks rather than guesses.

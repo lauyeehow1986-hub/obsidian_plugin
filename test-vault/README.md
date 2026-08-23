@@ -18,8 +18,9 @@ pick up a rebuild.
 | `10 Requests/` | nine requests | dwell, SLA breach, bounce counts, two deliberately stranded on a retired stage |
 | `30 People/` | three people | the chase-up composer reading an address — and one person with **no** address, so the composer has to cope rather than guess |
 | `60 Events/` | two obligations | deadlines, and one with a recurrence rule but no next date |
+| `70 Meetings/` | one set of minutes | B6 extraction: every marker style, three ways of naming an owner, a weekday date, and one deliberately ambiguous `03/04/2026` the parser must refuse |
 | `75 Correspondence-fixtures/` | two threads | outreach ageing: one unanswered for weeks, one answered so it must *not* appear |
-| `85 Publications/` | one manuscript | a second note type for Explore to infer fields from |
+| `85 Publications/` | three manuscripts | a second note type for Explore to infer fields from |
 | `00 Inbox/` | one capture | the note quick capture writes |
 | `_config/messages/` | `chase-up.md` | the message template, so tone is the user's and not the plugin's |
 

@@ -42,6 +42,8 @@ import { buildSchedule, occurrenceDate } from "../src/domain/events/schedule";
 import { calendarEvents } from "../src/domain/events/feed";
 import { buildCalendar, parseCalendar } from "../src/domain/events/ics";
 import { parsePublication, PUBLICATION_TYPE } from "../src/domain/publication/publication";
+import { scanMinutes } from "../src/domain/extract/minutes";
+import { planExtraction, recordFor } from "../src/domain/extract/plan";
 import { validateQuery } from "../src/domain/query/model";
 import { parseSavedView, VIEW_TYPE } from "../src/domain/query/savedView";
 import { REQUEST_FIELDS, REQUEST_ROW_TYPE } from "../src/domain/request/queryFields";
@@ -210,6 +212,100 @@ describe("request notes", () => {
       return spec !== undefined && request.stage in spec.retired;
     });
     expect(onRetired.length).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * The minutes fixture, through the real extractor (§7 B6).
+ *
+ * This one matters more than most. The fixture *is* the documentation of what
+ * a marker looks like — the shape a user is being told to write minutes in —
+ * so an assertion here is the only thing stopping the example and the parser
+ * drifting apart, at which point the plugin teaches a syntax it no longer
+ * reads.
+ */
+describe("the minutes fixture (§7 B6)", () => {
+  const rel = "70 Meetings/2026-08-19 SCDB operations.md";
+  const file = files.find((entry) => entry.rel === rel);
+
+  it("is committed, or every assertion below passes vacuously", () => {
+    expect(file).toBeDefined();
+  });
+
+  const scan = scanMinutes({
+    content: file?.text ?? "",
+    anchor: "2026-08-19",
+    people: ["Dr Fictional Example", "Example Coordinator", "Prof Invented Approver"],
+  });
+
+  it("reads every marker style the fixture demonstrates", () => {
+    expect(scan.items.map((item) => [item.kind, item.text])).toEqual([
+      ["action", "countersign the outstanding DUA"],
+      ["action", "re-run the readmission extraction"],
+      ["action", "confirm whether the continuing review letter has been filed"],
+      ["action", "Draft the chase-up cadence note for the next meeting"],
+      ["decision", "the QC step stays in the workflow for identifiable extractions"],
+      ["decision", "requests unreconciled for more than 60 days are raised at this meeting"],
+      ["deadline", "annual facility report"],
+      ["deadline", "the audit sample is picked on 03/04/2026"],
+    ]);
+  });
+
+  it("resolves owners three ways and invents nobody", () => {
+    expect(scan.items.map((item) => item.owner?.name ?? null)).toEqual([
+      "Dr Fictional Example", // a wikilink the writer typed
+      "Example Coordinator", // a surname, matched against 30 People/
+      "Prof Invented Approver", // an @handle, matched on initials
+      null,
+      null,
+      null,
+      null,
+      null,
+    ]);
+    expect(scan.items.flatMap((item) => item.problems).filter((p) => /no note for/.test(p.message))).toEqual(
+      [],
+    );
+  });
+
+  it("resolves dates against the meeting, and refuses the ambiguous one", () => {
+    expect(scan.items.map((item) => item.due?.date ?? null)).toEqual([
+      "2026-08-21", // "by Friday", from a Wednesday meeting
+      "2026-09-15", // written out in full
+      null,
+      null,
+      null,
+      null,
+      "2026-08-31", // "end of the month"
+      null, // 03/04/2026 — refused, deliberately
+    ]);
+    expect(scan.items[7]?.problems[0]?.message).toMatch(/day-first or month-first/);
+  });
+
+  it("leaves the ticked checkbox alone and skips the line that records nothing", () => {
+    expect(scan.done).toBe(1);
+    expect(scan.items.map((item) => item.text)).not.toContain("none");
+  });
+
+  it("sends dated items to events and undated ones to the inbox", () => {
+    const plan = planExtraction(scan.items, new Set(scan.items.map((item) => item.key)), []);
+    expect(plan.writes.map((write) => write.destination)).toEqual([
+      "event",
+      "event",
+      "capture",
+      "capture",
+      "decision",
+      "decision",
+      "event",
+      "capture",
+    ]);
+  });
+
+  it("is idempotent: a second run over an unedited note plans nothing", () => {
+    const first = planExtraction(scan.items, new Set(scan.items.map((item) => item.key)), []);
+    const recorded = first.writes.map((write) => recordFor(write, "", 0));
+    const second = planExtraction(scan.items, new Set(scan.items.map((item) => item.key)), recorded);
+    expect(second.writes).toEqual([]);
+    expect(second.duplicates).toHaveLength(scan.items.length);
   });
 });
 
