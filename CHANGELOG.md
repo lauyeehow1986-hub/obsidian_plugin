@@ -165,6 +165,30 @@ will confirm it, and the diagnostics self-test now counts both formats.
   Found by importing two messages and reading the note, not by a test.
 - **Every HTML list arrived double-spaced**, because `<li>` opened a line and
   `</li>` closed one.
+- **A `.msg` string property kept Outlook's terminating null.** MS-OXMSG says a
+  string stream carries the characters and no terminator; real Outlook writes
+  one anyway, so a subject arrived as `…indie hacking if…\0` and a recipient's
+  address as `someone@example.org\0`. The subject was ugly; the address was a
+  correctness bug, because direction is decided by matching an address against
+  the user's own and a terminated string matches nothing — a message you sent
+  would have been filed as one you received. MAPI strings are now read up to
+  their first `U+0000`.
+- **A conversation root with a real `Message-ID` was keyed on the Exchange
+  conversation index instead.** The index was used whenever `References` was
+  absent, but a message that opens a thread has no `References` and does not
+  need one: its own id is the root. The thread therefore keyed on a GUID no
+  `.eml` can carry, so a conversation saved half as `.msg` and half as `.eml`
+  split in two depending on import order — the single failure the shared parser
+  exists to prevent. The index is now the last resort it was meant to be, used
+  only when the file offers nothing internet-shaped: no `References`, no
+  `In-Reply-To`, and no real id of its own.
+
+Both were found the same way, and neither could have been found any other way:
+by importing a **real** `.msg` written by Outlook. Every fixture until then was
+synthesised from the specification, and a fixture written to the spec does not
+reproduce a writer's deviations from it. Real mail cannot enter this repo
+(§2 rule 1), so the regression tests encode the *behaviour* — a trailing null,
+a 22-byte conversation index — rather than shipping the file.
 
 
 ### Added — B3, events, recurring obligations and calendar interop

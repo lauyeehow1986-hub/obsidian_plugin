@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { directionOf, threadKeyOf } from "./emlThread";
 import { isMsgFile, parseMsg } from "./msg";
 import {
   prop,
@@ -18,6 +19,7 @@ const MESSAGE_CLASS = 0x001a;
 const SUBJECT = 0x0037;
 const SUBMIT_TIME = 0x0039;
 const CONVERSATION_INDEX = 0x0071;
+const IN_REPLY_TO_ID = 0x1042;
 const TRANSPORT_HEADERS = 0x007d;
 const BODY = 0x1000;
 const RTF_COMPRESSED = 0x1009;
@@ -250,6 +252,113 @@ describe("parseMsg — identity when the file carries none", () => {
 
     expect(first.references[0]).toBe(second.references[0]);
     expect(first.messageId).not.toBe(second.messageId);
+  });
+
+  // Found against a real Outlook `.msg`: a newsletter with a perfectly good
+  // Message-ID and no `References`, because it opened its own thread. The
+  // Exchange token must not displace the real id there — an `.eml` reply keys
+  // on that id, and a thread that splits by which format it was saved in is
+  // the one failure this reader exists to prevent.
+  it("leaves a conversation root that has a real Message-ID keyed on that id", () => {
+    const index = new Uint8Array(22); // 22 bytes exactly: no response levels.
+    index.set([0x81, 0xe3, 0xcd, 0xc9], 6);
+
+    const message = parse({
+      props: [
+        prop(SUBJECT, PT_UNICODE, "Weekly digest"),
+        prop(BODY, PT_UNICODE, "Also: 5 things."),
+        prop(SENDER_SMTP_ADDRESS, PT_UNICODE, "news@example.org"),
+        prop(INTERNET_MESSAGE_ID, PT_UNICODE, "<digest-19@lists.example.org>"),
+        prop(CONVERSATION_INDEX, PT_BINARY, index),
+      ],
+    });
+
+    expect(message.references).toEqual([]);
+    expect(threadKeyOf(message)).toBe("digest-19@lists.example.org");
+  });
+
+  it("still uses the conversation index for a reply whose headers were stripped", () => {
+    // Longer than 22 bytes means Exchange recorded a response level, so this
+    // is not a root: its own id is not the thread, and the token is the only
+    // grouping the file offers.
+    const index = new Uint8Array(27);
+    index.set([0x81, 0xe3, 0xcd, 0xc9], 6);
+
+    const message = parse({
+      props: [
+        prop(SUBJECT, PT_UNICODE, "RE: Weekly digest"),
+        prop(BODY, PT_UNICODE, "Thanks."),
+        prop(SENDER_SMTP_ADDRESS, PT_UNICODE, "a.tan@example.org"),
+        prop(INTERNET_MESSAGE_ID, PT_UNICODE, "<reply-19@example.org>"),
+        prop(CONVERSATION_INDEX, PT_BINARY, index),
+      ],
+    });
+
+    expect(message.references).toEqual(["msg-conv:81e3cdc9000000000000000000000000"]);
+  });
+
+  it("prefers In-Reply-To over the Exchange token", () => {
+    // In-Reply-To is internet-shaped, so an `.eml` in the same conversation
+    // can agree with it. The token cannot.
+    const index = new Uint8Array(27);
+    index.set([0x77, 0x77], 6);
+
+    const message = parse({
+      props: [
+        prop(SUBJECT, PT_UNICODE, "RE: Weekly digest"),
+        prop(BODY, PT_UNICODE, "Thanks."),
+        prop(SENDER_SMTP_ADDRESS, PT_UNICODE, "a.tan@example.org"),
+        prop(IN_REPLY_TO_ID, PT_UNICODE, "<digest-19@lists.example.org>"),
+        prop(CONVERSATION_INDEX, PT_BINARY, index),
+      ],
+    });
+
+    expect(message.references).toEqual([]);
+    expect(threadKeyOf(message)).toBe("digest-19@lists.example.org");
+  });
+});
+
+describe("parseMsg — the terminating null real Outlook writes", () => {
+  // Found against a real Outlook `.msg`: MS-OXMSG says a string stream holds
+  // no terminator, and Outlook writes one anyway. Synthetic fixtures written
+  // to the specification never carry it, which is exactly why this needed a
+  // real file to surface.
+  //
+  // A stray U+0000 in a subject is ugly; in an *address* it is a correctness
+  // bug, because direction is decided by matching the sender against the
+  // user's own addresses and a terminated string never matches.
+  it("drops a terminating null from every string property", () => {
+    const message = parse({
+      props: [
+        prop(SUBJECT, PT_UNICODE, "Weekly digest\u0000"),
+        prop(BODY, PT_UNICODE, "Text.\u0000"),
+        prop(SENDER_NAME, PT_UNICODE, "A Tan\u0000"),
+        prop(SENDER_SMTP_ADDRESS, PT_UNICODE, "a.tan@example.org\u0000"),
+      ],
+    });
+
+    expect(message.subject).toBe("Weekly digest");
+    expect(message.body).toBe("Text.");
+    expect(message.from).toEqual([
+      { name: "A Tan", address: "a.tan@example.org", key: "a.tan@example.org" },
+    ]);
+    for (const value of [message.subject, message.body, message.from[0]!.address]) {
+      expect(value).not.toContain("\u0000");
+    }
+  });
+
+  it("keeps a matched address matchable, so direction still resolves", () => {
+    const message = parse({
+      props: [
+        prop(SUBJECT, PT_UNICODE, "Digest\u0000"),
+        prop(BODY, PT_UNICODE, "Text."),
+        prop(SENDER_SMTP_ADDRESS, PT_UNICODE, "owner@example.org\u0000"),
+      ],
+    });
+
+    // The whole point: an own-address set is built from settings, which have
+    // no terminator in them.
+    expect(directionOf(message.from, new Set(["owner@example.org"]))).toBe("outbound");
   });
 });
 

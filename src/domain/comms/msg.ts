@@ -186,10 +186,12 @@ class Properties {
   /** A string property, Unicode preferred over the eight-bit spelling. */
   str(id: number, problems: string[] = []): string {
     const unicode = this.variable.get(tagOf(id, PT_UNICODE));
-    if (unicode !== undefined) return utf16le(unicode.read());
+    if (unicode !== undefined) return unterminated(utf16le(unicode.read()));
 
     const ansi = this.variable.get(tagOf(id, PT_STRING8));
-    if (ansi !== undefined) return decodeText(ansi.read(), this.charset(), problems);
+    if (ansi !== undefined) {
+      return unterminated(decodeText(ansi.read(), this.charset(), problems));
+    }
 
     return "";
   }
@@ -229,6 +231,25 @@ const tagOf = (id: number, type: number) => (((id << 16) >>> 0) | type) >>> 0;
 
 function utf16le(bytes: Uint8Array): string {
   return new TextDecoder("utf-16le", { fatal: false }).decode(bytes);
+}
+
+/**
+ * A MAPI string up to its terminator.
+ *
+ * MS-OXMSG says a string stream holds the characters and no terminating null.
+ * Real Outlook writes one anyway — found in the subject and in a recipient's
+ * address of an ordinary received message. Cutting at the first U+0000 is the
+ * C-string reading the writer evidently intended, and none of these properties
+ * can legitimately contain one.
+ *
+ * This is not cosmetic. Direction is decided by matching an address against
+ * the user's own, and `a@b.org\u0000` matches nothing — a message you sent would
+ * be filed as one you received, which is the wrong answer to the only question
+ * the holdup views ask.
+ */
+function unterminated(value: string): string {
+  const end = value.indexOf("\u0000");
+  return end === -1 ? value : value.slice(0, end);
 }
 
 /**
@@ -289,15 +310,16 @@ export function parseMsg(bytes: Uint8Array): EmlMessage {
     props.time(TAG.deliveryTime) ??
     props.time(TAG.lastModified);
 
-  const messageId =
-    stripAngles(header("message-id")) ||
-    stripAngles(props.str(TAG.internetMessageId)) ||
-    syntheticId(subject, date, from, body.text);
+  const realId =
+    stripAngles(header("message-id")) || stripAngles(props.str(TAG.internetMessageId));
+  const messageId = realId || syntheticId(subject, date, from, body.text);
+  const inReplyTo =
+    stripAngles(header("in-reply-to")) || stripAngles(props.str(TAG.inReplyToId));
 
   const message: EmlMessage = {
     messageId,
-    inReplyTo: stripAngles(header("in-reply-to")) || stripAngles(props.str(TAG.inReplyToId)),
-    references: referencesOf(header("references"), props),
+    inReplyTo,
+    references: referencesOf(header("references"), props, inReplyTo, realId !== ""),
     subject,
     date,
     from,
@@ -509,6 +531,9 @@ function readAttachments(root: CfbEntry, problems: string[]): EmlAttachment[] {
 
 /* ------------------------------------------------------------- identity -- */
 
+/** A conversation index is this header plus one 5-byte response level per reply. */
+const CONVERSATION_HEADER = 22;
+
 /**
  * The conversation chain.
  *
@@ -520,20 +545,40 @@ function readAttachments(root: CfbEntry, problems: string[]): EmlAttachment[] {
  * That token is written as `msg-conv:…`, deliberately not shaped like a message
  * id. It groups `.msg` files with each other; it cannot match an `.eml`, and it
  * is not pretending to.
+ *
+ * **Which is exactly why it is a last resort.** Found against a real Outlook
+ * file: a newsletter carries a perfectly good `Message-ID` and no `References`,
+ * because it opened its own thread — and letting the Exchange token stand in
+ * as the root there would key the thread on a GUID no `.eml` can ever match,
+ * splitting one conversation in two by which format it happened to be saved
+ * in. So the token is used only when the file offers nothing internet-shaped:
+ * no `References`, no `In-Reply-To`, and no real id of its own to be the root
+ * with.
  */
-function referencesOf(headerValue: string, props: Properties): string[] {
+function referencesOf(
+  headerValue: string,
+  props: Properties,
+  inReplyTo: string,
+  hasRealId: boolean,
+): string[] {
   const fromHeader = parseReferences(headerValue);
   if (fromHeader.length > 0) return fromHeader;
 
   const mapi = parseReferences(props.str(TAG.internetReferences));
   if (mapi.length > 0) return mapi;
 
-  const index = props.bin(TAG.conversationIndex);
-  if (index !== null && index.length >= 22) {
-    return [`msg-conv:${hex(index.subarray(6, 22))}`];
-  }
+  // The parent's id is internet-shaped, so an `.eml` in the same conversation
+  // can agree with it; `threadKeyOf` falls through to it on its own.
+  if (inReplyTo !== "") return [];
 
-  return [];
+  const index = props.bin(TAG.conversationIndex);
+  if (index === null || index.length < CONVERSATION_HEADER) return [];
+
+  // Exactly the header and no response level means this message opened the
+  // conversation, so its own id — if it has a real one — is the root.
+  if (index.length === CONVERSATION_HEADER && hasRealId) return [];
+
+  return [`msg-conv:${hex(index.subarray(6, CONVERSATION_HEADER))}`];
 }
 
 /**
@@ -554,7 +599,15 @@ function syntheticId(
   from: readonly EmlAddress[],
   body: string,
 ): string {
-  const seed = [subject, String(date ?? 0), from.map((a) => a.key).join(","), String(body.length), body.slice(0, 512)].join(" ");
+  // A separator no field can contain, so two different splittings of the
+  // same text cannot produce the same seed.
+  const seed = [
+    subject,
+    String(date ?? 0),
+    from.map((a) => a.key).join(","),
+    String(body.length),
+    body.slice(0, 512),
+  ].join("\u0000");
 
   let hash = 0x811c9dc5;
   for (let i = 0; i < seed.length; i++) {

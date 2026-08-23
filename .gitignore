@@ -52,3 +52,12 @@ Desktop.ini
 # not a worked example of the contract. Committing one would also mean a test
 # run in the test vault dirties the tree every morning.
 **/90 Dashboards/Briefings/
+
+# Mail files. A `.eml` or `.msg` anywhere in a working tree is assumed to be a
+# real message dragged out of a real mailbox for testing, so none may be
+# committed. This costs nothing: gitignore does not affect already-tracked
+# files, so the two synthetic fixtures in `75 Correspondence-fixtures/` stay
+# tracked and diffable, and a genuinely new synthetic fixture needs a
+# deliberate `git add -f` — which is the point.
+*.eml
+*.msg
