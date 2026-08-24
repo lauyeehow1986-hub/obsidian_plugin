@@ -74,3 +74,24 @@ describe("in flight", () => {
     expect(list.map((p) => p.id)).toEqual(["soon", "late", "undated"]);
   });
 });
+
+describe("author position, and the key Obsidian takes for itself", () => {
+  // Same root cause as the service role in `domain/profile`: the metadata
+  // cache overwrites `frontmatter.position`, so an author position typed as
+  // `position:` never reaches the parser through the index.
+  const base = { type: "publication", id: "PUB-1", title: "T", stage: "published" };
+
+  it("prefers `author_position`", () => {
+    expect(parsePublication("p.md", { ...base, author_position: 3, position: 9 }).position).toBe(3);
+  });
+
+  it("still reads `position`, which is what §5.4 writes", () => {
+    expect(parsePublication("p.md", { ...base, position: 2 }).position).toBe(2);
+  });
+
+  it("reports an unreadable one rather than silently dropping it", () => {
+    const note = parsePublication("p.md", { ...base, author_position: "third" });
+    expect(note.position).toBeNull();
+    expect(note.problems.some((problem) => problem.includes("position"))).toBe(true);
+  });
+});

@@ -5,6 +5,88 @@ clearly marked entry (CLAUDE.md §10).
 
 ## Unreleased
 
+### Added — B7, report generation, the CV and the research profile
+
+One engine, five templates. A new command, **Generate a report**, picks a
+template, asks for whatever that template needs — a month, a year, a study —
+and writes a document into `95 Exports/`.
+
+A template is data, not code: prose, named data blocks and live A2 queries, in
+the order they should be read. The five B7 names ship compiled in, so the
+feature works in a vault that has never seen `_config/reports/`. **Write the
+built-in report templates to _config** copies them out for editing; a file
+there replaces the built-in with the same `id`, or adds a new one under a new
+id. Existing files are never overwritten, and nothing is written to the vault
+until you ask (rule 3).
+
+- **Monthly facility report** — queue, turnaround, effort and bottlenecks.
+- **Per-study effort statement** — hours by activity, person and request, plus
+  estimate against actual. The chargeback line.
+- **Annual publication list** — the formatted list for one year with the
+  facility's contribution beside it.
+- **CV** — composed from `85 Publications/` and `84 Profile/`, in the
+  configured citation format. It is a query, so it is never out of date.
+- **Research profile** — the narrative version of the same data: headline
+  metrics, themes, collaborations, what the facility contributed.
+
+**Two words in a template mean two different things, and keeping them apart is
+most of the design.** *Period* is *when*: it filters what happened — effort
+entries, and which year's papers are listed. *Study* is *what about*: it scopes
+the whole report to one study's requests, effort and papers. The queue honours
+neither, and says so on every report that shows it — a queue is a snapshot of
+now, and reconstructing the one that stood on 31 July is a claim this engine
+does not make.
+
+**Two output formats, because they are read in different places.**
+
+- A **markdown note**: pipe tables you can edit, sort in a Base and paste into
+  an email, and charts as embedded SVG. It carries frontmatter (`type:
+  scdb-report`, the template, the period, the row count), so a generated report
+  is a note the index and the query engine can see rather than a dead artefact.
+- A **self-contained HTML page**, as A3 already wrote boards: one file, no
+  network, opens on a machine with no Obsidian, prints, and exports to PDF from
+  the browser.
+
+Charts render twice from one set of numbers. The trend's geometry is computed
+once and drawn by two renderers — the themed one the cockpit and the HTML
+export share, and a standalone-SVG one for markdown, which has no stylesheet to
+hang a class on. The SVG variant draws in `currentColor` throughout, so it is
+legible in light and dark and in whatever theme the work laptop wears.
+
+**Profile notes are new, and they are the CV's whole source (§5.9).**
+`84 Profile/` takes one note per grant, service role, course, trainee,
+presentation and award — ten seconds each, added as they happen. Nothing
+CV-specific lives anywhere else, so adding a section to a CV never means
+re-entering data. Seven synthetic examples ship in `test-vault/84 Profile/`.
+
+Small deliberate refusals, each of which could have gone the other way:
+
+- **`year: 2025` prints as "2025", never "2025–present".** An open-ended period
+  is only ever what the note said (`to: present`), never inferred from a
+  missing end date.
+- **Grant amounts are never summed across currencies.** Adding SGD to GBP
+  produces a number that is wrong in every currency, and a portfolio is exactly
+  where that would go unchallenged.
+- **The collaborations list includes you.** The vault records your author
+  position but not your name, and guessing which author is you would be wrong
+  often enough to embarrass a portfolio. The section says so.
+- **Themes group on the studies notes actually link to**, not on keywords
+  inferred from titles. Every row is something the vault asserts.
+- **A CV section with nothing in it is dropped, not printed empty.** A blank
+  "Awards" heading says something the data does not.
+- **A block name the engine does not recognise is reported, never
+  interpreted** (rule 12). A template is a file in the vault.
+
+The dialog states, before you press the button, how many rows the report is
+about — computed by building it for real, not by a second estimate that could
+disagree with the file. Writing goes through the same `Exporter` every other
+export uses, so a report gets A3's three guards unchanged: it lands in
+`95 Exports/`, the confirmation names the file and the row count, and an
+`export` entry goes into the audit ledger.
+
+Also: the diagnostics self-test now reports how many report templates loaded and
+what was wrong with any that did not.
+
 ### Added — B6, extraction from meeting notes
 
 Minutes are where work goes to die: the note gets written, the meeting ends, and

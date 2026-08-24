@@ -194,8 +194,14 @@ export function parsePublication(
     problems.push("`decision_due` is not a date the plugin can read.");
   }
 
-  const position = num(raw["position"]);
-  if (raw["position"] !== undefined && position === null) {
+  // `author_position` first, because Obsidian's metadata cache overwrites
+  // `position` with the frontmatter block's own line range — see
+  // `data/noteIndex.cleanFrontmatter`. §5.4 names `position`, so it is still
+  // read: that path works wherever the YAML is parsed directly, and dropping
+  // it would break the fixtures that document the contract.
+  const raw_position = raw["author_position"] ?? raw["position"];
+  const position = num(raw_position);
+  if (raw_position !== undefined && position === null) {
     problems.push("`position` is not a number.");
   }
 

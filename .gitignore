@@ -48,6 +48,12 @@ Desktop.ini
 # actually needs testing.
 **/90 Dashboards/*.base
 
+# Same argument for the report templates "Write the built-in report templates
+# to _config" copies out. They are output, and committing them would mean a
+# fresh clone never exercises the path that matters most — five templates
+# available with nothing in `_config/reports/` at all.
+**/_config/reports/
+
 # Same argument for the daily briefing: it is a dated record the plugin writes,
 # not a worked example of the contract. Committing one would also mean a test
 # run in the test vault dirties the tree every morning.

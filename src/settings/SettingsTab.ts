@@ -95,6 +95,7 @@ export class ScdbSettingsTab extends PluginSettingTab {
     this.briefingSection(containerEl);
     this.effortSection(containerEl);
     this.publicationsSection(containerEl);
+    this.reportsSection(containerEl);
     this.eventsSection(containerEl);
     this.backupSection(containerEl);
 
@@ -388,6 +389,46 @@ export class ScdbSettingsTab extends PluginSettingTab {
         "(“Dr A Tan” becomes “Tan A”). Where that split is a guess — a name " +
         "written out in full, or a single word — the list says so rather than " +
         "renaming a collaborator silently.",
+    });
+  }
+
+  /** Report templates (§7 B7). Nothing to configure until you want to edit one. */
+  private reportsSection(containerEl: HTMLElement): void {
+    containerEl.createEl("h3", { text: "Reports" });
+
+    const folder = this.plugin.reportTemplates.folder();
+    const problems = this.plugin.reportTemplates.problems();
+
+    new Setting(containerEl)
+      .setName("Report templates")
+      .setDesc(
+        `${this.plugin.reportTemplates.all().length} available. Five ship with the plugin; ` +
+          `a file in ${folder} replaces the built-in with the same id, or adds a new one. ` +
+          "Existing files are never overwritten.",
+      )
+      .addButton((button) =>
+        button.setButtonText("Write the built-in templates").onClick(async () => {
+          await this.plugin.writeReportTemplates();
+          this.display();
+        }),
+      );
+
+    if (problems.length > 0) {
+      // Surfaced here as well as in the diagnostics report, because this is
+      // where somebody lands after editing a template and wondering why
+      // nothing changed.
+      const list = containerEl.createEl("ul", { cls: "setting-item-description" });
+      for (const entry of problems) {
+        list.createEl("li", { text: `${entry.path}: ${entry.problem}` });
+      }
+    }
+
+    containerEl.createEl("p", {
+      cls: "setting-item-description",
+      text:
+        "The CV and the research profile are queries over 84 Profile/ and 85 Publications/ — " +
+        "add a note per grant, role, course, trainee, talk and award and they stay current " +
+        "by themselves. Which sections a CV carries, and in what order, is the `cv` template.",
     });
   }
 

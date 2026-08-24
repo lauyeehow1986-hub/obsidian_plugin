@@ -319,6 +319,45 @@ const checks = [
       .filter((command) => command.id === "extract-minutes")
       .every((command) => command.checkCallback?.(true) === false),
   ],
+  // §7 B7. The five templates ship compiled in, so a report can be generated
+  // in a vault where `_config/reports/` does not exist — and nothing is
+  // written there until the user asks (rule 3).
+  ["generating a report is reachable from the palette", commands.includes("generate-report")],
+  [
+    "the built-in templates can be written out on request",
+    commands.includes("write-report-templates"),
+  ],
+  [
+    "five templates are available with no config in the vault",
+    instance.reportTemplates.all().length === 5,
+  ],
+  [
+    "and every one of them builds a document from an empty vault",
+    await (async () => {
+      for (const template of instance.reportTemplates.all()) {
+        const built = await instance.reports.build(template, {
+          templateId: template.id,
+          period: "",
+          study: "",
+          format: "md",
+        });
+        if (!built.content.includes("not an official record")) return false;
+        if (built.rows !== 0) return false;
+      }
+      return true;
+    })(),
+  ],
+  [
+    "a markdown report carries frontmatter the index can read",
+    (
+      await instance.reports.build(instance.reportTemplates.get("cv"), {
+        templateId: "cv",
+        period: "",
+        study: "",
+        format: "md",
+      })
+    ).content.startsWith("---\ntype: scdb-report\n"),
+  ],
   // §5.10 email Tier 1. The importer reads files that are already in the vault
   // and refuses until it knows which mailboxes are yours — a wrong direction
   // inverts every follow-up, so it asks rather than guesses.

@@ -264,9 +264,11 @@ async function index(plugin: ScdbCockpitPlugin): Promise<ReportSection> {
 
   const specs = plugin.workflows.all();
   const problems = plugin.workflows.problems();
+  const templates = plugin.reportTemplates.all();
+  const templateProblems = plugin.reportTemplates.problems();
 
   return {
-    title: "Index and workflow specs",
+    title: "Index, workflow specs and report templates",
     checks: [
       check(
         "Re-index time",
@@ -315,6 +317,22 @@ async function index(plugin: ScdbCockpitPlugin): Promise<ReportSection> {
           : problems.length > 0
             ? "Advisory only — the spec loaded and is in use."
             : undefined,
+      ),
+      // A broken template is quieter than a broken spec — the five built-ins
+      // still work — but it is the kind of thing you find out about the
+      // morning a report is due, which is why it is in the self-test.
+      check(
+        "Report templates",
+        templateProblems.length === 0 ? "ok" : "warn",
+        `${templates.length} available` +
+          (templateProblems.length === 0
+            ? ""
+            : `; ${templateProblems
+                .map((entry) => `${entry.path}: ${entry.problem}`)
+                .join("; ")}`),
+        templateProblems.length === 0
+          ? undefined
+          : "A template that cannot be read is not offered. The built-in of the same name, if there is one, is used instead.",
       ),
     ],
   };

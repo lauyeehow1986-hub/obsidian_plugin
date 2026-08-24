@@ -20,7 +20,8 @@ pick up a rebuild.
 | `60 Events/` | two obligations | deadlines, and one with a recurrence rule but no next date |
 | `70 Meetings/` | one set of minutes | B6 extraction: every marker style, three ways of naming an owner, a weekday date, and one deliberately ambiguous `03/04/2026` the parser must refuse |
 | `75 Correspondence-fixtures/` | two threads | outreach ageing: one unanswered for weeks, one answered so it must *not* appear |
-| `85 Publications/` | three manuscripts | a second note type for Explore to infer fields from |
+| `84 Profile/` | seven items, one per §5.9 type | B7's CV and research profile: every type composes a line, one grant is unawarded so its status shows, one period is open-ended and the rest must not be |
+| `85 Publications/` | three manuscripts | a second note type for Explore to infer fields from, and the publication half of the CV |
 | `00 Inbox/` | one capture | the note quick capture writes |
 | `_config/messages/` | `chase-up.md` | the message template, so tone is the user's and not the plugin's |
 

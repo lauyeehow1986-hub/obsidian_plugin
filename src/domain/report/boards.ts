@@ -85,7 +85,15 @@ function requestRow(view: RequestView, spec: WorkflowSpec | null): El {
   );
 }
 
-function requestTable(views: readonly RequestView[], spec: WorkflowSpec | null): El {
+/**
+ * The request table, shared with B7's report engine.
+ *
+ * Exported rather than reimplemented there: the columns are a decision from
+ * §5.1 — current dwell, cumulative age and bounce count always travel together
+ * — and a report showing dwell without bounces would quietly answer the
+ * question wrongly for a request that has been sent back twice.
+ */
+export function requestTable(views: readonly RequestView[], spec: WorkflowSpec | null): El {
   return el(
     "table",
     {},

@@ -20,7 +20,22 @@ export interface NoteEntry {
   frontmatter: Record<string, unknown>;
 }
 
-/** Frontmatter as the metadata cache reports it, minus its own bookkeeping. */
+/**
+ * Frontmatter as the metadata cache reports it, minus its own bookkeeping.
+ *
+ * **`position` is therefore a key no note in this vault can use.** Obsidian
+ * writes the frontmatter block's own line range into `frontmatter.position`,
+ * so a user's `position:` is overwritten before we ever see it and has to be
+ * dropped here — keeping it would hand every parser a `{start,end}` object
+ * where it expected a value.
+ *
+ * The contract names `position` twice: a service role (§5.9) and an author
+ * position (§5.4). Both read an alias first — `role` and `author_position` —
+ * and both keep reading `position` as a fallback, which costs nothing and
+ * still works anywhere the YAML is parsed directly rather than through the
+ * cache. Found in B7, by a CV that printed a committee membership without the
+ * membership.
+ */
 export function cleanFrontmatter(cache: CachedMetadata | null): Record<string, unknown> | null {
   const frontmatter = cache?.frontmatter;
   if (!frontmatter) return null;

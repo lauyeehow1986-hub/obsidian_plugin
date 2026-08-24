@@ -16,15 +16,17 @@
 import type { ChartSeries, TrendSeries } from "../request/analytics";
 import { el, type El } from "./element";
 
-function percent(value: number, max: number): number {
+export function percent(value: number, max: number): number {
   if (max <= 0) return 0;
   return Math.max(0, Math.min(100, (value / max) * 100));
 }
 
 /** "23", "1.5" — one decimal at most, never trailing zeros. */
-function number(value: number): string {
+export function chartNumber(value: number): string {
   return Number.isInteger(value) ? String(value) : String(Math.round(value * 10) / 10);
 }
+
+const number = chartNumber;
 
 function caption(title: string, unit: string, denominator: string): El {
   return el(
@@ -110,9 +112,80 @@ export function barChart(series: ChartSeries): El {
 // A small viewBox on purpose: an SVG scales its text with the drawing, so a
 // wide viewBox squeezed into a 300px sidebar renders 5px labels. At roughly
 // sidebar size the chart is 1:1, and growing wider only makes it easier to read.
-const W = 320;
-const H = 120;
-const PAD = { top: 10, right: 8, bottom: 18, left: 26 };
+export const W = 320;
+export const H = 120;
+export const PAD = { top: 10, right: 8, bottom: 18, left: 26 };
+
+/** A run of consecutive measured months. A gap between runs is a real gap. */
+export interface TrendRun {
+  index: number;
+  value: number;
+}
+
+export interface TrendGeometry {
+  /** Null when nothing was measured at all — draw the empty state instead. */
+  drawable: boolean;
+  top: number;
+  x: (index: number) => number;
+  y: (value: number) => number;
+  runs: TrendRun[][];
+  last: { key: string; label: string; value: number; count: number };
+  lastIndex: number;
+  min: number;
+  max: number;
+  /** Every third month, plus the last — twelve labels collide in a sidebar. */
+  labelled: { key: string; label: string; index: number }[];
+}
+
+/**
+ * The trend's arithmetic, separated from its markup.
+ *
+ * Two renderers draw this chart — the themed one below, and the standalone-SVG
+ * one in `svg.ts` that a markdown note can carry, where there is no stylesheet
+ * to hang a class on. Only the markup differs. Sharing the geometry is what
+ * stops the two from disagreeing about where a point sits, which is the kind of
+ * drift nobody notices until two copies of the same figure are side by side.
+ */
+export function trendGeometry(series: TrendSeries): TrendGeometry {
+  const measured = series.points.filter(
+    (point): point is typeof point & { value: number } => point.value !== null,
+  );
+
+  const max = measured.length === 0 ? 0 : Math.max(...measured.map((point) => point.value));
+  const top = max <= 0 ? 1 : max;
+  const plotW = W - PAD.left - PAD.right;
+  const plotH = H - PAD.top - PAD.bottom;
+  const step = series.points.length > 1 ? plotW / (series.points.length - 1) : 0;
+
+  const runs: TrendRun[][] = [];
+  let run: TrendRun[] = [];
+  series.points.forEach((point, index) => {
+    if (point.value === null) {
+      if (run.length > 0) runs.push(run);
+      run = [];
+      return;
+    }
+    run.push({ index, value: point.value });
+  });
+  if (run.length > 0) runs.push(run);
+
+  const last = measured[measured.length - 1];
+
+  return {
+    drawable: measured.length > 0,
+    top,
+    x: (index: number) => PAD.left + index * step,
+    y: (value: number) => PAD.top + plotH - (value / top) * plotH,
+    runs,
+    last: last ?? { key: "", label: "", value: 0, count: 0 },
+    lastIndex: last === undefined ? 0 : series.points.findIndex((point) => point.key === last.key),
+    min: measured.length === 0 ? 0 : Math.min(...measured.map((point) => point.value)),
+    max,
+    labelled: series.points
+      .map((point, index) => ({ key: point.key, label: point.label, index }))
+      .filter((point) => point.index % 3 === 0 || point.index === series.points.length - 1),
+  };
+}
 
 /**
  * A line chart over calendar months.
@@ -126,11 +199,10 @@ const PAD = { top: 10, right: 8, bottom: 18, left: 26 };
  * nothing happened.
  */
 export function trendChart(series: TrendSeries): El {
-  const measured = series.points.filter(
-    (point): point is typeof point & { value: number } => point.value !== null,
-  );
+  const { drawable, top, x, y, runs, last, lastIndex, min, max, labelled } =
+    trendGeometry(series);
 
-  if (measured.length === 0) {
+  if (!drawable) {
     return el(
       "figure",
       { class: "scdb-chart", "data-chart": series.id },
@@ -138,36 +210,6 @@ export function trendChart(series: TrendSeries): El {
       emptyState(series.empty),
     );
   }
-
-  const max = Math.max(...measured.map((point) => point.value));
-  const top = max <= 0 ? 1 : max;
-  const plotW = W - PAD.left - PAD.right;
-  const plotH = H - PAD.top - PAD.bottom;
-  const step = series.points.length > 1 ? plotW / (series.points.length - 1) : 0;
-
-  const x = (index: number) => PAD.left + index * step;
-  const y = (value: number) => PAD.top + plotH - (value / top) * plotH;
-
-  // Split into runs of consecutive measured months, so a gap is a gap.
-  const runs: { index: number; value: number }[][] = [];
-  let run: { index: number; value: number }[] = [];
-  series.points.forEach((point, index) => {
-    if (point.value === null) {
-      if (run.length > 0) runs.push(run);
-      run = [];
-      return;
-    }
-    run.push({ index, value: point.value });
-  });
-  if (run.length > 0) runs.push(run);
-
-  const last = measured[measured.length - 1]!;
-  const lastIndex = series.points.findIndex((point) => point.key === last.key);
-
-  // Every third month, plus the last, or twelve labels collide in a sidebar.
-  const labelled = series.points.filter(
-    (_, index) => index % 3 === 0 || index === series.points.length - 1,
-  );
 
   return el(
     "figure",
@@ -237,22 +279,21 @@ export function trendChart(series: TrendSeries): El {
         },
         number(last.value),
       ),
-      labelled.map((point) => {
+      labelled.map(({ key, label, index }) => {
         // The outermost ticks are anchored inwards, or half of "26-07" hangs
         // off the edge of the viewBox and is clipped.
-        const index = series.points.indexOf(point);
         const anchor =
           index === 0 ? "start" : index === series.points.length - 1 ? "end" : "middle";
         return el(
           "text",
           {
             class: "scdb-trend__tick",
-            key: `tick-${point.key}`,
+            key: `tick-${key}`,
             x: x(index),
             y: H - 6,
             "text-anchor": anchor,
           },
-          point.label,
+          label,
         );
       }),
     ),
@@ -261,8 +302,7 @@ export function trendChart(series: TrendSeries): El {
       { class: "scdb-chart__foot" },
       `Latest ${last.label}: ${number(last.value)} ${series.unit} from ` +
         `${last.count} request${last.count === 1 ? "" : "s"}. ` +
-        `Best ${number(Math.min(...measured.map((p) => p.value)))}, ` +
-        `worst ${number(max)}.`,
+        `Best ${number(min)}, worst ${number(max)}.`,
     ),
   );
 }

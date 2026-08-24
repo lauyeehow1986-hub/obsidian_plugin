@@ -42,6 +42,8 @@ import { buildSchedule, occurrenceDate } from "../src/domain/events/schedule";
 import { calendarEvents } from "../src/domain/events/feed";
 import { buildCalendar, parseCalendar } from "../src/domain/events/ics";
 import { parsePublication, PUBLICATION_TYPE } from "../src/domain/publication/publication";
+import { composeCv, cvLine } from "../src/domain/profile/cv";
+import { parseProfileNote, PROFILE_TYPES } from "../src/domain/profile/profile";
 import { scanMinutes } from "../src/domain/extract/minutes";
 import { planExtraction, recordFor } from "../src/domain/extract/plan";
 import { validateQuery } from "../src/domain/query/model";
@@ -682,5 +684,65 @@ describe("the shipped .eml fixtures, through the real parser (§5.10)", () => {
     const plan = planMessage(reply.message, reply.rel, options);
     const note = newThreadFromEml(plan, "THR-2026-0099", "01FIXTUREULID");
     expect(JSON.stringify(note.frontmatter)).not.toContain("recharge");
+  });
+});
+
+describe("the profile fixtures (§5.9, §7 B7)", () => {
+  const notes = files
+    .filter((file) => file.rel.startsWith("84 Profile/"))
+    .map((file) => {
+      const yaml = frontmatterOf(file.text);
+      if (yaml === null) throw new Error(`${file.rel}: no frontmatter.`);
+      const note = parseProfileNote(file.rel, loadRecord(yaml, file.rel));
+      if (note === null) throw new Error(`${file.rel}: not a profile note type.`);
+      return note;
+    });
+
+  it("cover all six types §5.9 names", () => {
+    expect([...new Set(notes.map((note) => note.type))].sort()).toEqual([...PROFILE_TYPES].sort());
+  });
+
+  it("parse without a single complaint", () => {
+    // A profile note is ten seconds of typing. If the shipped examples cannot
+    // be read cleanly, the contract they document is the wrong one.
+    expect(notes.flatMap((note) => note.problems)).toEqual([]);
+  });
+
+  it("resolve a period from whichever key the type uses", () => {
+    for (const note of notes) {
+      expect(note.year, note.path).not.toBeNull();
+    }
+  });
+
+  it("only claim 'present' where the note says so", () => {
+    const ongoing = notes.filter((note) => note.period.ongoing).map((note) => note.type);
+    expect(ongoing).toEqual(["service"]);
+  });
+
+  it("build a CV with every section filled", () => {
+    const publications = files
+      .filter((file) => file.rel.startsWith("85 Publications/"))
+      .map((file) => {
+        const yaml = frontmatterOf(file.text);
+        return parsePublication(file.rel, loadRecord(yaml ?? "", file.rel));
+      });
+
+    const cv = composeCv({ profile: notes, publications, format: "vancouver" });
+    expect(cv.sections.map((section) => section.heading)).toEqual([
+      "Publications",
+      "Grants and funding",
+      "Supervision",
+      "Teaching",
+      "Presentations",
+      "Awards",
+      "Service",
+    ]);
+    expect(cv.total).toBeGreaterThan(notes.length);
+  });
+
+  it("show a status on the grant that is not awarded, and none on the one that is", () => {
+    const grants = notes.filter((note) => note.type === "grant").map(cvLine);
+    expect(grants.filter((line) => /submitted/i.test(line))).toHaveLength(1);
+    expect(grants.filter((line) => /awarded/i.test(line))).toHaveLength(0);
   });
 });

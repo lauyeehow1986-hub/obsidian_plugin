@@ -254,6 +254,83 @@ and an Obsidian notice. No OS notification and no email — a work laptop cannot
 relied on for either, and a reminder that silently fails to arrive is worse than
 one that never promised to.
 
+## Reports, the CV and the research profile
+
+**Generate a report** picks a template, asks for whatever it needs — a month, a
+year, a study — tells you how many rows it is about, and writes it into
+`95 Exports/`. Five ship with the plugin:
+
+| Template | Covers | Good for |
+|---|---|---|
+| Monthly facility report | one month | queue, turnaround, effort, bottlenecks |
+| Per-study effort statement | one month, one study | chargeback: hours by activity, person and request, plus estimate against actual |
+| Annual publication list | one year | the formatted list, with the facility's contribution beside it |
+| CV | everything | composed from `85 Publications/` and `84 Profile/` |
+| Research profile | everything | the narrative version: headline metrics, themes, collaborations |
+
+Two output formats. A **markdown note** gives you pipe tables you can edit, sort
+in a Base and paste into an email, with charts as embedded SVG; it carries
+frontmatter, so a report stays queryable rather than becoming a dead artefact. A
+**self-contained HTML page** is one file with no network that opens on a machine
+with no Obsidian — print it, or export it to PDF from the browser.
+
+Reports go through the same guards as every other export: they land in
+`95 Exports/`, the confirmation names the file and the row count, and the write
+is recorded in the audit ledger.
+
+### The CV is a query, not a document
+
+Put one note in `84 Profile/` per thing as it happens — ten seconds each — and
+the CV, the appraisal return and the biosketch stop being an annual archaeology
+exercise. Six note types, all optional:
+
+```yaml
+type: grant          # title, role, agency, ref, amount, currency, period, status, studies
+type: service        # committee, position, organisation, scope, period
+type: teaching       # course, institution, role, level, hours, period
+type: supervision    # trainee, degree, role, period, outcome
+type: presentation   # title, meeting, location, date, invited, format
+type: award          # title, body, year
+```
+
+A few things it deliberately will not do. `year: 2025` prints as "2025", never
+"2025–present" — an open-ended period is only ever what the note says. Grant
+amounts are grouped by currency rather than summed, because adding SGD to GBP
+gives a number that is wrong in every currency. The collaborations list includes
+you, because the vault records your author position but not your name and
+guessing would be wrong often enough to matter. And a section with nothing in it
+is left out rather than printed empty.
+
+### Editing a template
+
+**Write the built-in report templates to _config** copies all five into
+`_config/reports/` as YAML. Edit freely: a file there replaces the built-in with
+the same `id`, or adds a template under a new one. Delete the file to go back.
+Existing files are never overwritten.
+
+A template is prose, named data blocks and live queries:
+
+```yaml
+id: monthly-facility
+period: month              # month | year | all
+title: SCDB monthly report — {period}
+sections:
+  - heading: Effort
+    lede: Time logged in {period}.
+    blocks:
+      - block: effort
+        by: activity
+```
+
+Blocks: `prose`, `request-queue`, `turnaround`, `bottlenecks`, `effort`,
+`estimate-vs-actual`, `publications`, `publication-metrics`, `cv`, `portfolio`,
+`query`. A name the engine does not know is reported, never guessed at.
+
+`period` filters what *happened* — effort entries, and which year's papers are
+listed. It never filters the queue: a queue is a snapshot of now, and a report
+that showed one as at the end of last month would be a reconstruction this
+vault does not make. Every report that shows a queue says so.
+
 ## Encrypted backup, and how to restore one
 
 Set a destination folder outside the vault in Settings → SCDB Cockpit, then run

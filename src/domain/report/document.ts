@@ -22,6 +22,13 @@
 import { el, toHtml, type El, type Node } from "./element";
 
 export interface ReportSection {
+  /**
+   * Empty means the body stands on its own with no `<h2>` above it.
+   *
+   * Used by B7's CV template, whose block supplies its own headings — and by
+   * any template section that is a paragraph of framing rather than a part of
+   * the document a reader would want to jump to.
+   */
   heading: string;
   /** One line saying what the section is, shown under the heading. */
   lede?: string;
@@ -136,7 +143,7 @@ function section(entry: ReportSection): El {
   return el(
     "section",
     {},
-    el("h2", {}, entry.heading),
+    entry.heading === "" ? null : el("h2", {}, entry.heading),
     entry.lede ? el("p", { class: "lede" }, entry.lede) : null,
     entry.body,
   );

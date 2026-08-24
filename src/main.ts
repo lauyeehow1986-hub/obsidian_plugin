@@ -53,7 +53,10 @@ import { AuditLog } from "./services/auditLog.js";
 import { BackupService } from "./services/backup.js";
 import { collectDiagnostics } from "./services/diagnostics.js";
 import { applyRepairs, collectIntegrityFindings } from "./services/integrity.js";
-import { Exporter, type ExportRequest } from "./services/exporter.js";
+import { Exporter, type ExportRequest, type ExportResult } from "./services/exporter.js";
+import { ReportBuilder, type ReportChoice } from "./services/reportBuilder.js";
+import { ReportTemplateStore } from "./data/reportTemplates.js";
+import { ReportModal } from "./ui/ReportModal.js";
 import {
   RequestWriter,
   reportError,
@@ -164,6 +167,10 @@ export default class ScdbCockpitPlugin extends Plugin {
   rhythm!: RhythmWriter;
   /** Reading actions, decisions and deadlines out of minutes (§7 B6). */
   extract!: ExtractWriter;
+  /** Report templates: the five built in, plus anything in `_config/reports/` (§7 B7). */
+  reportTemplates!: ReportTemplateStore;
+  /** Building a report from a template and the vault (§7 B7). */
+  reports!: ReportBuilder;
   /** The monthly effort tables in `80 Time/` (§5.3). */
   effort!: EffortLog;
   /** The running timer (§7 B2). */
@@ -243,6 +250,11 @@ export default class ScdbCockpitPlugin extends Plugin {
       actor: () => this.settings.actor,
     });
 
+    this.reportTemplates = new ReportTemplateStore(
+      this.app,
+      () => this.settings.folders.config,
+    );
+
     this.backup = new BackupService({
       app: this.app,
       audit: this.audit,
@@ -307,6 +319,19 @@ export default class ScdbCockpitPlugin extends Plugin {
       actor: () => this.settings.actor,
       people: () => this.peopleNames(),
       mode: () => this.settings.mode,
+    });
+
+    this.reports = new ReportBuilder({
+      notes: this.notes,
+      effort: this.effort,
+      views: (now) => this.visibleRequests(now).views,
+      allViews: (now) => this.index.views({ now }),
+      spec: () => this.workflows.only(),
+      publications: () => this.publications(),
+      rows: (types, now) => this.rowsFor(types, now),
+      fields: (types) => this.catalogueFor(types),
+      citationFormat: () => this.settings.publications.citationFormat,
+      scope: () => this.hatScope(),
     });
 
     this.emlImport = new EmlImport({
@@ -729,6 +754,18 @@ export default class ScdbCockpitPlugin extends Plugin {
     });
 
     this.addCommand({
+      id: "generate-report",
+      name: "Generate a report",
+      callback: () => void this.openReportDialog(),
+    });
+
+    this.addCommand({
+      id: "write-report-templates",
+      name: "Write the built-in report templates to _config",
+      callback: () => void this.writeReportTemplates(),
+    });
+
+    this.addCommand({
       id: "deadlines",
       name: "Show deadlines and obligations",
       callback: () => void this.activateCockpit("deadlines"),
@@ -798,6 +835,7 @@ export default class ScdbCockpitPlugin extends Plugin {
         const touched = this.notes.remove(file.path);
         if (this.index.remove(file.path) || touched) refresh();
         if (this.workflows.isSpecPath(file.path)) void this.reloadWorkflows();
+        if (this.reportTemplates.isTemplatePath(file.path)) void this.reportTemplates.reload();
       }),
     );
     this.registerEvent(
@@ -809,18 +847,26 @@ export default class ScdbCockpitPlugin extends Plugin {
         if (this.workflows.isSpecPath(file.path) || this.workflows.isSpecPath(oldPath)) {
           void this.reloadWorkflows();
         }
+        if (
+          this.reportTemplates.isTemplatePath(file.path) ||
+          this.reportTemplates.isTemplatePath(oldPath)
+        ) {
+          void this.reportTemplates.reload();
+        }
         refresh();
       }),
     );
     this.registerEvent(
       this.app.vault.on("modify", (file) => {
         if (this.workflows.isSpecPath(file.path)) void this.reloadWorkflows();
+        if (this.reportTemplates.isTemplatePath(file.path)) void this.reportTemplates.reload();
         this.effortFileChanged(file.path, refresh);
       }),
     );
     this.registerEvent(
       this.app.vault.on("create", (file) => {
         if (this.workflows.isSpecPath(file.path)) void this.reloadWorkflows();
+        if (this.reportTemplates.isTemplatePath(file.path)) void this.reportTemplates.reload();
         this.effortFileChanged(file.path, refresh);
       }),
     );
@@ -852,6 +898,7 @@ export default class ScdbCockpitPlugin extends Plugin {
   async reindex(announce = false): Promise<void> {
     const started = performance.now();
     await this.workflows.reload();
+    await this.reportTemplates.reload();
     this.notes.rebuild();
     this.index.rebuild();
     this.refreshViews();
@@ -1793,7 +1840,8 @@ export default class ScdbCockpitPlugin extends Plugin {
    * written (§7 A3), because an export is the moment vault content becomes a
    * file that can travel.
    */
-  async exportDocument(request: ExportRequest): Promise<void> {
+  /** What was written, or null when the user cancelled or the write failed. */
+  async exportDocument(request: ExportRequest): Promise<ExportResult | null> {
     const rows = `${request.rows} row${request.rows === 1 ? "" : "s"}`;
     let planned: string;
     try {
@@ -1801,18 +1849,40 @@ export default class ScdbCockpitPlugin extends Plugin {
     } catch (error) {
       // Nothing has been written, so this is a refusal rather than a failure.
       reportError(error, "could not work out where to write the export.");
-      return;
+      return null;
     }
 
     const go = await confirm(this.app, `Write ${rows} to ${planned}?`, "Export");
-    if (!go) return;
+    if (!go) return null;
 
     try {
       const result = await this.exporter.write(request);
       new Notice(`SCDB: exported ${rows} to ${result.path}. Logged to the audit ledger.`, 8000);
+      return result;
     } catch (error) {
       reportError(error, "could not write the export.");
+      return null;
     }
+  }
+
+  /**
+   * What the hat filter is hiding, in one line.
+   *
+   * Printed on every exported board and report. A document that shows two
+   * thirds of the queue without saying so is the kind of thing somebody makes
+   * a staffing decision on — §5.1's rule that nothing generated here is
+   * presented as more than it is, applied to the filter rather than to the
+   * system of record.
+   */
+  hatScope(): string {
+    const { hidden, filtered } = this.visibleRequests();
+    if (!filtered) return "Every hat";
+    return (
+      `${modeInfo(this.settings.mode).label} work only` +
+      (hidden > 0
+        ? `; ${hidden} request${hidden === 1 ? "" : "s"} under another hat not shown`
+        : "")
+    );
   }
 
   /**
@@ -1824,8 +1894,7 @@ export default class ScdbCockpitPlugin extends Plugin {
    */
   async exportBoard(board: BoardId): Promise<void> {
     const now = Date.now();
-    const { views, hidden, filtered } = this.visibleRequests(now);
-    const info = modeInfo(this.settings.mode);
+    const { views } = this.visibleRequests(now);
 
     const context: BoardContext = {
       views,
@@ -1834,10 +1903,7 @@ export default class ScdbCockpitPlugin extends Plugin {
       hats: allModes().map((entry) => ({ id: entry.id, label: entry.label })),
       now,
       generatedAt: toVaultMinute(now).replace("T", " "),
-      scope: filtered
-        ? `${info.label} work only` +
-          (hidden > 0 ? `; ${hidden} request${hidden === 1 ? "" : "s"} under another hat not shown` : "")
-        : "Every hat",
+      scope: this.hatScope(),
     };
 
     const document = buildBoardDocument(board, context);
@@ -1848,6 +1914,117 @@ export default class ScdbCockpitPlugin extends Plugin {
       subject: `BOARD-${board}`,
       rows: boardRowCount(board, context),
     });
+  }
+
+  // --- reports, the CV and the research profile (§7 B7) -----------------------
+
+  /**
+   * Pick a template, see what it would contain, write it.
+   *
+   * The dialog builds the report on every change so the row count it shows is
+   * the row count the file will carry — see `ui/ReportModal`. That is cheap on
+   * a vault this size and honest at any size.
+   */
+  async openReportDialog(): Promise<void> {
+    const templates = this.reportTemplates.all();
+    const problems = this.reportTemplates.problems();
+    if (problems.length > 0) {
+      new Notice(
+        `SCDB: ${problems.length} problem${problems.length === 1 ? "" : "s"} in _config/reports/. ` +
+          `First: ${problems[0]!.path} — ${problems[0]!.problem}`,
+        12000,
+      );
+    }
+
+    const now = Date.now();
+    new ReportModal(this.app, {
+      templates,
+      studies: await this.reports.studies(now),
+      defaultMonth: toVaultDate(now).slice(0, 7),
+      defaultYear: toVaultDate(now).slice(0, 4),
+      preview: (choice) => this.previewReport(choice),
+      onSubmit: (choice) => this.runReport(choice),
+    }).open();
+  }
+
+  /** One line saying what the current choice would produce, and where. */
+  private async previewReport(choice: ReportChoice): Promise<string> {
+    const template = this.reportTemplates.get(choice.templateId);
+    if (template === null) return "That template is no longer available.";
+
+    const built = await this.reports.build(template, choice);
+    const where = this.exporter.plannedPath(built.document.title, built.extension);
+    const size = Math.max(1, Math.round(built.content.length / 1024));
+
+    return built.rows === 0
+      ? `Nothing to report on: ${built.document.subtitle}. The file would still be written, to ${where}.`
+      : `${built.rows} row${built.rows === 1 ? "" : "s"} · ${built.document.subtitle} · about ${size} KB → ${where}`;
+  }
+
+  /**
+   * Build and write.
+   *
+   * Through `exportDocument`, so a report is guarded exactly as every other
+   * export is (§7 A3): it lands in `95 Exports/`, the user confirms a line
+   * naming the file and the row count, and an `export` entry goes into the
+   * ledger. Nothing about a report deserves a softer path than a CSV.
+   */
+  async runReport(choice: ReportChoice): Promise<void> {
+    const template = this.reportTemplates.get(choice.templateId);
+    if (template === null) {
+      new Notice(`SCDB: no report template called "${choice.templateId}".`, 8000);
+      return;
+    }
+
+    let built;
+    try {
+      built = await this.reports.build(template, choice);
+    } catch (error) {
+      reportError(error, "could not build that report.");
+      return;
+    }
+
+    const written = await this.exportDocument({
+      basename: built.document.title,
+      extension: built.extension,
+      content: built.content,
+      subject: `REPORT-${template.id}`,
+      rows: built.rows,
+    });
+
+    // A markdown report is a note, so it opens where the user can read it. An
+    // HTML file would open as a wall of markup, and Obsidian is not its reader.
+    //
+    // Opened from the `TFile` the exporter returned, **not** through
+    // `openNote`: the note index is fed by Obsidian's asynchronous metadata
+    // cache, so a file written a moment ago is not in it yet and the report
+    // silently failed to open at all.
+    if (written !== null && built.extension === "md") {
+      void this.app.workspace.getLeaf(false).openFile(written.file);
+    }
+  }
+
+  /** Copy the five built-in templates into `_config/reports/` for editing. */
+  async writeReportTemplates(): Promise<void> {
+    try {
+      const { written, skipped } = await this.reportTemplates.writeBuiltIns();
+      if (written.length === 0) {
+        new Notice(
+          `SCDB: every built-in template is already in ${this.reportTemplates.folder()} — nothing was overwritten.`,
+          8000,
+        );
+        return;
+      }
+      new Notice(
+        `SCDB: wrote ${written.length} template${written.length === 1 ? "" : "s"} to ${this.reportTemplates.folder()}.` +
+          (skipped.length === 0
+            ? ""
+            : ` ${skipped.length} already existed and ${skipped.length === 1 ? "was" : "were"} left alone.`),
+        10000,
+      );
+    } catch (error) {
+      reportError(error, "could not write the report templates.");
+    }
   }
 
   // --- encrypted snapshots (§7 A4) --------------------------------------------

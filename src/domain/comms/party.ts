@@ -63,6 +63,20 @@ export function partiesIn(value: unknown): Party[] {
   return parties;
 }
 
+/**
+ * True when two references name the same thing.
+ *
+ * Not only people. A study is written exactly the same way — `[[EuroHeart]]` on
+ * a request, `[[20 Studies/EuroHeart]]` on a publication, and bare `EuroHeart`
+ * in the effort log, which is a plain-text table and not a note. B7's per-study
+ * report has to treat all three as one study, or a chargeback statement quietly
+ * omits every hour logged under the other spelling.
+ */
+export function sameParty(a: string, b: string): boolean {
+  const key = parseParty(a).key;
+  return key !== "" && key === parseParty(b).key;
+}
+
 /** True when two references name the same person. */
 export function samePerson(a: string, b: string): boolean {
   return parseParty(a).key === parseParty(b).key;

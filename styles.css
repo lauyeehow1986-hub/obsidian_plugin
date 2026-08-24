@@ -1976,3 +1976,48 @@
     align-items: stretch;
   }
 }
+
+/* --------------------------------------------------------------------------
+   B7 · the report dialog (§7 B7)
+   -------------------------------------------------------------------------- */
+
+/* Bound the panel, not a list inside it — the house pattern, learned twice
+ * (the agenda dialog, then B6's). A `max-height` on an inner element lets a
+ * header that wraps at a narrow window push the footer outside the modal,
+ * where no amount of scrolling reaches it. */
+.scdb-report {
+  display: flex;
+  overflow-y: auto;
+  flex-direction: column;
+  gap: var(--scdb-2);
+  max-height: 68vh;
+  min-height: 0;
+}
+
+/* A fieldset carries the browser's own border and inset padding, which reads
+ * as a box drawn round nothing in an Obsidian dialog. */
+.scdb-report fieldset {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+/* The format choice: the radio keeps its size, the explanation wraps beside
+ * it rather than under it. */
+.scdb-report .scdb-field--inline {
+  align-items: flex-start;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.scdb-report .scdb-field--inline input[type="radio"] {
+  flex: 0 0 auto;
+  margin-top: 2px;
+}
+
+.scdb-report .scdb-modal__actions {
+  position: sticky;
+  bottom: 0;
+  align-items: center;
+  background: var(--background-primary);
+}
