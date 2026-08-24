@@ -367,6 +367,11 @@
   cursor: pointer;
 }
 
+/* A card with two actions: only the last one rounds off the right edge. */
+.scdb-card__action:not(:last-child) {
+  border-radius: 0;
+}
+
 .scdb-card__action:hover {
   background: var(--background-modifier-hover);
   color: var(--text-normal);
@@ -446,6 +451,10 @@
 
 .scdb-state--on-track {
   color: var(--scdb-on-track);
+}
+
+.scdb-state--blocked {
+  color: var(--scdb-blocked);
 }
 
 .scdb-state--none {
@@ -2019,5 +2028,67 @@
   position: sticky;
   bottom: 0;
   align-items: center;
+  background: var(--background-primary);
+}
+
+/* ------------------------------------------------- policies and revisions -- */
+
+/* Width comes from `scdb-modal--wide` on the modal itself, as it does for the
+ * report and diagnostics dialogs. The body only has to survive a narrow
+ * window: the impact table scrolls inside its own box rather than pushing the
+ * dialog wider than the screen. */
+.scdb-policy {
+  max-height: min(72vh, 760px);
+  overflow-y: auto;
+}
+
+.scdb-policy .scdb-modal__heading {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  font-weight: 600;
+}
+
+.scdb-policy textarea {
+  width: 100%;
+  resize: vertical;
+  font-family: var(--font-monospace);
+  font-size: var(--font-ui-smaller);
+}
+
+.scdb-policy .scdb-table {
+  display: block;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.scdb-segmented {
+  display: flex;
+  gap: 0;
+}
+
+/* `button:not(.clickable-icon)` in Obsidian's own sheet outranks a single
+ * class, so the active state is scoped through the group. */
+.scdb-segmented button.scdb-control {
+  border-radius: 0;
+}
+
+.scdb-segmented button.scdb-control:first-child {
+  border-radius: 4px 0 0 4px;
+}
+
+.scdb-segmented button.scdb-control:last-child {
+  border-radius: 0 4px 4px 0;
+}
+
+.scdb-segmented button.scdb-control.is-active {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+
+/* Stays reachable while the body above it scrolls. */
+.scdb-policy .scdb-modal__actions:last-child {
+  position: sticky;
+  bottom: 0;
   background: var(--background-primary);
 }

@@ -331,6 +331,80 @@ listed. It never filters the queue: a queue is a snapshot of now, and a report
 that showed one as at the end of last month would be a reconstruction this
 vault does not make. Every report that shows a queue says so.
 
+## Policies, revisions and the impact map
+
+A policy note lives in `40 Policies/` and carries the version printed on the
+document, when it takes effect, when it is next reviewed, and — the field that
+does the work — what rests on it:
+
+```yaml
+---
+type: policy
+id: POL-DATA-REL-02
+title: Release of clinical data to external collaborators
+scope: institutional        # institutional | departmental | scdb | external
+status: current             # draft | current | superseded | withdrawn
+version: "3"                # as printed. A string: real ones include "2026-A"
+effective: 2025-09-01
+review_due: 2026-06-30
+governs:
+  - { what: gate, ref: "edata-request:extraction", clause: "5.2" }
+  - { what: form, ref: "[[FORM-consent-baseline]]" }
+---
+```
+
+`what` is one of `policy`, `workflow`, `gate`, `form`, `variable`, `study`,
+`script`, `template`, `other`. **A dependency can be declared from either end** —
+a local SOP may instead say `derives_from: [{ ref: "[[POL-DATA-REL-02]]", clause:
+"5.1" }]`, which is usually who knows. Both appear on the same map.
+
+**Name the clause.** A dependency that cites one can be told apart when the
+policy changes; a dependency that does not can only ever come back as "review".
+
+### Revising a policy
+
+Drop the reissued document anywhere in the vault and run **Revise a policy**
+(or press Revise on the Policies board). Name the new document, give the version
+it is issued under, and say in one line what changed. Before anything is
+written, the dialog shows which sections moved and what rests on them.
+
+On confirming, in this order: the current text is frozen into
+`40 Policies/_revisions/`, the live note's body is replaced and its frontmatter
+updated, and an impact map is written beside the frozen copy and opened. A
+`policy-revision` entry goes in the audit ledger.
+
+Four verdicts:
+
+| | Verdict | Means |
+|---|---|---|
+| ✕ | Clause gone | it cites a clause the new version no longer contains |
+| ● | Affected | it cites a clause, and that clause moved |
+| ? | Review | it cites no clause, so the change cannot be ruled out |
+| ○ | Clear | it cites a clause and nothing matching it moved |
+
+**Review is not "probably fine".** It means the vault has no basis to say
+either way, and the only verdict that lets something off is one that cites a
+clause. The report also lists changed clauses nothing claims to rest on — more
+often an undeclared dependency than a free clause — and marks any reference
+pointing at a note that is not there.
+
+Clause numbers are read off headings (`## 5.2 Onward transfer`) and never
+invented: an unnumbered heading under clause 5.2 is not clause 5.2.1.
+
+### What the register nags about
+
+Two findings that only show up when it is too late otherwise:
+
+- **Nothing declared against a policy.** Not "nothing rests on it" — its
+  revision will simply produce an empty impact map.
+- **Never frozen.** The first real revision has nothing to diff against.
+  **Freeze the current version** takes a baseline without inventing a change.
+
+A revision is refused outright when the policy has no `version` to file the
+frozen copy under, when the incoming text is identical, or when no one-line
+summary is given. Reissue under the same number is allowed — issuers do that —
+and the frozen copy takes a dated name so nothing is overwritten.
+
 ## Encrypted backup, and how to restore one
 
 Set a destination folder outside the vault in Settings → SCDB Cockpit, then run

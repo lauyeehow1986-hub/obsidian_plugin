@@ -139,6 +139,11 @@ export interface Deadline {
 /** Where a date lives, per note type. First match wins. */
 const DATE_FIELDS: Record<string, { field: string; what: string }[]> = {
   publication: [{ field: "decision_due", what: "decision due" }],
+  // A policy's review date belongs on the same board as everything else that
+  // falls due (§7 C1). Listing it here rather than building the register its
+  // own deadline view is the point of the generic reader: one place decides
+  // what "due" means, and the briefing and the ICS export follow for free.
+  policy: [{ field: "review_due", what: "review due" }],
 };
 const DEFAULT_FIELDS = [{ field: "due", what: "due" }];
 

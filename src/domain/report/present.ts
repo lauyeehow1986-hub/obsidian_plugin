@@ -13,6 +13,8 @@
  *  - **Durations are human.** One formatter, imported everywhere.
  */
 
+import type { ImpactVerdict } from "../policy/impact";
+import type { ReviewState } from "../policy/register";
 import type { SlaState } from "../request/dwell";
 import { formatDuration } from "../time/dates";
 
@@ -32,6 +34,40 @@ const STATES: Record<SlaState, StatePresentation> = {
 
 export function presentState(state: SlaState): StatePresentation {
   return STATES[state];
+}
+
+/**
+ * Impact-map verdicts (§7 C1), on the same four colours as everything else.
+ *
+ * Deliberately not a fifth and sixth colour. §6 asks for **one** semantic
+ * palette across the plugin, so a governance verdict borrows the meaning
+ * already established: a dependant resting on a clause that has vanished is
+ * the same red as a breached SLA, and one that has been cleared is the same
+ * quiet green as on-track.
+ */
+const VERDICTS: Record<ImpactVerdict, StatePresentation> = {
+  "clause-gone": { label: "Clause gone", glyph: "✕", className: "scdb-state--overdue" },
+  affected: { label: "Affected", glyph: "●", className: "scdb-state--at-risk" },
+  // Accent rather than amber: "we cannot tell" is a job for a person, which is
+  // the same thing `blocked` means everywhere else in the plugin.
+  review: { label: "Review", glyph: "?", className: "scdb-state--blocked" },
+  clear: { label: "Clear", glyph: "○", className: "scdb-state--on-track" },
+};
+
+export function presentVerdict(verdict: ImpactVerdict): StatePresentation {
+  return VERDICTS[verdict];
+}
+
+/** Where a policy stands against its own review date (§7 C1). */
+const REVIEWS: Record<ReviewState, StatePresentation> = {
+  overdue: { label: "Review overdue", glyph: "!", className: "scdb-state--overdue" },
+  "due-soon": { label: "Review due", glyph: "~", className: "scdb-state--at-risk" },
+  scheduled: { label: "Scheduled", glyph: "·", className: "scdb-state--on-track" },
+  unset: { label: "No review date", glyph: "–", className: "scdb-state--none" },
+};
+
+export function presentReview(state: ReviewState): StatePresentation {
+  return REVIEWS[state];
 }
 
 /** "23 days", or an em dash when there is nothing to show. */

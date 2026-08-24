@@ -35,6 +35,19 @@ import { formatList, type CitationFormat } from "./domain/publication/citation.j
 import { PublicationRefused } from "./domain/publication/stages.js";
 import { PublicationWriter } from "./services/publicationWriter.js";
 import { PublicationStageModal } from "./ui/PublicationStageModal.js";
+import {
+  noteDependencyEdges,
+  parsePolicy,
+  policyLabel,
+  refMatchesPolicy,
+  POLICY_TYPE,
+  type PolicyEdge,
+  type PolicyNote,
+} from "./domain/policy/policy.js";
+import { indexIncoming } from "./domain/policy/register.js";
+import { PolicyWriter, RevisionRefused } from "./services/policyWriter.js";
+import { PolicyRevisionModal } from "./ui/PolicyRevisionModal.js";
+import { PolicyPicker } from "./ui/PolicyPicker.js";
 import { governanceRisk } from "./domain/request/analytics.js";
 import {
   boardRowCount,
@@ -159,6 +172,7 @@ export default class ScdbCockpitPlugin extends Plugin {
   audit!: AuditLog;
   writer!: RequestWriter;
   publicationWriter!: PublicationWriter;
+  policyWriter!: PolicyWriter;
   views!: SavedViewStore;
   exporter!: Exporter;
   basesFiles!: BasesFiles;
@@ -240,6 +254,13 @@ export default class ScdbCockpitPlugin extends Plugin {
       app: this.app,
       audit: this.audit,
       actor: () => this.settings.actor,
+      reindex: (file) => this.notes.update(file),
+    });
+    this.policyWriter = new PolicyWriter({
+      app: this.app,
+      audit: this.audit,
+      actor: () => this.settings.actor,
+      policiesFolder: () => this.settings.folders.policies,
       reindex: (file) => this.notes.update(file),
     });
     this.views = new SavedViewStore(this.app, this.notes, () => this.settings.folders.dashboards);
@@ -751,6 +772,18 @@ export default class ScdbCockpitPlugin extends Plugin {
           format: this.settings.publications.citationFormat,
           scdbOnly: true,
         }),
+    });
+
+    this.addCommand({
+      id: "policies",
+      name: "Show the policy register",
+      callback: () => void this.activateCockpit("policies"),
+    });
+
+    this.addCommand({
+      id: "revise-policy",
+      name: "Revise a policy",
+      callback: () => void this.pickPolicyToRevise(),
     });
 
     this.addCommand({
@@ -1307,6 +1340,163 @@ export default class ScdbCockpitPlugin extends Plugin {
     }
 
     return { dated, publications };
+  }
+
+  // --- policies and revisions (§5.14, §7 C1) --------------------------------
+
+  /**
+   * Every policy note in the vault.
+   *
+   * Parsed on demand, like publications: a vault holds dozens of policies, not
+   * thousands, and a cached projection would be one more thing to invalidate.
+   * Frozen copies carry `type: policy-revision`, so they are never in here.
+   */
+  policies(): PolicyNote[] {
+    const policies: PolicyNote[] = [];
+    for (const entry of this.notes.all()) {
+      if (entry.type !== POLICY_TYPE) continue;
+      policies.push(parsePolicy(entry.file.path, entry.frontmatter));
+    }
+    return policies.sort((a, b) => a.id.localeCompare(b.id) || a.path.localeCompare(b.path));
+  }
+
+  /**
+   * Dependencies declared from the far end — `derives_from:` on any note.
+   *
+   * Whoever writes a local SOP is the person who knows it implements clause
+   * 5.2 of something; requiring them to go and edit the institutional policy
+   * note to say so is how an impact map ends up empty. Both directions fold
+   * into one list in `buildImpactMap`.
+   */
+  policyIncomingEdges(): Map<string, PolicyEdge[]> {
+    const policies = this.policies();
+    const edges: PolicyEdge[] = [];
+    for (const entry of this.notes.all()) {
+      if (entry.frontmatter["derives_from"] === undefined) continue;
+      edges.push(...noteDependencyEdges(entry.file.path, entry.type, entry.frontmatter));
+    }
+    return indexIncoming(policies, edges, refMatchesPolicy);
+  }
+
+  /**
+   * Whether an edge points at something the vault actually holds.
+   *
+   * Wikilinks resolve through the metadata cache. A gate ref is
+   * `workflow:stage`, so it resolves against the loaded workflow spec — which
+   * is how "this policy governs the DUA gate" becomes checkable rather than
+   * decorative. Anything else is left unjudged as resolved, because saying
+   * "not found" about a ref we do not know how to look up would be a lie.
+   */
+  private resolvePolicyRef = (edge: PolicyEdge): boolean => {
+    const ref = edge.ref.trim();
+    const wikilink = /^\[\[([^\]|#^]+)/.exec(ref);
+    if (wikilink !== null) {
+      return this.app.metadataCache.getFirstLinkpathDest(wikilink[1]!.trim(), "") !== null;
+    }
+    if (edge.kind === "gate" || edge.kind === "workflow") {
+      const [workflowId, stageId] = ref.split(":");
+      const spec = this.workflows.get(workflowId?.trim() ?? "");
+      if (spec === null) return false;
+      if (stageId === undefined || stageId.trim() === "") return true;
+      return spec.stages.some((stage: { id: string }) => stage.id === stageId.trim());
+    }
+    return true;
+  };
+
+  /** Ask which policy has been reissued, then open the revision dialog. */
+  private async pickPolicyToRevise(): Promise<void> {
+    const policies = this.policies();
+    if (policies.length === 0) {
+      new Notice(
+        `SCDB: no policy notes in ${this.settings.folders.policies}. Add one with \`type: policy\` first.`,
+        8000,
+      );
+      return;
+    }
+    new PolicyPicker(this.app, policies, (policy) => this.revisePolicy(policy)).open();
+  }
+
+  /** Freeze the current text and replace it, showing the impact map first. */
+  revisePolicy(policy: PolicyNote): void {
+    const file = this.app.vault.getAbstractFileByPath(policy.path);
+    if (!(file instanceof TFile)) {
+      new Notice(`SCDB: "${policy.path}" is no longer in the vault.`, 8000);
+      return;
+    }
+
+    void this.app.vault.read(file).then((currentText) => {
+      const revisionsPrefix = `${this.settings.folders.policies}/_revisions/`;
+      new PolicyRevisionModal(this.app, {
+        policy,
+        currentText,
+        policiesFolder: this.settings.folders.policies,
+        // Anywhere but the policy itself and the frozen copies: the incoming
+        // document is usually dropped into the vault wherever it landed.
+        sources: this.app.vault
+          .getMarkdownFiles()
+          .map((candidate) => candidate.path)
+          .filter((path) => path !== policy.path && !path.startsWith(revisionsPrefix))
+          .sort(),
+        readSource: async (path) => {
+          const source = this.app.vault.getAbstractFileByPath(path);
+          if (!(source instanceof TFile)) {
+            throw new Error(`There is no note at "${path}".`);
+          }
+          return this.app.vault.read(source);
+        },
+        incoming: this.policyIncomingEdges().get(policy.path) ?? [],
+        resolve: this.resolvePolicyRef,
+        onSubmit: async (submission) => {
+          try {
+            const result = await this.policyWriter.revise({
+              file,
+              policy,
+              incomingText: submission.incomingText,
+              newVersion: submission.newVersion,
+              summary: submission.summary,
+              effective: submission.effective,
+              incoming: this.policyIncomingEdges().get(policy.path) ?? [],
+              resolve: this.resolvePolicyRef,
+            });
+            this.refreshViews();
+            const needing = result.map.counts["clause-gone"] + result.map.counts.affected;
+            new Notice(
+              `SCDB: ${policy.id || "policy"} → v${submission.newVersion}. ${needing} dependant${needing === 1 ? "" : "s"} affected, ${result.map.counts.review} to review. Impact map at ${result.reportPath}.`,
+              12000,
+            );
+            // From the `TFile` the writer returned, not through `openNote`:
+            // the index has not seen a file written a moment ago.
+            void this.app.workspace.getLeaf(false).openFile(result.reportFile);
+          } catch (error) {
+            if (error instanceof RevisionRefused) {
+              new Notice(`SCDB: revision refused. ${error.message}`, 12000);
+            } else {
+              reportError(error, "could not revise the policy.");
+            }
+          }
+        },
+      }).open();
+    });
+  }
+
+  /** Snapshot a policy's current text without changing it. */
+  async freezePolicyBaseline(policy: PolicyNote): Promise<void> {
+    const file = this.app.vault.getAbstractFileByPath(policy.path);
+    if (!(file instanceof TFile)) {
+      new Notice(`SCDB: "${policy.path}" is no longer in the vault.`, 8000);
+      return;
+    }
+    try {
+      const path = await this.policyWriter.freezeBaseline({ file, policy });
+      this.refreshViews();
+      new Notice(`SCDB: ${policyLabel(policy)} frozen at ${path}.`, 8000);
+    } catch (error) {
+      if (error instanceof RevisionRefused) {
+        new Notice(`SCDB: cannot freeze. ${error.message}`, 10000);
+      } else {
+        reportError(error, "could not freeze the policy.");
+      }
+    }
   }
 
   // --- publications (§5.4, §7 B5) -------------------------------------------

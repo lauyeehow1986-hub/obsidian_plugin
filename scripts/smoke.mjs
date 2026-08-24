@@ -308,6 +308,15 @@ const checks = [
     instance.settings.publications.citationFormat === "vancouver",
   ],
   ["the publication writer is wired", typeof instance.publicationWriter?.transition === "function"],
+  // §7 C1. Nothing is written until the revision dialog is confirmed, so the
+  // check is that the register reads an empty vault without inventing a policy
+  // and that the writer is wired — not that a revision happened.
+  ["the policy register is reachable from the palette", commands.includes("policies")],
+  ["revising a policy is reachable from the palette", commands.includes("revise-policy")],
+  ["no policy notes on an empty vault", instance.policies().length === 0],
+  ["no incoming policy edges on an empty vault", instance.policyIncomingEdges().size === 0],
+  ["the policy writer is wired", typeof instance.policyWriter?.revise === "function"],
+  ["a baseline freeze is available too", typeof instance.policyWriter?.freezeBaseline === "function"],
   // §7 B6. Extraction reads a note and proposes; nothing is written until the
   // review dialog is confirmed, so the smoke check is that the command is
   // reachable and the writer is wired, not that anything happened.

@@ -21,6 +21,7 @@ import { MigrationBoard, strandedCount } from "./MigrationBoard";
 import { QueryBoard } from "./QueryBoard";
 import { EffortBoard } from "./EffortBoard";
 import { PublicationsBoard } from "./PublicationsBoard";
+import { PolicyBoard } from "./PolicyBoard";
 import { DeadlinesBoard } from "./DeadlinesBoard";
 import { lapsed } from "../domain/events/schedule";
 import { groupOutreachByParty, type AgedThread } from "../domain/comms/thread";
@@ -37,6 +38,7 @@ export type CockpitTab =
   | "explore"
   | "effort"
   | "publications"
+  | "policies"
   | "deadlines"
   | "migration"
   | "health";
@@ -50,6 +52,7 @@ const TABS: { id: CockpitTab; label: string }[] = [
   { id: "explore", label: "Explore" },
   { id: "effort", label: "Effort" },
   { id: "publications", label: "Publications" },
+  { id: "policies", label: "Policies" },
   { id: "deadlines", label: "Deadlines" },
   { id: "migration", label: "Migration" },
   { id: "health", label: "Health" },
@@ -570,6 +573,7 @@ export function CockpitPanel({
         )}
         {tab === "effort" && <EffortBoard plugin={plugin} />}
         {tab === "publications" && <PublicationsBoard plugin={plugin} />}
+        {tab === "policies" && <PolicyBoard plugin={plugin} />}
         {tab === "deadlines" && <DeadlinesBoard plugin={plugin} />}
         {tab === "migration" && <MigrationBoard plugin={plugin} />}
         {tab === "health" && <HealthBoard views={views} plugin={plugin} />}

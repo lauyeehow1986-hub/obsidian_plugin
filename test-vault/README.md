@@ -23,6 +23,7 @@ pick up a rebuild.
 | `84 Profile/` | seven items, one per §5.9 type | B7's CV and research profile: every type composes a line, one grant is unawarded so its status shows, one period is open-ended and the rest must not be |
 | `85 Publications/` | three manuscripts | a second note type for Explore to infer fields from, and the publication half of the CV |
 | `00 Inbox/` | one capture | the note quick capture writes |
+| `40 Policies/` | three policies plus a reissued document | C1: one institutional policy at v3 with the v4 reissue waiting in `_incoming/`, one local SOP declaring the clauses it rests on from the *far* end, and one deliberately bare policy so the register's three findings fire |
 | `_config/messages/` | `chase-up.md` | the message template, so tone is the user's and not the plugin's |
 | `_config/reports/` | the five B7 templates | worked examples of the report format, exactly as "Write the built-in report templates to _config" writes them — a fixture test holds them equal to the built-ins, so editing one in code without writing it out again fails the suite |
 
@@ -43,3 +44,20 @@ by composing a message stays out of git on its own. If you compose a chase-up
 about a request one of the fixture threads already covers, the plugin appends to
 that fixture instead and dirties the tree — `git checkout -- "test-vault/75 Correspondence-fixtures"`
 puts it back.
+
+### Running the policy revision demo dirties two files
+
+`40 Policies/` ships the *inputs* to C1, not its output: the policy sits at
+version 3 and the reissued text waits in `40 Policies/_incoming/`. Running
+**Revise a policy** against it does the real thing — freezes the v3 text into
+`_revisions/`, replaces the body, bumps the frontmatter and writes the impact
+map — so afterwards `POL-DATA-REL-02.md` is modified and `_revisions/` exists.
+
+`_revisions/` is gitignored, and `git checkout -- "test-vault/40 Policies"`
+puts the policy note back so the demo can be run again from the top.
+
+The fixture is built so that one revision produces all four impact verdicts:
+clause 5.2 changes (**affected** — the extraction gate cites it), clause 5.4
+disappears (**clause gone** — the SOP cites it), clause 5.1 is untouched
+(**clear** — the SOP cites that too), and the consent form cites no clause at
+all (**review**, and it resolves to no note, so it also shows *not found*).

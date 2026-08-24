@@ -42,6 +42,12 @@ export const AUDIT_ACTIONS = [
   "settings-change",
   "message-composed",
   "code-run",
+  // Freezing a prior version and replacing a policy's text (§7 C1). §5.6's
+  // list did not name it because C1 came later; it earns a row of its own
+  // rather than borrowing `bulk-edit`, because the question an auditor asks is
+  // "when did this rule change, and who changed it" — and an entry that
+  // answers it has to be findable by action, not by reading every detail cell.
+  "policy-revision",
   "correction",
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];

@@ -42,6 +42,15 @@ import { buildSchedule, occurrenceDate } from "../src/domain/events/schedule";
 import { calendarEvents } from "../src/domain/events/feed";
 import { buildCalendar, parseCalendar } from "../src/domain/events/ics";
 import { parsePublication, PUBLICATION_TYPE } from "../src/domain/publication/publication";
+import { diffPolicy } from "../src/domain/policy/diff";
+import { buildImpactMap } from "../src/domain/policy/impact";
+import {
+  noteDependencyEdges,
+  parsePolicy,
+  POLICY_TYPE,
+  refMatchesPolicy,
+} from "../src/domain/policy/policy";
+import { buildRegister, indexIncoming } from "../src/domain/policy/register";
 import { BUILT_IN_TEMPLATES } from "../src/domain/report/builtins";
 import { parseTemplate, templateToPlain } from "../src/domain/report/template";
 import { composeCv, cvLine } from "../src/domain/profile/cv";
@@ -357,6 +366,66 @@ describe("publication notes", () => {
   });
 });
 
+describe("policy notes (§5.14, §7 C1)", () => {
+  const policyNotes = typed(POLICY_TYPE);
+  const parsed = policyNotes.map((note) => parsePolicy(`40 Policies/${note.rel.split("/").pop()}`, note.front));
+
+  it("ships at least one, so the register has something to report on", () => {
+    expect(policyNotes.length).toBeGreaterThan(0);
+  });
+
+  it.each(policyNotes.map((note) => note.rel))("%s parses with no problems", (rel) => {
+    const note = policyNotes.find((entry) => entry.rel === rel);
+    expect(parsePolicy(rel, note!.front).problems).toEqual([]);
+  });
+
+  it("ships a dependency declared from the far end, not only from the policy", () => {
+    // The SOP names which clauses of POL-DATA-REL-02 it rests on; the policy
+    // note does not list the SOP. If this ever passes by accident because
+    // somebody added it to `governs:` as well, the fixture stops testing the
+    // direction it exists for.
+    const target = parsed.find((policy) => policy.id === "POL-DATA-REL-02");
+    expect(target?.governs.some((edge) => edge.label.startsWith("SOP-"))).toBe(false);
+
+    const edges = policyNotes.flatMap((note) =>
+      noteDependencyEdges(note.rel, POLICY_TYPE, note.front),
+    );
+    const incoming = indexIncoming(parsed, edges, refMatchesPolicy);
+    expect(incoming.get(target!.path)?.map((edge) => edge.clause).sort()).toEqual(["5.1", "5.4"]);
+  });
+
+  it("reports the findings the bare fixture exists for", () => {
+    const register = buildRegister({ policies: parsed, now: Date.parse("2026-08-24") });
+    const bare = register.rows.find((row) => row.policy.id === "POL-RETENTION-01");
+    expect(bare?.edges).toEqual([]);
+    expect(bare?.frozen).toBe(0);
+    expect(bare?.reviewState).toBe("unset");
+    expect(register.summary.undeclared).toBeGreaterThan(0);
+  });
+
+  it("the reissued document in `_incoming/` produces every verdict", () => {
+    // The point of shipping the inputs rather than a frozen copy: a fresh
+    // clone can run the whole feature, and this proves the fixture actually
+    // exercises all four outcomes rather than three and a hope.
+    const live = files.find((file) => file.rel === "40 Policies/POL-DATA-REL-02.md");
+    const incoming = files.find((file) => file.rel === "40 Policies/_incoming/POL-DATA-REL-02 v4.md");
+    expect(live).toBeDefined();
+    expect(incoming).toBeDefined();
+
+    const policy = parsed.find((entry) => entry.id === "POL-DATA-REL-02")!;
+    const edges = policyNotes.flatMap((note) =>
+      noteDependencyEdges(note.rel, POLICY_TYPE, note.front),
+    );
+    const map = buildImpactMap({
+      policy,
+      diff: diffPolicy(live!.text, incoming!.text),
+      incoming: indexIncoming(parsed, edges, refMatchesPolicy).get(policy.path) ?? [],
+    });
+
+    expect(map.counts).toEqual({ "clause-gone": 1, affected: 1, review: 1, clear: 1 });
+  });
+});
+
 describe("obligation notes", () => {
   const obligations = typed("obligation");
 
@@ -553,6 +622,12 @@ describe("no real address anywhere in the test vault", () => {
     for (const file of onDisk) {
       for (const match of file.text.matchAll(/[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g)) {
         if (/@(example\.(com|org|net)|.*\.example)$/.test(match[0])) continue;
+        // A frozen policy revision is filed as `POL-DATA-REL-02@3.md` (§7 C1),
+        // which this pattern reads as an address at the domain "3.md". A
+        // filename is not a disclosure, and a scanner that cries wolf is one
+        // that gets muted. Only the extension is excused — anything at a real
+        // TLD still fails, including `@3.com`.
+        if (/@[\w-]+\.(md|ya?ml|csv|html?|json|png|pdf|base|ics|eml|msg)$/i.test(match[0])) continue;
         offenders.push(`${file.rel}: ${match[0]}`);
       }
     }

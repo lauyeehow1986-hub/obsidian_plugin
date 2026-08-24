@@ -5,6 +5,72 @@ clearly marked entry (CLAUDE.md §10).
 
 ## Unreleased
 
+### Added — C1, the policy register and revision tracking
+
+Drop a reissued policy into the vault, and the plugin freezes the version it is
+replacing into `40 Policies/_revisions/`, diffs the two, and writes an **impact
+map** naming what in this vault now has to be looked at. §7 C1 is explicit that
+the impact map is the deliverable and the diff is only how it is computed, and
+that is how this is built.
+
+**The clause is what makes the map worth having.** A dependency declares which
+clause it rests on — `governs:` on the policy, or `derives_from:` on whatever
+depends on it — and a change to clause 5.2 then flags the three things resting
+on 5.2 rather than the forty resting on the document. A dependency may be
+declared from *either* end, because whoever writes a local SOP is the person
+who knows it implements clause 5.2 of something, and making them edit the
+institutional policy note to say so is how an impact map ends up empty.
+
+Four verdicts, and the vocabulary is the governance content:
+
+- **Clause gone** — it cites a clause the new version no longer contains. The
+  loudest state there is: the dependant still reads as governed and the rule it
+  named has ceased to exist.
+- **Affected** — it cites a clause, and that clause moved.
+- **Review** — it cites no clause, so the change *cannot be ruled out*. Not
+  "probably fine". A map that quietly assumed otherwise would be worse than no
+  map, so an unattributed dependency is never reported as unaffected.
+- **Clear** — it cites a clause and nothing matching it moved. The only verdict
+  that lets something off, and it is earned.
+
+The report also names changed clauses **nothing** claims to rest on, which is
+more often an undeclared dependency than a free clause, and marks any reference
+that resolves to no note. Clause numbers are read off headings and never
+invented: `### Definitions` under `## 5.2` is not clause 5.2.1, because a
+number in an impact report that appears nowhere in the policy is the kind of
+confident fabrication a governance instrument cannot afford.
+
+**Refusals, before anything is written.** A policy with no `version` has
+nothing to file a frozen copy under; a document identical to the current text
+is not a revision; and a revision with no one-line summary is a record nobody
+can act on later, so it is refused for the same reason §5.6 refuses a gate
+override without a typed reason. Reissue under the same number is a *warning*,
+not a refusal — issuers do that, and the frozen copy takes a dated name so the
+two can be told apart rather than one overwriting the other (rule 8).
+
+**Freeze first, replace second.** A crash between the two leaves a frozen copy
+that duplicates the live note, which is harmless; the other order loses the
+prior text, which is the one thing this track exists to preserve.
+
+The **policy register** (a new Policies board, and *Show the policy register*)
+reports what the impact map cannot, because the impact map only exists on the
+day something is revised: what is in force, what is overdue for review, and the
+two findings that catch people out — a policy nothing declares a dependency on,
+whose revision would produce an empty impact map, and a policy never frozen,
+whose first revision would have nothing to diff against. **Freeze the current
+version** answers the second without inventing a change. A policy's `review_due`
+also now feeds the existing deadlines board, the briefing and the ICS export,
+because it is a date that falls due like any other.
+
+### Changed — audit ledger
+
+A new `policy-revision` action. §5.6's list did not name it because C1 came
+later; it earns a row of its own rather than borrowing `bulk-edit`, because the
+question an auditor asks is *when did this rule change, and who changed it*, and
+an entry that answers it has to be findable by action rather than by reading
+every detail cell. Adding to the vocabulary is backwards-compatible: existing
+ledger files parse and their chains still verify.
+
 ### Added — B7, report generation, the CV and the research profile
 
 One engine, five templates. A new command, **Generate a report**, picks a

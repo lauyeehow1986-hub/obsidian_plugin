@@ -59,6 +59,14 @@ Desktop.ini
 # test against an empty vault, and "nothing was overwritten" is now what a
 # fresh clone hits.
 
+# Frozen policy revisions and the impact reports beside them: output, not
+# fixture, on the same argument as the `.base` files. The test vault ships the
+# *inputs* — a policy at version 3 and the reissued document in `_incoming/` —
+# so a fresh clone hits the path that actually needs testing: freeze, diff,
+# impact map, all written for real. Committing a frozen copy would also mean
+# the second run of the demo lands on the name-already-taken branch instead.
+**/40 Policies/_revisions/
+
 # Same argument for the daily briefing: it is a dated record the plugin writes,
 # not a worked example of the contract. Committing one would also mean a test
 # run in the test vault dirties the tree every morning.
