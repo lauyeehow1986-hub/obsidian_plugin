@@ -42,6 +42,8 @@ import { buildSchedule, occurrenceDate } from "../src/domain/events/schedule";
 import { calendarEvents } from "../src/domain/events/feed";
 import { buildCalendar, parseCalendar } from "../src/domain/events/ics";
 import { parsePublication, PUBLICATION_TYPE } from "../src/domain/publication/publication";
+import { BUILT_IN_TEMPLATES } from "../src/domain/report/builtins";
+import { parseTemplate, templateToPlain } from "../src/domain/report/template";
 import { composeCv, cvLine } from "../src/domain/profile/cv";
 import { parseProfileNote, PROFILE_TYPES } from "../src/domain/profile/profile";
 import { scanMinutes } from "../src/domain/extract/minutes";
@@ -177,6 +179,37 @@ describe("workflow specs", () => {
     const errors = parsed.problems.filter((problem) => problem.severity === "error");
     expect(errors.map((problem) => `${problem.at}: ${problem.message}`)).toEqual([]);
     expect(parsed.spec).not.toBeNull();
+  });
+});
+
+describe("report templates", () => {
+  // These five are committed as worked examples: `_config/reports/` is the
+  // first file anyone edits, and the block vocabulary is otherwise documented
+  // only in the source of a plugin the work laptop cannot build.
+  //
+  // The risk a committed copy carries is drift — a built-in changed in code
+  // while the example in the vault quietly teaches the old shape. So the guard
+  // is equality with the built-in, not merely "it parses": change a template in
+  // `builtins.ts` and this goes red until the example is written out again.
+  const yamls = files.filter((file) => /^_config\/reports\/.+\.ya?ml$/.test(file.rel));
+
+  it("ships one worked example per built-in template", () => {
+    expect(yamls.map((file) => file.rel).sort()).toEqual(
+      BUILT_IN_TEMPLATES.map((template) => `_config/reports/${template.id}.yaml`).sort(),
+    );
+  });
+
+  it.each(yamls.map((file) => file.rel))("%s is the built-in, exactly", (rel) => {
+    const file = yamls.find((entry) => entry.rel === rel);
+    const parsed = parseTemplate(load(file!.text), rel);
+    expect(parsed.problems).toEqual([]);
+    expect(parsed.template).not.toBeNull();
+
+    const builtIn = BUILT_IN_TEMPLATES.find(
+      (template) => template.id === parsed.template?.id,
+    );
+    expect(builtIn).toBeDefined();
+    expect(templateToPlain(parsed.template!)).toEqual(templateToPlain(builtIn!));
   });
 });
 

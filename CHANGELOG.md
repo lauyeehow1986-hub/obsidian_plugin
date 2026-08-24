@@ -87,6 +87,14 @@ export uses, so a report gets A3's three guards unchanged: it lands in
 Also: the diagnostics self-test now reports how many report templates loaded and
 what was wrong with any that did not.
 
+The five templates are committed in `test-vault/_config/reports/` as worked
+examples — exactly the bytes the command writes, since that is how they were
+produced. `_config/reports/` is the first file anyone edits, and the block
+vocabulary is otherwise documented only in the source of a plugin the work
+laptop cannot build. A fixture test holds each example equal to its built-in, so
+changing a template in code without writing it out again fails the suite rather
+than leaving an example that teaches a shape the engine no longer has.
+
 ### Added — B6, extraction from meeting notes
 
 Minutes are where work goes to die: the note gets written, the meeting ends, and

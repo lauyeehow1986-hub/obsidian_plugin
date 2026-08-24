@@ -1,0 +1,37 @@
+# Per-study effort statement — a SCDB Cockpit report template.
+#
+# Edit freely. A file here replaces the built-in template with the same `id`;
+# give it a new `id` to add a template rather than replace one. Delete the
+# file to go back to the built-in.
+#
+# period: month | year | all   — what the dialog asks for before running.
+# study: true                  — the report is about one study.
+# {period} and {study} in a title or lede are substituted when it runs.
+#
+# Blocks: prose, request-queue, turnaround, bottlenecks, effort (by: ...),
+# estimate-vs-actual, publications, publication-metrics, cv, portfolio, query.
+
+id: study-effort
+label: Per-study effort statement
+description: Hours by activity, person and request for one study — the chargeback line.
+period: month
+study: true
+title: Effort statement — {study}, {period}
+sections:
+  - heading: What this covers
+    blocks:
+      - prose: Time recorded against {study} in {period}, taken from the monthly effort logs in the vault. Entries with no study recorded against them are not included here, so this is a floor rather than a full account of the work.
+      - block: effort
+        by: activity
+  - heading: By person
+    blocks:
+      - block: effort
+        by: person
+  - heading: By request
+    blocks:
+      - block: effort
+        by: ref
+  - heading: Against estimate
+    lede: Every request for this study that carries an estimate, against all time ever logged to it.
+    blocks:
+      - block: estimate-vs-actual

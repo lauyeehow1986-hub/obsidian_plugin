@@ -1,0 +1,25 @@
+# Annual publication list — a SCDB Cockpit report template.
+#
+# Edit freely. A file here replaces the built-in template with the same `id`;
+# give it a new `id` to add a template rather than replace one. Delete the
+# file to go back to the built-in.
+#
+# period: month | year | all   — what the dialog asks for before running.
+# study: true                  — the report is about one study.
+# {period} and {study} in a title or lede are substituted when it runs.
+#
+# Blocks: prose, request-queue, turnaround, bottlenecks, effort (by: ...),
+# estimate-vs-actual, publications, publication-metrics, cv, portfolio, query.
+
+id: publication-list
+label: Annual publication list
+description: The formatted list for one year, with the facility's contribution.
+period: year
+title: Publications — {period}
+sections:
+  - heading: ""
+    blocks:
+      - block: publications
+  - heading: Metrics
+    blocks:
+      - block: publication-metrics

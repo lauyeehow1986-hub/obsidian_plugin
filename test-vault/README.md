@@ -24,6 +24,7 @@ pick up a rebuild.
 | `85 Publications/` | three manuscripts | a second note type for Explore to infer fields from, and the publication half of the CV |
 | `00 Inbox/` | one capture | the note quick capture writes |
 | `_config/messages/` | `chase-up.md` | the message template, so tone is the user's and not the plugin's |
+| `_config/reports/` | the five B7 templates | worked examples of the report format, exactly as "Write the built-in report templates to _config" writes them — a fixture test holds them equal to the built-ins, so editing one in code without writing it out again fails the suite |
 
 Every email address is on `example.com`, a domain reserved by RFC 2606 for
 exactly this. A mis-click cannot reach a person.

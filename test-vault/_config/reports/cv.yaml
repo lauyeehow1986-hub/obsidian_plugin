@@ -1,0 +1,37 @@
+# Curriculum vitae — a SCDB Cockpit report template.
+#
+# Edit freely. A file here replaces the built-in template with the same `id`;
+# give it a new `id` to add a template rather than replace one. Delete the
+# file to go back to the built-in.
+#
+# period: month | year | all   — what the dialog asks for before running.
+# study: true                  — the report is about one study.
+# {period} and {study} in a title or lede are substituted when it runs.
+#
+# Blocks: prose, request-queue, turnaround, bottlenecks, effort (by: ...),
+# estimate-vs-actual, publications, publication-metrics, cv, portfolio, query.
+
+id: cv
+label: Curriculum vitae
+description: Composed from 85 Publications/ and 84 Profile/. Never out of date, because it is a query.
+period: all
+title: Curriculum vitae
+sections:
+  - heading: ""
+    blocks:
+      - block: cv
+        sections:
+          - heading: Publications
+            from: publications
+          - heading: Grants and funding
+            from: grant
+          - heading: Supervision
+            from: supervision
+          - heading: Teaching
+            from: teaching
+          - heading: Presentations
+            from: presentation
+          - heading: Awards
+            from: award
+          - heading: Service
+            from: service

@@ -1,0 +1,38 @@
+# Monthly facility report — a SCDB Cockpit report template.
+#
+# Edit freely. A file here replaces the built-in template with the same `id`;
+# give it a new `id` to add a template rather than replace one. Delete the
+# file to go back to the built-in.
+#
+# period: month | year | all   — what the dialog asks for before running.
+# study: true                  — the report is about one study.
+# {period} and {study} in a title or lede are substituted when it runs.
+#
+# Blocks: prose, request-queue, turnaround, bottlenecks, effort (by: ...),
+# estimate-vs-actual, publications, publication-metrics, cv, portfolio, query.
+
+id: monthly-facility
+label: Monthly facility report
+description: Queue, turnaround, effort and bottlenecks for one month.
+period: month
+title: SCDB monthly report — {period}
+sections:
+  - heading: The queue
+    lede: The queue is as at the moment this report was generated, not as at the end of the period — a queue is a snapshot and this vault does not reconstruct past ones.
+    blocks:
+      - block: request-queue
+  - heading: Turnaround
+    lede: How long requests are taking, and which stage they wait in.
+    blocks:
+      - block: turnaround
+  - heading: Effort
+    lede: Time logged in {period}.
+    blocks:
+      - block: effort
+        by: activity
+      - block: effort
+        by: study
+  - heading: Bottlenecks
+    lede: Where the work stops, and with whom.
+    blocks:
+      - block: bottlenecks

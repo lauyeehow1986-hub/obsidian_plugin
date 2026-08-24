@@ -48,11 +48,16 @@ Desktop.ini
 # actually needs testing.
 **/90 Dashboards/*.base
 
-# Same argument for the report templates "Write the built-in report templates
-# to _config" copies out. They are output, and committing them would mean a
-# fresh clone never exercises the path that matters most — five templates
-# available with nothing in `_config/reports/` at all.
-**/_config/reports/
+# NOT the same for `_config/reports/`, deliberately. The report templates that
+# "Write the built-in report templates to _config" copies out are committed, as
+# worked examples: that folder is the first thing anyone edits, and the block
+# vocabulary is otherwise documented only in the source of a plugin the work
+# laptop cannot build. They are exactly what the command writes, and a fixture
+# test holds them equal to the built-ins so an example cannot teach a shape the
+# code no longer has. The two paths that lose a live exercise in the test vault
+# are still covered: "five templates with nothing in `_config`" by the smoke
+# test against an empty vault, and "nothing was overwritten" is now what a
+# fresh clone hits.
 
 # Same argument for the daily briefing: it is a dated record the plugin writes,
 # not a worked example of the contract. Committing one would also mean a test
