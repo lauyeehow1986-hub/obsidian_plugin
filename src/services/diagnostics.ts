@@ -618,14 +618,71 @@ function shellReachable(): boolean {
 /**
  * Ask core Mermaid to render something and look for an SVG.
  *
- * D1 renders diagrams through `MarkdownRenderer.render` rather than bundling a
- * diagram library, which makes core Mermaid a real runtime assumption — and
- * §7 A4 asks for it to be probed rather than assumed. Rendering is asynchronous
- * beyond the promise this awaits, so the element is polled and a timeout is
- * reported as "could not confirm" rather than as a failure: a slow machine is
- * not a broken Obsidian.
+ * D1 renders diagrams with core Mermaid rather than bundling a diagram library,
+ * which makes it a real runtime assumption — and §7 A4 asks for it to be probed
+ * rather than assumed. **The probe exercises the same path the feature does**,
+ * or it reports on something nobody uses: `window.mermaid.render` first, and
+ * only the `MarkdownRenderer` route when that is missing. The two are not
+ * interchangeable in practice — the markdown route produced no SVG at all on
+ * the machine this was built on, which is how the direct one came to be used.
+ *
+ * The fallback's rendering is asynchronous beyond the promise it awaits, so its
+ * element is polled and a timeout is reported as "could not confirm" rather
+ * than as a failure: a slow machine is not a broken Obsidian.
  */
+/** Render a throwaway fence so Obsidian loads Mermaid, then let it settle. */
+async function warmMermaid(plugin: ScdbCockpitPlugin): Promise<void> {
+  if (typeof (globalThis as { mermaid?: unknown }).mermaid === "object") return;
+  const host = createDiv();
+  try {
+    await MarkdownRenderer.render(
+      plugin.app,
+      "```mermaid\nflowchart LR\n  a --> b\n```",
+      host,
+      "",
+      plugin as unknown as Component,
+    );
+    const deadline = Date.now() + MERMAID_TIMEOUT_MS;
+    while (Date.now() < deadline) {
+      if (typeof (globalThis as { mermaid?: unknown }).mermaid === "object") return;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+  } catch {
+    // The probe below reports what it finds; a warm-up failure is not itself
+    // the finding.
+  } finally {
+    host.remove();
+  }
+}
+
 async function mermaidProbe(plugin: ScdbCockpitPlugin): Promise<Check> {
+  // The same warm-up the renderer does: Obsidian loads Mermaid lazily, so on a
+  // freshly started Obsidian the global is not there yet and a probe that only
+  // looked would report a problem that does not exist.
+  await warmMermaid(plugin);
+  const direct = (globalThis as { mermaid?: { render?: unknown } }).mermaid;
+  if (typeof direct?.render === "function") {
+    try {
+      const render = direct.render as (id: string, source: string) => Promise<{ svg: string }>;
+      const { svg } = await render("scdb-diagnostics-probe", "flowchart LR\n  a --> b");
+      return svg.includes("<svg")
+        ? check("Core Mermaid rendering", "ok", "window.mermaid rendered a test flowchart to SVG.")
+        : check(
+            "Core Mermaid rendering",
+            "problem",
+            "window.mermaid returned no SVG.",
+            "The diagram builder (D1) depends on this.",
+          );
+    } catch (error) {
+      return check(
+        "Core Mermaid rendering",
+        "problem",
+        `window.mermaid threw: ${error instanceof Error ? error.message : String(error)}`,
+        "The diagram builder (D1) depends on this.",
+      );
+    }
+  }
+
   const host = createDiv();
   try {
     await MarkdownRenderer.render(
@@ -639,7 +696,11 @@ async function mermaidProbe(plugin: ScdbCockpitPlugin): Promise<Check> {
     const deadline = Date.now() + MERMAID_TIMEOUT_MS;
     while (Date.now() < deadline) {
       if (host.querySelector("svg") !== null) {
-        return check("Core Mermaid rendering", "ok", "Rendered a test flowchart to SVG.");
+        return check(
+          "Core Mermaid rendering",
+          "ok",
+          "MarkdownRenderer rendered a test flowchart to SVG (window.mermaid was not reachable).",
+        );
       }
       await new Promise((resolve) => setTimeout(resolve, 100));
     }

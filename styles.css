@@ -2092,3 +2092,92 @@
   bottom: 0;
   background: var(--background-primary);
 }
+
+/* --- D1: the flowchart editor ------------------------------------------- */
+
+.scdb-diagram {
+  display: flex;
+  flex-direction: column;
+  gap: var(--scdb-2);
+  padding: var(--scdb-2);
+}
+
+.scdb-diagram__head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--scdb-2);
+  align-items: flex-end;
+  justify-content: space-between;
+}
+
+.scdb-diagram__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--scdb-2);
+  align-items: flex-end;
+}
+
+.scdb-diagram__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--scdb-1);
+}
+
+/* Two columns at full width, one in a sidebar. The editor is the half that
+ * has to stay usable when narrow, so it leads. */
+.scdb-diagram__body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--scdb-3);
+}
+
+@media (min-width: 900px) {
+  .scdb-diagram__body {
+    grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+  }
+}
+
+.scdb-diagram__editor h3,
+.scdb-diagram__pane h3 {
+  margin: var(--scdb-2) 0 var(--scdb-1);
+  font-size: var(--font-ui-small);
+  color: var(--text-muted);
+}
+
+.scdb-diagram__editor input[type="text"],
+.scdb-diagram__editor select {
+  width: 100%;
+  min-width: 0;
+}
+
+.scdb-diagram__problems {
+  margin: var(--scdb-1) 0 0;
+  padding-left: var(--scdb-2);
+}
+
+/* A wide flowchart scrolls inside its own box rather than pushing the pane. */
+.scdb-diagram__preview {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  padding: var(--scdb-2);
+  background: var(--background-primary);
+  overflow-x: auto;
+}
+
+.scdb-diagram__canvas svg {
+  max-width: 100%;
+  height: auto;
+}
+
+/* `button:not(.clickable-icon)` in Obsidian's own sheet outranks a single
+ * class, so the row buttons are scoped through the root. */
+.scdb-root button.scdb-icon-button {
+  padding: 2px var(--scdb-1);
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-muted);
+}
+
+.scdb-root button.scdb-icon-button:hover {
+  color: var(--scdb-overdue);
+}

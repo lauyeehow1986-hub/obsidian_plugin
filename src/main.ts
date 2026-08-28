@@ -2,7 +2,7 @@ import { Notice, Plugin, TFile, debounce, type WorkspaceLeaf } from "obsidian";
 import { BasesFiles } from "./data/basesFiles.js";
 import { stageLabels } from "./domain/bases/config.js";
 import { NoteIndex } from "./data/noteIndex.js";
-import { REQUEST_TYPE, RequestIndex } from "./data/requestIndex.js";
+import { REQUEST_TYPE, RequestIndex, type IndexEntry } from "./data/requestIndex.js";
 import { buildRows, catalogueFor, type RowSourceDeps } from "./data/rows.js";
 import { buildVocabulary } from "./data/vocabulary.js";
 import { chipsToQuery, parseQueryText, type ParsedText } from "./domain/query/language.js";
@@ -77,6 +77,16 @@ import {
 } from "./services/requestWriter.js";
 import { ScdbSettingsTab } from "./settings/SettingsTab.js";
 import { COCKPIT_VIEW_TYPE, CockpitView, type CockpitTab } from "./ui/CockpitView.js";
+import { DIAGRAM_VIEW_TYPE, DiagramView } from "./ui/DiagramView.js";
+import { RequestPicker } from "./ui/RequestPicker.js";
+import { WorkflowPicker } from "./ui/WorkflowPicker.js";
+import { DiagramWriter } from "./services/diagramWriter.js";
+import { DIAGRAM_NOTE_TYPE, emptyDiagram, type DiagramSpec } from "./domain/diagram/diagram.js";
+import {
+  dataFlowDiagram,
+  requestPathDiagram,
+  workflowDiagram,
+} from "./domain/diagram/generate.js";
 import { askPassphrase, pickSnapshot } from "./ui/BackupModals.js";
 import { DiagnosticsModal } from "./ui/DiagnosticsModal.js";
 import { IntegrityModal } from "./ui/IntegrityModal.js";
@@ -193,6 +203,8 @@ export default class ScdbCockpitPlugin extends Plugin {
   events!: EventStore;
   /** Reading saved `.eml` and `.msg` files into correspondence threads (§5.10, Tier 1). */
   emlImport!: EmlImport;
+  /** Flowchart notes, and the SVG/PNG they export to (§7 D1). */
+  diagrams!: DiagramWriter;
 
   /** The mode HUD (§7 A3). Null until `onload` has run. */
   private statusBar: HTMLElement | null = null;
@@ -269,6 +281,12 @@ export default class ScdbCockpitPlugin extends Plugin {
       audit: this.audit,
       exportsFolder: () => this.settings.folders.exports,
       actor: () => this.settings.actor,
+    });
+
+    this.diagrams = new DiagramWriter({
+      app: this.app,
+      exporter: this.exporter,
+      diagramsFolder: () => this.settings.folders.diagrams,
     });
 
     this.reportTemplates = new ReportTemplateStore(
@@ -379,6 +397,7 @@ export default class ScdbCockpitPlugin extends Plugin {
     );
 
     this.registerView(COCKPIT_VIEW_TYPE, (leaf: WorkspaceLeaf) => new CockpitView(leaf, this));
+    this.registerView(DIAGRAM_VIEW_TYPE, (leaf: WorkspaceLeaf) => new DiagramView(leaf, this));
     this.registerBasesViews();
     this.addSettingTab(new ScdbSettingsTab(this.app, this));
     this.registerCommands();
@@ -784,6 +803,42 @@ export default class ScdbCockpitPlugin extends Plugin {
       id: "revise-policy",
       name: "Revise a policy",
       callback: () => void this.pickPolicyToRevise(),
+    });
+
+    this.addCommand({
+      id: "new-diagram",
+      name: "New flowchart",
+      callback: () => void this.newDiagram(),
+    });
+
+    this.addCommand({
+      id: "open-diagram",
+      name: "Open the flowchart editor for this note",
+      checkCallback: (checking: boolean) => {
+        const file = this.app.workspace.getActiveFile();
+        const type = file === null ? "" : this.notes.byPath(file.path)?.type;
+        if (file === null || type !== DIAGRAM_NOTE_TYPE) return false;
+        if (!checking) void this.openDiagram(file);
+        return true;
+      },
+    });
+
+    this.addCommand({
+      id: "draw-workflow",
+      name: "Draw the workflow lifecycle",
+      callback: () => void this.drawWorkflow(),
+    });
+
+    this.addCommand({
+      id: "draw-request-path",
+      name: "Draw what actually happened to a request",
+      callback: () => this.pickRequestToDraw("path"),
+    });
+
+    this.addCommand({
+      id: "draw-data-flow",
+      name: "Draw the data flow for a request",
+      callback: () => this.pickRequestToDraw("data-flow"),
     });
 
     this.addCommand({
@@ -2523,6 +2578,128 @@ export default class ScdbCockpitPlugin extends Plugin {
     });
     if (phrase === null || phrase.trim() === "") return;
     await this.activateCockpit("explore", phrase);
+  }
+
+  // ---------------------------------------------------------------- D1: diagrams
+
+  /**
+   * Open a diagram note in the editor pane.
+   *
+   * One pane, reused: a diagram editor per note would leave a row of tabs after
+   * an afternoon, and the pane is a workbench rather than a document.
+   */
+  async openDiagram(file: TFile, spec?: DiagramSpec): Promise<void> {
+    const { workspace } = this.app;
+    const existing = workspace.getLeavesOfType(DIAGRAM_VIEW_TYPE)[0];
+    const leaf = existing ?? workspace.getLeaf("tab");
+    await leaf.setViewState({ type: DIAGRAM_VIEW_TYPE, active: true });
+    await workspace.revealLeaf(leaf);
+    // After the view state, never in it — see `DiagramView.setFile`.
+    if (leaf.view instanceof DiagramView) leaf.view.setFile(file, spec);
+  }
+
+  /** Create a diagram note from a spec and open it. */
+  private async createDiagram(spec: DiagramSpec, basename?: string): Promise<void> {
+    try {
+      const file = await this.diagrams.create(spec, basename);
+      this.notes.update(file);
+      await this.openDiagram(file, spec);
+      new Notice(`SCDB: created ${file.basename}.`, 5000);
+    } catch (error) {
+      new Notice(
+        `SCDB: the diagram note could not be created. ${error instanceof Error ? error.message : String(error)}`,
+        8000,
+      );
+    }
+  }
+
+  private async newDiagram(): Promise<void> {
+    await this.createDiagram(emptyDiagram("Untitled flowchart"), "Untitled flowchart");
+  }
+
+  /**
+   * Draw the request lifecycle from the workflow spec.
+   *
+   * The differentiator over a drawing tool (§7 D1): this is the process as
+   * configured, not as remembered, and it carries the spec version so a copy
+   * left in the vault after the spec changes is detectable rather than merely
+   * wrong.
+   */
+  private async drawWorkflow(): Promise<void> {
+    const specs = this.workflows.usable();
+    if (specs.length === 0) {
+      new Notice(
+        `SCDB: no usable workflow spec in ${this.settings.folders.config}/workflows/. Run the diagnostics self-test to see what it could not read.`,
+        8000,
+      );
+      return;
+    }
+
+    const draw = (spec: WorkflowSpec): void => {
+      void this.createDiagram(
+        workflowDiagram(spec, Date.now()),
+        `${spec.id} lifecycle v${spec.version}`,
+      );
+    };
+
+    const only = specs[0];
+    if (specs.length === 1 && only !== undefined) draw(only);
+    else new WorkflowPicker(this.app, specs, draw).open();
+  }
+
+  private pickRequestToDraw(kind: "path" | "data-flow"): void {
+    const entries = this.index.all();
+    if (entries.length === 0) {
+      new Notice(`SCDB: no requests in ${this.settings.folders.requests}.`, 6000);
+      return;
+    }
+    new RequestPicker(
+      this.app,
+      entries,
+      this.workflows.only(),
+      (entry: IndexEntry) => {
+        const now = Date.now();
+        const spec =
+          kind === "path"
+            ? requestPathDiagram(entry.request, this.workflows.forRequest(entry.request.workflow), now)
+            : dataFlowDiagram(entry.request, now);
+        const stem = `${entry.request.id || entry.request.uid} ${kind === "path" ? "path" : "data flow"}`;
+        void this.createDiagram(spec, stem);
+      },
+      kind === "path" ? "Draw the path of which request?" : "Draw the data flow for which request?",
+    ).open();
+  }
+
+  /**
+   * Rebuild a generated diagram from its source.
+   *
+   * Returns null rather than guessing when the source cannot be found — a
+   * redraw that silently produced an empty diagram would look like the process
+   * had been deleted.
+   */
+  async redrawDiagram(spec: DiagramSpec): Promise<DiagramSpec | null> {
+    const now = Date.now();
+    if (spec.source === "workflow") {
+      // The spec id is stamped as `id@version`, so a redraw finds the same
+      // workflow even in a vault that has grown a second one.
+      const workflow = this.workflows.get(spec.generatedFrom.split("@")[0] ?? "");
+      if (workflow === null) return null;
+      return { ...workflowDiagram(workflow, now), id: spec.id, title: spec.title };
+    }
+
+    if (spec.source === "request-path" || spec.source === "data-flow") {
+      const entry = this.index
+        .all()
+        .find((candidate) => candidate.request.id === spec.generatedFrom || candidate.request.uid === spec.generatedFrom);
+      if (entry === undefined) return null;
+      const fresh =
+        spec.source === "request-path"
+          ? requestPathDiagram(entry.request, this.workflows.forRequest(entry.request.workflow), now)
+          : dataFlowDiagram(entry.request, now);
+      return { ...fresh, id: spec.id, title: spec.title };
+    }
+
+    return null;
   }
 
   async activateCockpit(tab?: CockpitTab, search?: string): Promise<void> {

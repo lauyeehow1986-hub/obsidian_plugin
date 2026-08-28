@@ -42,6 +42,8 @@ import { buildSchedule, occurrenceDate } from "../src/domain/events/schedule";
 import { calendarEvents } from "../src/domain/events/feed";
 import { buildCalendar, parseCalendar } from "../src/domain/events/ics";
 import { parsePublication, PUBLICATION_TYPE } from "../src/domain/publication/publication";
+import { DIAGRAM_NOTE_TYPE, parseDiagram } from "../src/domain/diagram/diagram";
+import { toMermaid, toMermaidBlock } from "../src/domain/diagram/mermaid";
 import { diffPolicy } from "../src/domain/policy/diff";
 import { buildImpactMap } from "../src/domain/policy/impact";
 import {
@@ -423,6 +425,46 @@ describe("policy notes (§5.14, §7 C1)", () => {
     });
 
     expect(map.counts).toEqual({ "clause-gone": 1, affected: 1, review: 1, clear: 1 });
+  });
+});
+
+describe("diagram notes (§5.14, §7 D1)", () => {
+  const diagrams = typed(DIAGRAM_NOTE_TYPE);
+
+  it("ships at least one, so the editor has a worked example to open", () => {
+    expect(diagrams.length).toBeGreaterThan(0);
+  });
+
+  it("parses clean — a fixture with a dangling arrow teaches the wrong thing", () => {
+    for (const note of diagrams) {
+      const { spec, problems } = parseDiagram(note.front);
+      expect({ rel: note.rel, problems }).toEqual({ rel: note.rel, problems: [] });
+      expect(spec.nodes.length).toBeGreaterThan(0);
+      expect(spec.edges.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("keeps the committed Mermaid block in step with the frontmatter", () => {
+    // The block in the body is generated, and a fixture whose picture no longer
+    // matches its own data is worse than one with no picture: it is the exact
+    // drift the `generated_from` stamp exists to make visible, shipped as an
+    // example of how things should look.
+    for (const note of diagrams) {
+      const file = files.find((entry) => entry.rel === note.rel)!;
+      const { spec } = parseDiagram(note.front);
+      expect({ rel: note.rel, hasBlock: file.text.includes(toMermaidBlock(spec)) }).toEqual({
+        rel: note.rel,
+        hasBlock: true,
+      });
+    }
+  });
+
+  it("escapes every label it draws, because a diagram renders vault text", () => {
+    for (const note of diagrams) {
+      const { spec } = parseDiagram(note.front);
+      const source = toMermaid(spec);
+      expect(source).not.toMatch(/<[a-zA-Z/]/);
+    }
   });
 });
 

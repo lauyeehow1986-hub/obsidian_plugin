@@ -80,3 +80,10 @@ Desktop.ini
 # deliberate `git add -f` — which is the point.
 *.eml
 *.msg
+
+# The `.svg` a diagram writes beside its note (§7 D1). Output, not fixture, on
+# the same argument as the `.base` files: the vault ships the diagram note, and
+# the SVG is regenerated from it on demand. Committing one would also mean the
+# picture in the repo could drift from the note that defines it, which is the
+# exact failure `generated_from` exists to make visible.
+**/89 Diagrams/*.svg

@@ -28,7 +28,7 @@ export interface ExporterDeps {
 export interface ExportRequest {
   /** Becomes the file name, with a date and, if needed, a counter appended. */
   basename: string;
-  extension: "csv" | "md" | "html" | "ics";
+  extension: "csv" | "md" | "html" | "ics" | "svg";
   content: string;
   /** What was exported, for the ledger: a view id, a board name. */
   subject: string;
@@ -118,6 +118,53 @@ export class Exporter {
     await this.deps.audit.append([entry]);
 
     return { file, path, rows: request.rows };
+  }
+
+  /**
+   * The same contract for a file that is bytes rather than text (§7 D1).
+   *
+   * A rasterised diagram cannot go through `write()` — handing a PNG to
+   * `vault.create` as a string corrupts it — but every guard around it is the
+   * same, so the two paths share the folder, the collision walk and the ledger
+   * entry rather than growing a second set. `rows` reads as "1" for a picture:
+   * the ledger's job here is to record that a file left the boards, not to
+   * count pixels.
+   */
+  async writeBinary(request: {
+    basename: string;
+    extension: "png";
+    bytes: Uint8Array;
+    subject: string;
+    detail: string;
+  }): Promise<ExportResult> {
+    const actor = this.deps.actor().trim();
+    if (actor === "") {
+      throw new Error(
+        "Set your initials in SCDB Cockpit settings before exporting — every export is recorded in the audit ledger against an actor.",
+      );
+    }
+
+    const folder = normalizePath(this.deps.exportsFolder());
+    await ensureFolder(this.deps.app, folder);
+    const path = this.freePath(folder, safeBasename(request.basename), request.extension);
+
+    // A fresh ArrayBuffer: a Uint8Array over a larger buffer would otherwise
+    // hand `createBinary` everything behind it, as the `.msg` importer found.
+    const copy = new ArrayBuffer(request.bytes.byteLength);
+    new Uint8Array(copy).set(request.bytes);
+    const file = await this.deps.app.vault.createBinary(path, copy);
+
+    await this.deps.audit.append([
+      {
+        ts: toVaultMinute(Date.now()),
+        actor,
+        action: "export",
+        subject: request.subject,
+        detail: `${request.detail} → ${path}`,
+      },
+    ]);
+
+    return { file, path, rows: 1 };
   }
 
   /** First free `name-date.ext`, then `name-date-2.ext`. Never overwrites (rule 8). */

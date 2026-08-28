@@ -5,6 +5,142 @@ clearly marked entry (CLAUDE.md §10).
 
 ## Unreleased
 
+### Added — D1, the flowchart builder with PowerPoint export
+
+A structured node/edge editor writing a `type: diagram` note in `89 Diagrams/`,
+compiled to Mermaid, rendered through Obsidian's **core** Mermaid support, and
+exported three ways: an `.svg` beside the note, a PNG at 2× or 3× into
+`95 Exports/`, and — the one that actually matters — **a PNG straight onto the
+clipboard**, ready to paste into a slide.
+
+**The differentiator is generating diagrams from data already held**, and three
+generators ship:
+
+- **The request lifecycle, drawn from the workflow spec.** The process as
+  configured, not as remembered. Stages carry their owner and SLA target, gated
+  stages are marked and carry the gate's own refusal message, and send-backs are
+  drawn dotted. A stage the spec leaves unconstrained gets one dotted arrow
+  labelled `unconstrained` rather than an arrow to all eleven others — §5.2
+  forbids quietly inventing a constraint the spec does not state, and saying
+  "unconstrained" out loud is the honest alternative to a hairball.
+- **The path one request actually took, drawn from its `history`.** Not the
+  lifecycle with a highlight on it: repeated visits to a stage are repeated
+  arrows, each labelled with what the previous stage cost, and a bounce count
+  goes in the title. §5.1 asks for dwell, age and bounce count together, and a
+  tidy lifecycle diagram is exactly what hides the third. Migration relabels are
+  folded away first, so renaming a stage never draws as a journey.
+- **A data-flow map for a governance submission**, built from a request's own
+  governance fields. Counts, year ranges, identifier scope and instrument states
+  only — never a name or a record id, on the same reasoning §5.11 keeps
+  identifiers out of composed URIs, because a diagram is a file that travels. An
+  **unmet control is drawn, not omitted**: a missing DUA on an identifiable
+  extraction is the loudest box on the page, because a data-flow diagram that
+  quietly leaves out the control nobody obtained is worse than no diagram.
+
+Generated diagrams stamp `generated_from` (`edata-request@3`, `REQ-2026-014`) and
+`generated_at`, and a **Redraw** button rebuilds from source. That stamp is the
+point: a lifecycle drawn from spec v3 and still in the vault after the spec moves
+to v4 is a picture of a process nobody follows, and it should be detectable
+rather than merely wrong. Redraw returns nothing rather than guessing when the
+source has gone — a redraw that silently produced an empty diagram would look
+like the process had been deleted.
+
+**Rendering goes through `window.mermaid`, not `MarkdownRenderer`, and the
+reason matters.** §7 D1 specifies rendering the fence with
+`MarkdownRenderer.render` and lifting the `<svg>`, which is the documented
+route — and on the machine this was built on it produces no SVG at all, in a
+detached host or an attached one, with no error raised anywhere. A4's Mermaid
+probe reported the same thing, which is precisely why §7 A4 asks for risky
+integrations to be probed rather than assumed. Obsidian exposes its own bundled
+Mermaid as `window.mermaid`, so the diagram is rendered by calling that
+directly: still core Mermaid, still no diagram library of ours and no bundle
+cost (rule 2, §3), and it returns the SVG as a string, which removes the polling
+and the timeout with it. The `MarkdownRenderer` route stays as the fallback if a
+future Obsidian stops exposing the global.
+
+**Obsidian loads Mermaid lazily**, so `window.mermaid` is undefined on a fresh
+start and only appears once something has rendered a fence. The renderer
+therefore warms it up with one throwaway `MarkdownRenderer` render before
+reaching for the global. The A4 probe does the same warm-up and exercises the
+same path — a diagnostic that reports on a route the feature does not take is
+worse than none.
+
+**Palette colours are converted to hex before they reach Mermaid, and refused if
+they are not.** `classDef` takes a comma-separated list, so a theme colour that
+resolves to `hsl(258, 88%, 66%)` — which is exactly what Obsidian's default
+accent does — turns one style declaration into four and fails the whole diagram
+with a parse error. The renderer normalises through a canvas context; the
+emitter refuses anything still carrying a comma, a space or a semicolon and
+falls back, so a caller who forgets cannot produce a broken diagram.
+
+**Labels are escaped, and this is the reason the Mermaid emitter is its own
+module.** Every label comes from vault content — a note title, a person's name, a
+stage label out of a YAML file somebody emailed over — and Mermaid treats markup
+in a label as markup when HTML labels are on. §8 forbids putting vault-derived
+content through `innerHTML`; handing it to Mermaid unescaped is the same act with
+an extra step. Labels are escaped character by character into Mermaid's decimal
+`#nnn;` entity form in a single pass (a second pass would mangle the `#` of every
+escape the first one wrote), and node ids — also hand-editable — are reduced to
+`[A-Za-z0-9_]` before they can become syntax, with a collision counter so two ids
+folding onto the same safe form stay apart.
+
+**An edge pointing at a node nothing declares is dropped and named.** Mermaid
+would otherwise invent a box labelled with the raw id, and an invented box in a
+governance diagram is the sort of thing that gets believed.
+
+**Never colour alone** (§6): each state prefixes a glyph onto its label, so a
+diagram still reads in greyscale, for a colour-blind reader, and in a PNG pasted
+into a deck nobody re-colours. Colours come from the same six-state semantic
+palette the boards use, resolved out of the live theme at render time and baked
+into the export as literal values so an exported file is self-contained.
+
+**Nodes and edges live in frontmatter, and the body carries a Mermaid block the
+plugin maintains** between `%% scdb:diagram %%` markers. Frontmatter because
+§5.1 makes it the source of truth and `processFrontMatter` merges key by key so
+unknown keys survive (rule 8); the generated block because rule 11 asks that
+everything written stay markdown a human can read and undo — uninstall the
+plugin tomorrow and core Mermaid still draws the picture. Prose outside the
+markers is never touched.
+
+The editor pane deliberately does **not** override `getState`/`setState`.
+Carrying our own key in the persisted view state is the obvious way to make the
+pane survive a restart, and it is what this view did first: the result was a
+view whose container Obsidian never attached, so the pane opened blank with no
+error anywhere. The pane is a workbench rather than a document — losing it on a
+restart costs one command, and `CockpitView` has the same shape for the same
+reason. A newly created diagram is handed to the pane directly rather than read
+back, because Obsidian's metadata cache is asynchronous and a note written a
+moment ago is not in it yet.
+
+Commands: *New flowchart*, *Open the flowchart editor for this note*, *Draw the
+workflow lifecycle*, *Draw what actually happened to a request*, *Draw the data
+flow for a request*.
+
+### Changed — the exporter
+
+`Exporter` grew a `writeBinary` path for the rasterised PNG (a picture handed to
+`vault.create` as a string is a corrupt file) and accepts `svg` as a text
+extension. Both take the same guards as every other export: the exports folder,
+the collision walk, and an `export` entry in the audit ledger (§5.6). The `.svg`
+written beside a diagram note is the one export that does not land in
+`95 Exports/` — §7 D1 asks for it next to the note, and it is regenerated from
+the note each time, so it replaces rather than dating. The ledger row is written
+either way.
+
+Saving a diagram note appends **nothing** to the ledger. It changes no stage,
+satisfies no gate and moves no identifier scope, and §5.12's precedent is that
+padding the ledger with things nobody needs to read is how a ledger stops being
+read. Exports are logged, every one.
+
+### Changed — diagnostics
+
+A4's core-Mermaid probe now exercises the path D1 actually uses: it warms
+Mermaid up, then calls `window.mermaid.render` and checks for an SVG, falling
+back to the `MarkdownRenderer` route only when the global is unreachable. It
+previously reported "could not confirm" on a machine where diagrams render
+perfectly well, which is the kind of false finding that teaches people to ignore
+a self-test.
+
 ### Added — C1, the policy register and revision tracking
 
 Drop a reissued policy into the vault, and the plugin freezes the version it is
