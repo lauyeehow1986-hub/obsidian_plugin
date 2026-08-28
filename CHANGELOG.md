@@ -5,6 +5,89 @@ clearly marked entry (CLAUDE.md §10).
 
 ## Unreleased
 
+### Added — C2, the variable catalogue
+
+The management UI over `87 Catalogue/` (§5.8): browse and search the catalogue,
+supersede a definition with a recorded reason, see what rests on each variable,
+and answer **"which definition was in force on this date"**.
+
+A **Catalogue** tab in the cockpit lists variables grouped by domain. Each row
+opens in place onto three things: the definition and its coding or range, the
+version chain with what moved at each step and why, and every note in the vault
+that cites it — grouped by whether it is a study, a form, a request, a script or
+a run.
+
+Four commands: **Show the variable catalogue**, **New catalogue variable**,
+**Revise a catalogue variable**, and **Which definition was in force**.
+
+**A revision supersedes; it never overwrites.** The current definition is pushed
+down into the note's own `history` — stamped with the version it was and the
+date it came into force — and only then does the head change. Both halves land
+in one `processFrontMatter` call, so unlike a policy revision there is no window
+where one exists without the other.
+
+**Two additions to §5.8's frontmatter, both because C2 has to answer something
+the example cannot express:**
+
+- **`history:`** — the definitions that came before. §5.8 carries `version` and
+  `supersedes: VAR-LVEF@2`, which name a prior version without saying what it
+  *said*. A pointer to a version number cannot answer what a variable meant when
+  an extraction ran, so the superseded text lives on the note in the same
+  append-only shape a request's `history` uses.
+- **`justification:`** — free text recording why an identifier is held. Required
+  by nothing, but it is what the board points at when `identifier: true`, and it
+  is the same answer D2's form export has to give against the study's approved
+  IRB scope.
+
+**Past values are never borrowed backwards.** Resolving an old version folds
+*forwards* from the start of the chain, and a field the chain never recorded by
+then resolves to "not recorded at that version" rather than to today's value.
+Answering "what did this mean in 2023" with the 2026 definition is the exact
+failure this feature exists to prevent, and it would be invisible — the answer
+would look confident and be wrong. The dialog says which fields it cannot
+answer, and names any undated version in the chain it had to skip. It does not
+list a field the data type rules out — a numeric variable has no coding, and
+"coding not recorded" is true, useless, and buries the case that matters. When
+the data type itself is unrecorded, nothing is ruled out.
+
+The lineage table's "what moved" column compares resolved states rather than
+listing what an entry happened to write, so the current version does not claim
+that the coding changed on a variable that has never had any.
+
+**Citations are read from both ends**, the same argument as the policy register:
+a variable names the studies that collect it and the form that captures it,
+while any other note names what it consumes in `variables:`. Three findings come
+out of that join and are counted on the board:
+
+- a citation naming a version the catalogue has **moved past** — the script's
+  claim was written against a definition that has since changed;
+- a citation naming **no version at all**, which is not stale but is unrecorded,
+  and is reported separately because it calls for a different action;
+- a citation naming a variable the catalogue **does not hold** — a typo, or
+  something being consumed that was never catalogued.
+
+Chain problems are reported apart from field problems: a duplicated version, a
+gap, a `supersedes` naming the wrong version, dates running backwards, or a
+version bump that kept no history. That last one is the common hand-editing
+failure — bumping `version:` in the frontmatter silently discards what the
+variable used to mean.
+
+**Governance:** a revision requires a typed reason, on the same rule as a gate
+override (§5.6) and a policy revision. It appends a `variable-revision` entry to
+the audit ledger — a new action, added for the reason `policy-revision` was: an
+auditor asks "when did this definition change, and who changed it", and an entry
+answering it has to be findable by action rather than by reading every detail
+cell. A revision that moves the identifier flag appends an **`identifier-scope`
+entry as well**, because §5.6 names that action in its own right and one
+combined entry would technically record the fact while practically hiding it.
+Ledger details carry field names and counts, never the definition text (rule 7).
+
+Test-vault fixtures ship with each finding staged against a real note: a
+three-version variable whose first version recorded only a definition, a
+categorical with coding, an identifier with no justification, a variable bumped
+to version 2 with an empty history, and a script doc whose three citations are
+stale, unversioned and orphaned respectively.
+
 ### Added — D1, the flowchart builder with PowerPoint export
 
 A structured node/edge editor writing a `type: diagram` note in `89 Diagrams/`,

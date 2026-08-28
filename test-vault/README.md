@@ -24,6 +24,8 @@ pick up a rebuild.
 | `85 Publications/` | three manuscripts | a second note type for Explore to infer fields from, and the publication half of the CV |
 | `00 Inbox/` | one capture | the note quick capture writes |
 | `40 Policies/` | three policies plus a reissued document | C1: one institutional policy at v3 with the v4 reissue waiting in `_incoming/`, one local SOP declaring the clauses it rests on from the *far* end, and one deliberately bare policy so the register's three findings fire |
+| `87 Catalogue/` | four variables | C2: one with a real three-version chain whose first version recorded only a definition, one categorical, one identifier with **no** justification, and one bumped to v2 with an empty `history` so the "only the version number survives" finding fires |
+| `50 Scripts/` | one script doc | the far end of the catalogue join: its three citations are stale (`@2` against a v3 variable), unversioned, and orphaned |
 | `_config/messages/` | `chase-up.md` | the message template, so tone is the user's and not the plugin's |
 | `_config/reports/` | the five B7 templates | worked examples of the report format, exactly as "Write the built-in report templates to _config" writes them — a fixture test holds them equal to the built-ins, so editing one in code without writing it out again fails the suite |
 

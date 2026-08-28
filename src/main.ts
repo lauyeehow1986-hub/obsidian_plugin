@@ -46,6 +46,16 @@ import {
 } from "./domain/policy/policy.js";
 import { indexIncoming } from "./domain/policy/register.js";
 import { PolicyWriter, RevisionRefused } from "./services/policyWriter.js";
+import {
+  CatalogueWriter,
+  RevisionRefused as VariableRevisionRefused,
+  type NewVariable,
+} from "./services/catalogueWriter.js";
+import { VARIABLE_TYPE, parseVariable, type VariableNote } from "./domain/catalogue/variable.js";
+import { noteCitations, type Citation } from "./domain/catalogue/dependants.js";
+import { buildCatalogue, type Catalogue } from "./domain/catalogue/register.js";
+import { InForceModal, NewVariableModal, ReviseVariableModal } from "./ui/VariableModals.js";
+import { VariablePicker } from "./ui/VariablePicker.js";
 import { PolicyRevisionModal } from "./ui/PolicyRevisionModal.js";
 import { PolicyPicker } from "./ui/PolicyPicker.js";
 import { governanceRisk } from "./domain/request/analytics.js";
@@ -205,6 +215,8 @@ export default class ScdbCockpitPlugin extends Plugin {
   emlImport!: EmlImport;
   /** Flowchart notes, and the SVG/PNG they export to (§7 D1). */
   diagrams!: DiagramWriter;
+  /** The variable catalogue and its version chain (§5.8, §7 C2). */
+  catalogueWriter!: CatalogueWriter;
 
   /** The mode HUD (§7 A3). Null until `onload` has run. */
   private statusBar: HTMLElement | null = null;
@@ -287,6 +299,14 @@ export default class ScdbCockpitPlugin extends Plugin {
       app: this.app,
       exporter: this.exporter,
       diagramsFolder: () => this.settings.folders.diagrams,
+    });
+
+    this.catalogueWriter = new CatalogueWriter({
+      app: this.app,
+      audit: this.audit,
+      actor: () => this.settings.actor,
+      catalogueFolder: () => this.settings.folders.catalogue,
+      reindex: (file) => this.notes.update(file),
     });
 
     this.reportTemplates = new ReportTemplateStore(
@@ -803,6 +823,30 @@ export default class ScdbCockpitPlugin extends Plugin {
       id: "revise-policy",
       name: "Revise a policy",
       callback: () => void this.pickPolicyToRevise(),
+    });
+
+    this.addCommand({
+      id: "catalogue",
+      name: "Show the variable catalogue",
+      callback: () => void this.activateCockpit("catalogue"),
+    });
+
+    this.addCommand({
+      id: "new-variable",
+      name: "New catalogue variable",
+      callback: () => this.newVariable(),
+    });
+
+    this.addCommand({
+      id: "revise-variable",
+      name: "Revise a catalogue variable",
+      callback: () => this.pickVariable((variable) => this.reviseVariable(variable)),
+    });
+
+    this.addCommand({
+      id: "variable-in-force",
+      name: "Which definition was in force",
+      callback: () => this.pickVariable((variable) => this.askInForce(variable)),
     });
 
     this.addCommand({
@@ -1552,6 +1596,102 @@ export default class ScdbCockpitPlugin extends Plugin {
         reportError(error, "could not freeze the policy.");
       }
     }
+  }
+
+  // --- the variable catalogue (§5.8, §7 C2) ----------------------------------
+
+  /**
+   * Every variable note in the vault.
+   *
+   * Parsed on demand, like policies and publications. A catalogue is hundreds
+   * of entries at most, and the alternative — a cached projection — is one more
+   * thing that can go stale behind a governance answer.
+   */
+  variables(): VariableNote[] {
+    const variables: VariableNote[] = [];
+    for (const entry of this.notes.all()) {
+      if (entry.type !== VARIABLE_TYPE) continue;
+      variables.push(parseVariable(entry.file.path, entry.frontmatter));
+    }
+    return variables.sort((a, b) => a.id.localeCompare(b.id) || a.path.localeCompare(b.path));
+  }
+
+  /**
+   * Every citation of a variable, from every other note.
+   *
+   * The far end of the join §5.8 describes. A run record names the variables
+   * it consumed, a script doc the ones it reads, a form the ones it creates —
+   * and none of them should have to edit the catalogue note to be counted.
+   */
+  variableCitations(): Citation[] {
+    const citations: Citation[] = [];
+    for (const entry of this.notes.all()) {
+      citations.push(...noteCitations(entry.file.path, entry.type, entry.frontmatter));
+    }
+    return citations;
+  }
+
+  /** The catalogue board's model: rows, groups, dependants and the counts. */
+  catalogue(): Catalogue {
+    return buildCatalogue({ variables: this.variables(), citations: this.variableCitations() });
+  }
+
+  /** Create a variable note from the dialog, then open it. */
+  newVariable(): void {
+    new NewVariableModal(this.app, async (input: NewVariable) => {
+      try {
+        const file = await this.catalogueWriter.create(input);
+        this.refreshViews();
+        await this.app.workspace.getLeaf(true).openFile(file);
+        new Notice(`SCDB: ${input.id} added to the catalogue at version 1.`, 6000);
+      } catch (error) {
+        reportError(error, "could not create the variable note.");
+      }
+    }).open();
+  }
+
+  /** Supersede a variable's definition, keeping what it used to say. */
+  reviseVariable(variable: VariableNote): void {
+    const file = this.app.vault.getAbstractFileByPath(variable.path);
+    if (!(file instanceof TFile)) {
+      new Notice(`SCDB: ${variable.path} is no longer in the vault.`, 8000);
+      return;
+    }
+
+    new ReviseVariableModal(this.app, variable, async ({ changes, reason }) => {
+      try {
+        const plan = await this.catalogueWriter.revise({ file, variable, changes, reason });
+        this.refreshViews();
+        new Notice(
+          `SCDB: ${variable.id} is now version ${plan.toVersion}; version ${plan.fromVersion} is kept on the note.`,
+          8000,
+        );
+      } catch (error) {
+        if (error instanceof VariableRevisionRefused) {
+          new Notice(`SCDB: cannot revise. ${error.message}`, 10000);
+        } else {
+          reportError(error, "could not revise the variable.");
+        }
+      }
+    }).open();
+  }
+
+  /** "Which definition was in force on this date" (§5.8). */
+  askInForce(variable: VariableNote): void {
+    new InForceModal(this.app, variable).open();
+  }
+
+  /** Pick a variable, then ask what it meant on a date. */
+  private pickVariable(onPick: (variable: VariableNote) => void): void {
+    const variables = this.variables();
+    if (variables.length === 0) {
+      new Notice(
+        `SCDB: the catalogue is empty. Add a note to ${this.settings.folders.catalogue} with \`type: variable\`.`,
+        8000,
+      );
+      return;
+    }
+    new VariablePicker(this.app, variables, onPick).open();
   }
 
   // --- publications (§5.4, §7 B5) -------------------------------------------

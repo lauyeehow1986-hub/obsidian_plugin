@@ -2181,3 +2181,101 @@
 .scdb-root button.scdb-icon-button:hover {
   color: var(--scdb-overdue);
 }
+
+/* ------------------------------------------------------- variable catalogue --
+ * §7 C2. A catalogue row opens in place rather than into a modal: the two
+ * questions it answers — what this has meant, and what rests on it — are read
+ * side by side with the definition, and a dialog would hide the definition
+ * behind the answer.
+ */
+
+.scdb-catalogue__search {
+  flex: 1 1 12rem;
+  min-width: 0;
+}
+
+/* The base card is a row of [main | actions]. A catalogue card is that row
+ * with a detail panel underneath it, so the flex direction flips and the row
+ * becomes an element of its own. */
+.scdb-card--stacked {
+  flex-direction: column;
+  gap: 0;
+}
+
+.scdb-card__row {
+  display: flex;
+  gap: 4px;
+  align-items: stretch;
+}
+
+.scdb-card__detail {
+  padding: var(--scdb-2);
+  border-top: 1px solid var(--background-modifier-border);
+  font-size: var(--font-ui-small);
+}
+
+.scdb-card__detail > p:first-child {
+  margin-top: 0;
+}
+
+.scdb-card__detail .scdb-table {
+  margin-bottom: var(--scdb-2);
+}
+
+/* Definition lists: label above value at sidebar width, side by side once
+ * there is room. Numbers stay tabular so ranges line up. */
+.scdb-deflist {
+  display: grid;
+  gap: var(--scdb-1);
+  margin: var(--scdb-2) 0;
+}
+
+.scdb-deflist > div {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 2px;
+}
+
+@media (min-width: 480px) {
+  .scdb-deflist > div {
+    grid-template-columns: 9rem 1fr;
+    gap: var(--scdb-2);
+  }
+}
+
+.scdb-deflist dt {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.scdb-deflist dd {
+  margin: 0;
+  color: var(--text-normal);
+}
+
+/* A button that reads as a link. Scoped through the root for the same reason
+ * as `.scdb-icon-button`: `button:not(.clickable-icon)` outranks one class. */
+.scdb-root button.scdb-linkish,
+.scdb-modal button.scdb-linkish {
+  padding: 0;
+  height: auto;
+  border: none;
+  background: none;
+  box-shadow: none;
+  color: var(--text-accent);
+  font-size: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.scdb-root button.scdb-linkish:hover,
+.scdb-modal button.scdb-linkish:hover {
+  text-decoration: underline;
+}
+
+/* An inline checkbox field sits on one line rather than stacking. */
+.scdb-field--inline {
+  flex-direction: row;
+  gap: var(--scdb-1);
+  align-items: center;
+}

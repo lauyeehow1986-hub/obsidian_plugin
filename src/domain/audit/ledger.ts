@@ -48,6 +48,13 @@ export const AUDIT_ACTIONS = [
   // "when did this rule change, and who changed it" — and an entry that
   // answers it has to be findable by action, not by reading every detail cell.
   "policy-revision",
+  // Superseding a catalogue variable's definition (§5.8, §7 C2). Same
+  // argument as `policy-revision`: "when did this definition change, and
+  // who changed it" has to be findable by action. A revision that moves the
+  // identifier flag logs `identifier-scope` as well — §5.6 names that action
+  // in its own right, and an auditor looks for it rather than reading every
+  // revision's detail cell.
+  "variable-revision",
   "correction",
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];

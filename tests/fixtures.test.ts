@@ -32,6 +32,10 @@ import {
   type PlanOptions,
 } from "../src/domain/comms/emlThread";
 import { CAPTURE_TYPE } from "../src/domain/capture/capture";
+import { VARIABLE_TYPE, parseVariable } from "../src/domain/catalogue/variable";
+import { noteCitations } from "../src/domain/catalogue/dependants";
+import { buildCatalogue } from "../src/domain/catalogue/register";
+import { definitionInForceOn } from "../src/domain/catalogue/lineage";
 import { execFileSync } from "node:child_process";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
@@ -425,6 +429,68 @@ describe("policy notes (§5.14, §7 C1)", () => {
     });
 
     expect(map.counts).toEqual({ "clause-gone": 1, affected: 1, review: 1, clear: 1 });
+  });
+});
+
+describe("catalogue variables (§5.8, §7 C2)", () => {
+  const variables = typed(VARIABLE_TYPE).map((note) => parseVariable(note.rel, note.front));
+  const citations = notes.flatMap((note) =>
+    noteCitations(note.rel, String(note.front["type"] ?? ""), note.front),
+  );
+
+  it("ships a catalogue, so the board has something to open", () => {
+    expect(variables.length).toBeGreaterThan(0);
+  });
+
+  it("carries exactly the findings the fixtures are there to demonstrate", () => {
+    // Pinned rather than asserted loosely: these fixtures exist to make each
+    // finding fire against real notes, and one quietly disappearing would take
+    // the only end-to-end exercise of that code path with it.
+    const catalogue = buildCatalogue({ variables, citations });
+    expect(catalogue.summary).toMatchObject({
+      identifiers: 1,
+      unjustified: 1,
+      stale: 1,
+      orphans: 1,
+    });
+  });
+
+  it("has one variable with a real chain and one deliberately without", () => {
+    const chained = variables.find((variable) => variable.id === "VAR-EJECTION")!;
+    expect(chained.history.map((record) => record.version)).toEqual([1, 2]);
+
+    const stranded = variables.find((variable) => variable.id === "VAR-INDEX-DATE")!;
+    expect(stranded.history).toEqual([]);
+  });
+
+  it("answers what the chained variable meant before its current version", () => {
+    const chained = variables.find((variable) => variable.id === "VAR-EJECTION")!;
+    const answer = definitionInForceOn(chained, Date.parse("2020-06-01T12:00:00Z"));
+    expect(answer.version).toBe(1);
+    // Version 1 never recorded units, and today's "%" must not be borrowed
+    // backwards to fill the gap.
+    expect(answer.definition.units).toBeNull();
+  });
+
+  it("keeps every fixture parsing clean apart from the one staged field finding", () => {
+    for (const variable of variables) {
+      const staged = variable.id === "VAR-CASE-REF"; // identifier with no justification
+      expect({ id: variable.id, clean: variable.problems.length === 0 }).toEqual({
+        id: variable.id,
+        clean: !staged,
+      });
+    }
+  });
+
+  it("puts the stranded version's finding on the chain, not on the fields", () => {
+    // The two are deliberately separate: `parseVariable` judges the note's
+    // fields, `chainProblems` judges the shape of its history. VAR-INDEX-DATE
+    // is a well-formed note whose *chain* lost its previous definition, and
+    // reporting that as a field problem would blur the distinction.
+    const catalogue = buildCatalogue({ variables, citations });
+    const row = catalogue.rows.find((entry) => entry.variable.id === "VAR-INDEX-DATE")!;
+    expect(row.variable.problems).toEqual([]);
+    expect(row.chain.join(" ")).toContain("only the version number survives");
   });
 });
 
