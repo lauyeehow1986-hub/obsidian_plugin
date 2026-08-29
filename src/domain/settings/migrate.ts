@@ -19,6 +19,7 @@ import {
   defaultEvents,
   defaultApps,
   defaultCompute,
+  defaultSources,
   defaultPublications,
   defaultSettings,
   isMode,
@@ -31,11 +32,16 @@ import {
   type AppGrantSetting,
   type AppsConfig,
   type ComputeConfig,
+  type SourcesConfig,
   type PublicationsConfig,
   type ScdbSettings,
 } from "./schema.js";
 import { ATTACHMENT_POLICIES, type AttachmentPolicy } from "../comms/emlThread.js";
 import { MIN_IDLE_MINUTES, type TimerState } from "../effort/timer.js";
+// The one value the sources block shares with the gateway. Imported rather
+// than duplicated because a settings cap higher than the gateway's would be a
+// setting that silently does nothing.
+import { MAX_RESULTS } from "../sources/gateway.js";
 import { isPythonIsolation } from "../compute/harness.js";
 
 export interface MigrationResult {
@@ -186,6 +192,7 @@ export function migrateSettings(raw: unknown): MigrationResult {
   merged.publications = repairPublications(merged.publications, notes);
   merged.apps = repairApps(merged.apps, notes);
   merged.compute = repairCompute(merged.compute, notes);
+  merged.sources = repairSources(merged.sources, notes);
 
   // Folders: fill gaps, keep customised values, drop nothing.
   const folders: Record<string, unknown> = isRecord(merged.folders) ? { ...merged.folders } : {};
@@ -506,6 +513,47 @@ function repairCompute(value: unknown, notes: string[]): ComputeConfig {
 
   const buttons = value["showRunButtons"];
   if (typeof buttons === "boolean") base.showRunButtons = buttons;
+
+  return base;
+}
+
+/**
+ * External sources (§7 E1).
+ *
+ * The failure this guards is specific: a `sources` block that is not readable
+ * must leave every switch **off**, never on. Anywhere else in this file a bad
+ * value falls back to a sensible default; here the only safe default is the one
+ * that makes no requests, so an unreadable block is discarded outright rather
+ * than partially trusted.
+ *
+ * There is deliberately no repair for a host, because settings hold none.
+ */
+function repairSources(value: unknown, notes: string[]): SourcesConfig {
+  const base = defaultSources();
+  if (!isRecord(value)) {
+    if (value !== undefined) {
+      notes.push("External-source settings were not readable; every source was left off.");
+    }
+    return base;
+  }
+
+  // `=== true` rather than a truthy check: a stored "false", a 1 or a "yes"
+  // must not switch a network source on.
+  base.pubmed = value["pubmed"] === true;
+  base.ctgov = value["ctgov"] === true;
+
+  const email = value["contactEmail"];
+  if (typeof email === "string") base.contactEmail = email.trim();
+
+  const timeout = value["timeoutSeconds"];
+  if (typeof timeout === "number" && Number.isFinite(timeout)) {
+    base.timeoutSeconds = Math.min(120, Math.max(5, Math.round(timeout)));
+  }
+
+  const max = value["maxResults"];
+  if (typeof max === "number" && Number.isFinite(max)) {
+    base.maxResults = Math.min(MAX_RESULTS, Math.max(1, Math.round(max)));
+  }
 
   return base;
 }

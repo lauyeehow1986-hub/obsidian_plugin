@@ -126,6 +126,12 @@ import { MODES, defaultSettings, type Mode, type ScdbSettings } from "./domain/s
 import type { FieldDef, Query, Row } from "./domain/query/model.js";
 import type { SavedView } from "./domain/query/savedView.js";
 import { AuditLog } from "./services/auditLog.js";
+import { HttpGateway } from "./services/httpGateway.js";
+import { SourceSearch } from "./services/sourceSearch.js";
+import { SourceWriter } from "./services/sourceWriter.js";
+import { SourceSearchModal } from "./ui/SourceSearchModal.js";
+import { EnrichModal } from "./ui/EnrichModal.js";
+import type { SourceId } from "./domain/sources/gateway.js";
 import { BackupService } from "./services/backup.js";
 import { collectDiagnostics } from "./services/diagnostics.js";
 import { applyRepairs, collectIntegrityFindings } from "./services/integrity.js";
@@ -258,6 +264,16 @@ export default class ScdbCockpitPlugin extends Plugin {
   extract!: ExtractWriter;
   /** Report templates: the five built in, plus anything in `_config/reports/` (§7 B7). */
   reportTemplates!: ReportTemplateStore;
+
+  /**
+   * The one gateway (rule 3). Constructed always, enabled never by default:
+   * every method checks settings for itself, so holding the object costs
+   * nothing and there is no second path that could skip the check.
+   */
+  gateway!: HttpGateway;
+  /** External searches and DOI lookups (§7 E1). */
+  sourceSearch!: SourceSearch;
+  sourceWriter!: SourceWriter;
   /** Building a report from a template and the vault (§7 B7). */
   reports!: ReportBuilder;
   /** The monthly effort tables in `80 Time/` (§5.3). */
@@ -433,6 +449,29 @@ export default class ScdbCockpitPlugin extends Plugin {
       runsFolder: () => this.settings.folders.runs,
       settings: () => this.computeSettings(),
       reindex: (file) => this.notes.update(file),
+    });
+
+    this.gateway = new HttpGateway({
+      audit: this.audit,
+      actor: () => this.settings.actor,
+      // Read fresh on every request rather than captured, so switching a
+      // source off in settings takes effect at once and not after a reload.
+      enabled: (source) => this.settings.sources[source] === true,
+      timeoutSeconds: () => this.settings.sources.timeoutSeconds,
+    });
+
+    this.sourceSearch = new SourceSearch({
+      gateway: this.gateway,
+      contactEmail: () => this.settings.sources.contactEmail,
+      maxResults: () => this.settings.sources.maxResults,
+    });
+
+    this.sourceWriter = new SourceWriter({
+      app: this.app,
+      notes: this.notes,
+      audit: this.audit,
+      actor: () => this.settings.actor,
+      briefingsFolder: () => this.settings.folders.briefings,
     });
 
     this.reportTemplates = new ReportTemplateStore(
@@ -1071,6 +1110,33 @@ export default class ScdbCockpitPlugin extends Plugin {
         const file = activeMarkdownFile(this);
         if (file === null) return false;
         if (!checking) void this.pickBlock(file, (block) => this.runBlock(file, block));
+        return true;
+      },
+    });
+
+    this.addCommand({
+      id: "search-source",
+      name: "Search an external source",
+      callback: () => {
+        new SourceSearchModal(this.app, {
+          search: this.sourceSearch,
+          writer: this.sourceWriter,
+          enabled: (source: SourceId) => this.settings.sources[source] === true,
+          today: () => ({ date: toVaultDate(Date.now()), minute: toVaultMinute(Date.now()) }),
+          onWritten: (file) => void this.app.workspace.getLeaf(false).openFile(file),
+        }).open();
+      },
+    });
+
+    this.addCommand({
+      id: "enrich-publication",
+      name: "Fill in this publication from PubMed",
+      checkCallback: (checking: boolean) => {
+        const file = activeMarkdownFile(this);
+        if (file === null) return false;
+        const front = this.app.metadataCache.getFileCache(file)?.frontmatter ?? {};
+        if (front["type"] !== "publication") return false;
+        if (!checking) this.openEnrich(file, front);
         return true;
       },
     });
@@ -2490,6 +2556,36 @@ export default class ScdbCockpitPlugin extends Plugin {
   }
 
   // --- the interpreter console (§7 F2) --------------------------------------
+
+  /**
+   * Offer to fill a publication note in from PubMed (§7 E1).
+   *
+   * Seeded from whatever identifier the note already carries, because the
+   * common case is a note with a DOI and nothing else. Sending only that
+   * identifier is what keeps this inside rule 4: the rest of the note stays
+   * where it is.
+   */
+  private openEnrich(file: TFile, front: Readonly<Record<string, unknown>>): void {
+    if (!this.settings.sources.pubmed) {
+      new Notice(
+        "SCDB: PubMed is switched off. Turn it on in settings first — nothing was sent.",
+        8000,
+      );
+      return;
+    }
+    const seed = ["pmid", "doi"]
+      .map((key) => (front[key] === undefined || front[key] === null ? "" : String(front[key])))
+      .find((value) => value.trim() !== "");
+
+    new EnrichModal(this.app, {
+      search: this.sourceSearch,
+      writer: this.sourceWriter,
+      file,
+      frontmatter: front,
+      seed: seed ?? "",
+      onDone: () => this.notes.update(file),
+    }).open();
+  }
 
   /**
    * Open the console, reusing the pane if one is already open.

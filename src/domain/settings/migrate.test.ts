@@ -602,4 +602,74 @@ describe("migrateSettings", () => {
     });
   });
 
+  describe("v10 -> v11: external sources (§7 E1)", () => {
+    it("leaves every source off on an upgrade from v10", () => {
+      // Rule 3: nothing is enabled on first install, and an upgrade is a first
+      // install of this feature.
+      const result = migrateSettings({ schemaVersion: 10, actor: "yh" });
+      expect(result.settings.sources).toEqual({
+        pubmed: false,
+        ctgov: false,
+        contactEmail: "",
+        timeoutSeconds: 20,
+        maxResults: 20,
+      });
+      expect(result.settings.schemaVersion).toBe(11);
+      expect(result.settings.actor).toBe("yh");
+    });
+
+    it("keeps the switches the user actually set", () => {
+      const result = migrateSettings({
+        schemaVersion: 11,
+        sources: { pubmed: true, ctgov: false, contactEmail: " a@b.org " },
+      });
+      expect(result.settings.sources.pubmed).toBe(true);
+      expect(result.settings.sources.ctgov).toBe(false);
+      expect(result.settings.sources.contactEmail).toBe("a@b.org");
+    });
+
+    it("turns everything off when the block is not readable", () => {
+      // The only safe reading of a corrupt sources block is the one that makes
+      // no requests, so it is discarded rather than partially trusted.
+      const result = migrateSettings({ schemaVersion: 11, sources: "all of them" });
+      expect(result.settings.sources.pubmed).toBe(false);
+      expect(result.settings.sources.ctgov).toBe(false);
+      expect(result.notes.join(" ")).toContain("left off");
+    });
+
+    it("does not treat a truthy non-boolean as consent", () => {
+      const result = migrateSettings({
+        schemaVersion: 11,
+        sources: { pubmed: "yes", ctgov: 1 },
+      });
+      expect(result.settings.sources.pubmed).toBe(false);
+      expect(result.settings.sources.ctgov).toBe(false);
+    });
+
+    it("clamps the timeout and the result count", () => {
+      const wild = migrateSettings({
+        schemaVersion: 11,
+        sources: { timeoutSeconds: 99999, maxResults: 100000 },
+      }).settings.sources;
+      expect(wild.timeoutSeconds).toBe(120);
+      expect(wild.maxResults).toBe(50);
+
+      const tiny = migrateSettings({
+        schemaVersion: 11,
+        sources: { timeoutSeconds: 0, maxResults: 0 },
+      }).settings.sources;
+      expect(tiny.timeoutSeconds).toBe(5);
+      expect(tiny.maxResults).toBe(1);
+    });
+
+    it("holds no host, because settings cannot name one", () => {
+      // The allowlist is a constant in domain/sources/gateway. If a host ever
+      // becomes settable, this test is the one that should stop it.
+      const stored = { schemaVersion: 11, sources: { host: "evil.example", hosts: ["x"] } };
+      const sources = migrateSettings(stored).settings.sources as unknown as Record<string, unknown>;
+      expect(sources["host"]).toBeUndefined();
+      expect(sources["hosts"]).toBeUndefined();
+    });
+  });
+
 });

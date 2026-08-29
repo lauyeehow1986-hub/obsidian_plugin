@@ -8,7 +8,7 @@
 import type { AttachmentPolicy } from "../comms/emlThread";
 import type { TimerState } from "../effort/timer";
 
-export const CURRENT_SETTINGS_VERSION = 10;
+export const CURRENT_SETTINGS_VERSION = 11;
 
 /** The three hats. Mode is the organising metaphor, not a cosmetic filter (§7 A3). */
 export const MODES = ["biostat", "hod", "research-core"] as const;
@@ -63,6 +63,7 @@ export interface ScdbSettings {
   publications: PublicationsConfig;
   apps: AppsConfig;
   compute: ComputeConfig;
+  sources: SourcesConfig;
   /** Unrecognised keys are preserved verbatim — see rule 8, never destroy data. */
   [extra: string]: unknown;
 }
@@ -387,6 +388,49 @@ export function defaultCompute(): ComputeConfig {
   };
 }
 
+/**
+ * External sources (§7 E1). **The only part of this plugin that reaches a
+ * network, and it is off.**
+ *
+ * Rule 3 in three parts, and all three live here:
+ *
+ * - *"off unless that specific module is enabled"* — one switch per source, not
+ *   one switch for "the internet". Turning PubMed on says nothing about
+ *   ClinicalTrials.gov.
+ * - *"targets an allowlisted host"* — **not represented here at all**, and its
+ *   absence is the design. The hosts are a constant in `domain/sources/gateway`
+ *   because a host the user can type is a host a note can suggest. Settings
+ *   choose between sources that already exist; they cannot invent one.
+ * - *"nothing is enabled on first install"* — `defaultSources()` returns every
+ *   switch false.
+ *
+ * Nothing here makes a request. Every fetch is one explicit action with the
+ * literal URL shown first (rule 4).
+ */
+export interface SourcesConfig {
+  /** PubMed via NCBI E-utilities. */
+  pubmed: boolean;
+  /** ClinicalTrials.gov API v2. */
+  ctgov: boolean;
+  /**
+   * An address sent to NCBI so they can contact whoever is overloading them,
+   * which their usage policy asks for.
+   *
+   * **Empty unless the user types one in, and never filled in from anywhere
+   * the plugin happens to know an address.** It is the one field in this whole
+   * schema whose value leaves the machine, so it is the user's to give.
+   */
+  contactEmail: string;
+  /** How long a request may take before it is abandoned. */
+  timeoutSeconds: number;
+  /** Results asked for per search. Capped again in `domain/sources/gateway`. */
+  maxResults: number;
+}
+
+export function defaultSources(): SourcesConfig {
+  return { pubmed: false, ctgov: false, contactEmail: "", timeoutSeconds: 20, maxResults: 20 };
+}
+
 export function defaultSettings(): ScdbSettings {
   return {
     schemaVersion: CURRENT_SETTINGS_VERSION,
@@ -403,6 +447,7 @@ export function defaultSettings(): ScdbSettings {
     publications: defaultPublications(),
     apps: defaultApps(),
     compute: defaultCompute(),
+    sources: defaultSources(),
   };
 }
 

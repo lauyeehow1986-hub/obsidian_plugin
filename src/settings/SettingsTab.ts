@@ -12,6 +12,12 @@ import { buildMailto, buildTeamsChat, MIN_URI_CEILING } from "../domain/comms/ur
 import { probeHandler, reportLaunch } from "../services/protocol.js";
 import { LANGUAGE_LABELS, type RunLanguage } from "../domain/compute/block.js";
 import {
+  MAX_RESULTS,
+  MISSING_SOURCE,
+  SOURCES,
+  SOURCE_IDS,
+} from "../domain/sources/gateway.js";
+import {
   interpreterLabel,
   isPythonIsolation,
   ISOLATION_LABELS,
@@ -106,6 +112,7 @@ export class ScdbSettingsTab extends PluginSettingTab {
     this.eventsSection(containerEl);
     this.appsSection(containerEl);
     this.computeSection(containerEl);
+    this.sourcesSection(containerEl);
     this.backupSection(containerEl);
 
     // Surfacing migration notes here rather than only in the console: on the
@@ -474,6 +481,102 @@ export class ScdbSettingsTab extends PluginSettingTab {
             await this.plugin.saveSettings();
           }),
       );
+  }
+
+
+  /**
+   * External sources (§7 E1). **The only screen in this plugin that can let
+   * anything reach a network.**
+   *
+   * What is deliberately absent is a host field. Rule 3 says every request
+   * "targets an allowlisted host", and an allowlist the user can add to is not
+   * one — a colleague, a circular or a note could talk somebody into pasting an
+   * address in. The hosts are a constant in the source; these switches only
+   * choose between sources that already exist.
+   *
+   * Each source is its own switch, because "the internet" is not a permission
+   * anyone can reason about.
+   */
+  private sourcesSection(containerEl: HTMLElement): void {
+    containerEl.createEl("h3", { text: "External sources" });
+
+    containerEl.createEl("p", {
+      cls: "setting-item-description",
+      text:
+        "Everything else in this plugin works with the network cable pulled, and this is the " +
+        "one exception. Off until you switch a source on, read-only, and never automatic: " +
+        "every request is one action that first shows you the exact address it would ask for. " +
+        "Each one is recorded in the audit ledger, whether it succeeds or not.",
+    });
+
+    for (const id of SOURCE_IDS) {
+      const spec = SOURCES[id];
+      new Setting(containerEl)
+        .setName(spec.label)
+        .setDesc(`Read-only searches against ${spec.host} (${spec.operator}).`)
+        .addToggle((toggle) =>
+          toggle.setValue(this.plugin.settings.sources[id] === true).onChange(async (value) => {
+            this.plugin.settings.sources[id] = value;
+            await this.plugin.saveSettings();
+          }),
+        );
+    }
+
+    new Setting(containerEl)
+      .setName("Contact address for NCBI")
+      .setDesc(
+        "Optional, and the only value in these settings that leaves the machine. NCBI ask " +
+          "callers to identify themselves so they can get in touch about heavy use; without " +
+          "one they simply apply a lower rate limit. Left empty unless you type one — it is " +
+          "never taken from anywhere else.",
+      )
+      .addText((text) =>
+        text
+          .setPlaceholder("you@example.org")
+          .setValue(this.plugin.settings.sources.contactEmail)
+          .onChange(async (value) => {
+            this.plugin.settings.sources.contactEmail = value.trim();
+            await this.plugin.saveSettings();
+          }),
+      );
+
+    new Setting(containerEl)
+      .setName("Results per search")
+      .setDesc(`How many records to ask for. At most ${MAX_RESULTS}.`)
+      .addText((text) =>
+        text
+          .setPlaceholder("20")
+          .setValue(String(this.plugin.settings.sources.maxResults))
+          .onChange(async (value) => {
+            const count = Number(value);
+            if (!Number.isFinite(count)) return;
+            this.plugin.settings.sources.maxResults = Math.min(
+              MAX_RESULTS,
+              Math.max(1, Math.round(count)),
+            );
+            await this.plugin.saveSettings();
+          }),
+      );
+
+    new Setting(containerEl)
+      .setName("Timeout")
+      .setDesc("Seconds to wait for a reply before giving up.")
+      .addText((text) =>
+        text
+          .setPlaceholder("20")
+          .setValue(String(this.plugin.settings.sources.timeoutSeconds))
+          .onChange(async (value) => {
+            const seconds = Number(value);
+            if (!Number.isFinite(seconds)) return;
+            this.plugin.settings.sources.timeoutSeconds = Math.min(
+              120,
+              Math.max(5, Math.round(seconds)),
+            );
+            await this.plugin.saveSettings();
+          }),
+      );
+
+    containerEl.createEl("p", { cls: "setting-item-description", text: MISSING_SOURCE });
   }
 
   /** Report templates (§7 B7). Nothing to configure until you want to edit one. */

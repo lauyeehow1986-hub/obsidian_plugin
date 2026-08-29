@@ -2766,3 +2766,103 @@
    * a hole punched in a dark theme. */
   background: #fff;
 }
+
+/* --- external sources (E1) ---------------------------------------------- */
+
+/* A checkbox and its label on one line, aligned at the top so a two-line
+   title does not drag the box down to the middle of it. Used for the result
+   list, where the title is the thing being read and the box is incidental. */
+.scdb-check {
+  display: flex;
+  gap: var(--scdb-1);
+  align-items: flex-start;
+  font-size: var(--font-ui-small);
+}
+
+.scdb-check input[type="checkbox"] {
+  margin-top: 3px;
+  flex: 0 0 auto;
+}
+
+.scdb-check > span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.scdb-check small {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+/* The confirmation shows a URL, and a URL is the one thing in this plugin
+   that must NOT scroll out of sight: rule 4 asks for the payload shown, and a
+   payload you have to drag sideways to read has not been shown. Everywhere
+   else `.scdb-code` keeps `white-space: pre` on purpose. */
+.scdb-code--wrap {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 12em;
+}
+
+/* Send and Cancel stay put while the request preview scrolls. Found at
+   620x720 by measuring the live dialog: the modal scrolled 37px while the
+   actions sat 20px past its bottom edge, so "Send this request" was half
+   drawn and unreachable. It is the single most consequential button in the
+   plugin — the one that decides whether anything leaves the machine — and a
+   confirmation whose confirm button is off-screen is worse than no
+   confirmation, because the person will hunt for another way to do it. Same
+   fix the run, agenda and extract dialogs carry. */
+.scdb-sources .scdb-modal__actions {
+  position: sticky;
+  bottom: 0;
+  margin-bottom: 0;
+  padding: var(--scdb-2) 0;
+  background: var(--background-primary);
+}
+
+.scdb-sources__results {
+  max-height: 40vh;
+  overflow-y: auto;
+}
+
+.scdb-sources__results li {
+  padding: var(--scdb-1) 0;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.scdb-details {
+  margin: var(--scdb-1) 0;
+  font-size: var(--font-ui-smaller);
+}
+
+.scdb-details summary {
+  cursor: pointer;
+  color: var(--text-muted);
+}
+
+/* A field where the note and the service disagree. Never colour alone (§6):
+   the row is tinted AND carries a "differs" badge, so it reads the same to
+   somebody who cannot see the tint. */
+.scdb-row--conflict {
+  background: var(--background-secondary);
+}
+
+.scdb-badge {
+  margin-left: 6px;
+  padding: 0 6px;
+  border-radius: 8px;
+  font-size: var(--font-ui-smaller);
+  white-space: nowrap;
+}
+
+.scdb-badge--warn {
+  border: 1px solid var(--scdb-at-risk);
+  color: var(--text-normal);
+}
+
+.scdb-sources__fields td {
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}

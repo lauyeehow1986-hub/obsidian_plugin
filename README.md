@@ -580,6 +580,67 @@ Correspondence notes and correspondence-derived fields are left out by default,
 because an export is a file that travels and those hold message content. The
 confirmation names what was dropped before anything is written.
 
+## Searching PubMed and ClinicalTrials.gov
+
+**This is the only part of the plugin that reaches a network, and it is off.**
+Everything else works with the cable pulled and always will. Turn a source on in
+settings — one switch each for PubMed and ClinicalTrials.gov — and
+**Search an external source** appears in the palette.
+
+### Nothing goes out without you seeing it first
+
+Every request shows you the **exact address** it would ask for before it sends
+anything, along with which host it goes to, who runs that host, what the request
+carries and what comes back. Not a summary — the literal URL, because a sentence
+describing a request is the one thing you cannot check.
+
+Nothing is written to the vault either until the results are back and you have
+ticked what is worth keeping. What you keep becomes a briefing note in the
+briefings folder, carrying the query, the host, the URL, the time, how many
+matched and how many were kept — so a list of papers is a claim somebody can
+check rather than one they have to take on trust.
+
+### The allowlist is in the code, not in settings
+
+There is deliberately no box to type a host into. Rule 3 says every outbound
+request targets an allowlisted host, and an allowlist you can add to is not one:
+a colleague, a circular or a note could talk somebody into pasting an address
+in. The two hosts are constants in the source, adding one is a code change, and
+the settings switches only choose between sources that already exist.
+
+Every request is recorded in the audit ledger as a `source-fetch` row naming the
+host and the search — **whether it succeeds or not**.
+
+### Filling in a publication
+
+**Fill in this publication from PubMed** looks a `85 Publications/` note up by
+its PMID or DOI and sends *only that identifier* — nothing else from the note.
+What comes back populates a form: each field shows what the note says now and
+what PubMed says, and anything where the two **disagree** is flagged and starts
+unticked. Filling an empty field is safe; replacing something you typed is a
+decision, and it stays yours.
+
+Authors are never offered, and neither is your author position. The note stores
+authors as links to people notes and PubMed returns a list of surnames; your
+position on a paper is a fact no external record holds.
+
+A DOI is looked up through PubMed rather than a third service, which keeps the
+allowlist at two hosts. A DOI PubMed has never indexed will not be found — that
+is a limit of where we looked, not evidence the DOI is wrong.
+
+### Two things worth knowing
+
+- **PubMed silently drops a quoted phrase it cannot find** and runs the search
+  without it, so you get results and none of them contain the phrase you asked
+  for. When it does that, the results view says so. "How PubMed read your
+  search" shows the query it actually ran, which is often not the one you typed.
+- **Abstracts are not fetched.** Titles, journals, dates and identifiers are
+  enough to triage, and the abstract is a paragraph of someone else's prose that
+  would then live in a vault holding institutional data. The link is one click.
+
+Guideline feeds are not built: the plan names the category but no host, and the
+allowlist takes hosts.
+
 ## Encrypted backup, and how to restore one
 
 Set a destination folder outside the vault in Settings → SCDB Cockpit, then run

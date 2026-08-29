@@ -5,6 +5,81 @@ clearly marked entry (CLAUDE.md §10).
 
 ## Unreleased
 
+### Added — E1, PubMed and ClinicalTrials.gov behind one gateway
+
+The first feature in this plugin that reaches a network, and the whole design is
+about that fact. **Search an external source** and **Fill in this publication
+from PubMed**; both sources ship **off**, and an upgrade from v10 leaves them
+off — verified by loading a real v10 `data.json` and reading the migrated
+result, not only in a unit test.
+
+**One gateway, and a test that keeps it that way.** Rule 3 says every outbound
+request goes through one gateway; `tests/oneGateway.test.ts` reads every file
+under `src/` and fails if `fetch`, `XMLHttpRequest`, `WebSocket`, `requestUrl`
+or a Node network module appears anywhere but `services/httpGateway.ts`. It was
+checked by introducing a violation and watching it fail, because a guard that
+has never failed proves nothing.
+
+**The allowlist is a constant in code, not a setting.** A host the user can type
+is a host a note can suggest, and the allowlist would then be documentation
+rather than a control. Settings choose between sources that already exist. The
+gate refuses a non-https URL, credentials in the authority, a port, and any host
+that is not an exact match — `clinicaltrials.gov.evil.example` and
+`notclinicaltrials.gov` included. All six refusals were exercised in the running
+app.
+
+**Node's `https` rather than Obsidian's `requestUrl`, for one reason.**
+`requestUrl` follows redirects itself and reports neither the hops nor the final
+URL, so an allowlist checked before calling it would only ever have covered the
+first request. Driving the client directly is what makes it possible to
+re-check the allowlist **on every hop**. It also buys a timeout that cancels and
+a response size cap.
+
+**The confirmation shows the literal URL** (rule 4), not a description of one.
+If the address carries your email because you put one in settings, you can see
+it there. Nothing is written to the vault until results are back and you have
+chosen what to keep.
+
+**Fetched text is inert by construction.** A new `domain/markdown/foreign`
+neutralises anything arriving from outside before it becomes markdown. The case
+that matters is not the wikilink but the **embed**: `![[10 Requests/REQ-…]]` in a
+returned title would transclude a request note into the briefing.
+
+**Enrichment is a proposal, never a write.** Fetched fields populate a form
+showing the note's value beside PubMed's; a field where they disagree is
+flagged and starts unticked. `authors`, `position` and `corresponding` are never
+offered — the first would break the wikilink convention, the others are facts no
+external record holds.
+
+Ledger: a new `source-fetch` action, logged whether the request succeeds or
+fails. Refusals that never opened a socket are reported to the caller rather
+than recorded, because the ledger answers "what has this vault sent".
+
+Settings schema v10 → v11, with a migration whose only unusual rule is that an
+unreadable `sources` block is discarded outright rather than partially trusted:
+everywhere else a bad value falls back to a sensible default, and here the only
+safe default is the one that makes no requests.
+
+Not built: guideline feeds. §7 names the category but no host, and the allowlist
+takes hosts. Added to the open questions rather than guessed at.
+
+### Fixed
+
+- The confirmation dialog's **Send this request** button was clipped at
+  620×720 — the modal scrolled 37px while the actions sat 20px past its bottom
+  edge. It is the button that decides whether anything leaves the machine, and
+  a confirmation whose confirm button is off-screen is worse than no
+  confirmation. The actions are now pinned, as they already were in the run,
+  agenda and extract dialogs.
+- The briefing escaped **our own** emphasis marker, so a journal name came out
+  with a stray backslash and no italics. The line-start escaping was blocking
+  every markdown marker rather than the ones that actually open a block; in
+  CommonMark `*`, `-` and `+` need whitespace after them to start a list. Found
+  by reading the generated note rather than the render.
+- Volume, issue and pages were joined with nothing between them: `58(1)2651008`
+  rather than `58(1):2651008`. Three values that read as one number.
+
+
 ### Added — F2, a live R and Python console
 
 A long-lived interpreter in a pane, with a transcript, an environment list, a

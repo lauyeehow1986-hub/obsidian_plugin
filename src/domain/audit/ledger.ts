@@ -75,6 +75,16 @@ export const AUDIT_ACTIONS = [
   // itself is a `bulk-edit`; this records that an app was the origin, which
   // is the part a reader cannot reconstruct from the note afterwards.
   "app-write",
+  // A request left the machine (§7 E1). §5.6's list did not name it because
+  // nothing reached a network until E1; it earns its own action for the same
+  // reason `export` does — both are the vault talking to the outside, and the
+  // question "what has this machine sent, and when" has to be findable by
+  // action rather than by reading every detail cell.
+  //
+  // Logged whether the request succeeded or not: a refused or failed request
+  // still left, and a ledger holding only the successful ones would be a
+  // flattering record rather than a true one.
+  "source-fetch",
   "correction",
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];

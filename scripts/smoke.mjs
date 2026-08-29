@@ -269,7 +269,7 @@ const checks = [
   // Pinned deliberately: this line failing means the schema moved, which is
   // the moment to check a migration step went with it (§10 — an upgrade must
   // never lose settings). Bump it only after writing that step.
-  ["settings carry a schema version", instance.settings.schemaVersion === 10],
+  ["settings carry a schema version", instance.settings.schemaVersion === 11],
   ["the hat filter defaults to the mode you are wearing", instance.settings.hatFilter === "mode"],
   // §7 B2. No timer on a fresh install, and every timer action reachable from
   // the keyboard — the status-bar segment is a shortcut, not the only door.
@@ -322,6 +322,29 @@ const checks = [
     "the console and the block runner read one set of interpreter settings",
     instance.computeSettings().pythonIsolation === "isolated" &&
       instance.computeSettings().rPath === "",
+  ],
+  // §7 E1. The only feature that can reach a network, and the checks that
+  // matter are all about it being off: rule 3 says nothing is enabled on first
+  // install, and a default that drifts to "on" is the one regression here that
+  // would be silent.
+  ["external sources are all off on a fresh install", instance.settings.sources.pubmed === false &&
+    instance.settings.sources.ctgov === false],
+  ["no contact address is invented", instance.settings.sources.contactEmail === ""],
+  ["the gateway exists but is enabled by nothing", typeof instance.gateway?.fetch === "function"],
+  ["searching an external source is reachable", commands.includes("search-source")],
+  ["filling a publication in from PubMed is reachable", commands.includes("enrich-publication")],
+  [
+    "a fetch is refused while the source is off",
+    (await instance.gateway.fetch(
+      "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=pubmed&term=x",
+      "smoke check",
+    )).why?.includes("switched off") === true,
+  ],
+  [
+    "a host nobody allowlisted is refused before anything is sent",
+    (await instance.gateway.fetch("https://evil.example/x", "smoke check")).why?.includes(
+      "not on the allowlist",
+    ) === true,
   ],
   ["the effort log is wired", typeof instance.effort?.months === "function"],
   ["the effort log reads no months on an empty vault", instance.effort.months().length === 0],
