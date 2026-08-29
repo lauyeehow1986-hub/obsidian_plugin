@@ -51,7 +51,12 @@ import {
   RevisionRefused as VariableRevisionRefused,
   type NewVariable,
 } from "./services/catalogueWriter.js";
-import { VARIABLE_TYPE, parseVariable, type VariableNote } from "./domain/catalogue/variable.js";
+import {
+  VARIABLE_TYPE,
+  parseVariable,
+  refMatchesVariable,
+  type VariableNote,
+} from "./domain/catalogue/variable.js";
 import { noteCitations, type Citation } from "./domain/catalogue/dependants.js";
 import { buildCatalogue, type Catalogue } from "./domain/catalogue/register.js";
 import { InForceModal, NewVariableModal, ReviseVariableModal } from "./ui/VariableModals.js";
@@ -68,6 +73,22 @@ import {
   type ScriptDoc,
 } from "./domain/script/scriptDoc.js";
 import { RUN_TYPE, parseRunRecord, type RunRecord } from "./domain/script/runRecord.js";
+import {
+  RedcapWriter,
+  ExportRefused,
+  type NewForm,
+} from "./services/redcapWriter.js";
+import { REDCAP_FORM_TYPE } from "./domain/redcap/field.js";
+import { buildRegister as buildFormsRegister, type FormsRegister } from "./domain/redcap/register.js";
+import type { FormSpec } from "./domain/redcap/form.js";
+import { STUDY_TYPE, parseStudy, type StudyNote } from "./domain/study/study.js";
+import { FormsBoard } from "./ui/FormsBoard.js";
+import { FormPicker } from "./ui/FormPicker.js";
+import {
+  ImportDictionaryModal,
+  NewFormModal,
+  OverrideExportModal,
+} from "./ui/FormModals.js";
 import { buildScriptRegister, type ScriptRegister } from "./domain/script/register.js";
 import type { RunDraft } from "./domain/script/recordRun.js";
 import { NewScriptModal, RecordRunModal } from "./ui/ScriptModals.js";
@@ -234,6 +255,17 @@ export default class ScdbCockpitPlugin extends Plugin {
   /** The variable catalogue and its version chain (§5.8, §7 C2). */
   catalogueWriter!: CatalogueWriter;
   scriptWriter!: ScriptWriter;
+  redcap!: RedcapWriter;
+
+  /**
+   * Bumped whenever a form note changes, so the forms board reloads.
+   *
+   * The other boards read the metadata cache and repaint on `refreshViews`.
+   * A form's fields live in the note *body* (§7 D2), which the cache does not
+   * hold, so the board reads files asynchronously and needs a signal that the
+   * answer it has is stale. A counter is the smallest honest one.
+   */
+  formsVersion = 0;
 
   /** The mode HUD (§7 A3). Null until `onload` has run. */
   private statusBar: HTMLElement | null = null;
@@ -333,6 +365,21 @@ export default class ScdbCockpitPlugin extends Plugin {
       scriptsFolder: () => this.settings.folders.scripts,
       runsFolder: () => this.settings.folders.runs,
       reindex: (file) => this.notes.update(file),
+    });
+
+    this.redcap = new RedcapWriter({
+      app: this.app,
+      audit: this.audit,
+      exporter: this.exporter,
+      actor: () => this.settings.actor,
+      formsFolder: () => this.settings.folders.forms,
+      studies: () => this.studies(),
+      variables: () => this.variables(),
+      reindex: (file) => {
+        this.notes.update(file);
+        this.formsVersion += 1;
+        this.refreshViews();
+      },
     });
 
     this.reportTemplates = new ReportTemplateStore(
@@ -897,6 +944,30 @@ export default class ScdbCockpitPlugin extends Plugin {
       id: "check-script-hash",
       name: "Check a script's file hash",
       callback: () => this.pickScript((doc) => void this.checkScriptHash(doc)),
+    });
+
+    this.addCommand({
+      id: "forms",
+      name: "Show the REDCap forms register",
+      callback: () => void this.activateCockpit("forms"),
+    });
+
+    this.addCommand({
+      id: "new-form",
+      name: "New REDCap form",
+      callback: () => this.newForm(),
+    });
+
+    this.addCommand({
+      id: "export-dictionary",
+      name: "Export a REDCap data dictionary",
+      callback: () => void this.pickForm((spec) => void this.exportDictionary(spec.path)),
+    });
+
+    this.addCommand({
+      id: "import-dictionary",
+      name: "Import a REDCap data dictionary",
+      callback: () => void this.pickForm((spec) => void this.importDictionary(spec.path)),
     });
 
     this.addCommand({
@@ -1686,6 +1757,22 @@ export default class ScdbCockpitPlugin extends Plugin {
     return buildCatalogue({ variables: this.variables(), citations: this.variableCitations() });
   }
 
+  /**
+   * Open the catalogue note a ref names, or say why it could not be found.
+   *
+   * A form field cites a variable as ordinary text, so the ref may be a typo
+   * or point at something uncatalogued. Saying which is more useful than a
+   * button that silently does nothing.
+   */
+  openVariable(ref: string): void {
+    const match = this.variables().find((variable) => refMatchesVariable(ref, variable));
+    if (match === undefined) {
+      new Notice(`SCDB: nothing in ${this.settings.folders.catalogue} matches "${ref}".`, 8000);
+      return;
+    }
+    this.openNote(match.path);
+  }
+
   /** Create a variable note from the dialog, then open it. */
   newVariable(): void {
     new NewVariableModal(this.app, async (input: NewVariable) => {
@@ -1866,6 +1953,139 @@ export default class ScdbCockpitPlugin extends Plugin {
       return;
     }
     new ScriptPicker(this.app, docs, onPick).open();
+  }
+
+  // --- REDCap forms (§5.14, §7 D2) -------------------------------------------
+
+  /**
+   * Every study note in the vault.
+   *
+   * Read for the first time here. `20 Studies/` has been in the vault contract
+   * from the start and every other note type links to one, but nothing needed
+   * to *read* a study until D2 had to check an identifier against the scope a
+   * study was approved for.
+   */
+  studies(): StudyNote[] {
+    const studies: StudyNote[] = [];
+    for (const entry of this.notes.all()) {
+      if (entry.type !== STUDY_TYPE) continue;
+      studies.push(parseStudy({ path: entry.file.path, frontmatter: entry.frontmatter }));
+    }
+    return studies.sort((a, b) => a.id.localeCompare(b.id));
+  }
+
+  /** Every REDCap form note, read and assessed. */
+  async formsRegister(): Promise<FormsRegister> {
+    const specs = [];
+    for (const entry of this.notes.all()) {
+      if (entry.type !== REDCAP_FORM_TYPE) continue;
+      specs.push(await this.redcap.specFor(entry.file));
+    }
+    return buildFormsRegister({
+      specs,
+      studies: this.studies(),
+      variables: this.variables(),
+    });
+  }
+
+  /** Create a form note from the dialog, then open it. */
+  newForm(): void {
+    new NewFormModal(this.app, async (input: NewForm) => {
+      try {
+        const file = await this.redcap.create(input);
+        await this.app.workspace.getLeaf(true).openFile(file);
+        new Notice(`SCDB: ${input.id} created.`, 6000);
+      } catch (error) {
+        reportError(error, "could not create the form note.");
+      }
+    }).open();
+  }
+
+  /**
+   * Write a form's data dictionary to `95 Exports/`.
+   *
+   * Validation errors stop it outright — REDCap would reject the file, and an
+   * override that produces a broken artefact wastes the person's time twice.
+   * A governance block offers the override dialog instead, which collects the
+   * typed reason the ledger entry needs (§5.6).
+   */
+  async exportDictionary(path: string): Promise<void> {
+    const file = this.app.vault.getAbstractFileByPath(path);
+    if (!(file instanceof TFile)) {
+      new Notice(`SCDB: "${path}" is no longer in the vault.`, 8000);
+      return;
+    }
+
+    const write = async (override?: string): Promise<void> => {
+      const { result, assessment } = await this.redcap.exportDictionary({ file, override });
+      new Notice(
+        `SCDB: ${assessment.fieldCount} field${assessment.fieldCount === 1 ? "" : "s"} → ${result.path}`,
+        8000,
+      );
+    };
+
+    try {
+      await write();
+    } catch (error) {
+      if (error instanceof ExportRefused && error.overridable) {
+        const assessment = await this.redcap.assess(file);
+        new OverrideExportModal(this.app, assessment, async (reason) => {
+          try {
+            await write(reason);
+          } catch (retry) {
+            reportError(retry, "could not export the data dictionary.");
+          }
+        }).open();
+        return;
+      }
+      if (error instanceof ExportRefused) {
+        new Notice(`SCDB: ${error.reasons.join("\n")}`, 15000);
+        return;
+      }
+      reportError(error, "could not export the data dictionary.");
+    }
+  }
+
+  /** Replace a form's fields with a dictionary exported from REDCap. */
+  async importDictionary(path: string): Promise<void> {
+    const file = this.app.vault.getAbstractFileByPath(path);
+    if (!(file instanceof TFile)) {
+      new Notice(`SCDB: "${path}" is no longer in the vault.`, 8000);
+      return;
+    }
+
+    const spec = await this.redcap.specFor(file);
+    const existing = spec.instruments.reduce((sum, inst) => sum + inst.fields.length, 0);
+
+    new ImportDictionaryModal(this.app, spec.id, existing, async (csv) => {
+      try {
+        const imported = await this.redcap.importDictionary({ file, csv });
+        new Notice(
+          `SCDB: ${imported.fieldCount} field${imported.fieldCount === 1 ? "" : "s"} across ${imported.instruments.length} instrument${imported.instruments.length === 1 ? "" : "s"} imported.`,
+          8000,
+        );
+        for (const gap of imported.gaps) this.notify(gap, 12000);
+      } catch (error) {
+        reportError(error, "could not import that data dictionary.");
+      }
+    }).open();
+  }
+
+  /** Pick a form note, then act on it. */
+  private async pickForm(onPick: (spec: FormSpec) => void): Promise<void> {
+    const specs: FormSpec[] = [];
+    for (const entry of this.notes.all()) {
+      if (entry.type !== REDCAP_FORM_TYPE) continue;
+      specs.push(await this.redcap.specFor(entry.file));
+    }
+    if (specs.length === 0) {
+      new Notice(
+        `SCDB: no forms yet. Add a note to ${this.settings.folders.forms} with \`type: redcap-form\`, or use "New REDCap form".`,
+        8000,
+      );
+      return;
+    }
+    new FormPicker(this.app, specs, onPick).open();
   }
 
   // --- publications (§5.4, §7 B5) -------------------------------------------

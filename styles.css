@@ -759,6 +759,17 @@
   width: 100%;
 }
 
+/* A pasted data dictionary (D2) is columns of CSV; a proportional face makes
+   it unreadable, and the point of showing it is that a person can spot the
+   line a problem names. `nowrap` so a long row scrolls rather than reflowing
+   into something that no longer looks like the file. */
+.scdb-field textarea.scdb-mono {
+  font-family: var(--font-monospace);
+  font-size: var(--font-ui-smaller);
+  white-space: pre;
+  overflow-x: auto;
+}
+
 .scdb-field__label {
   color: var(--text-normal);
   font-size: var(--font-ui-small);

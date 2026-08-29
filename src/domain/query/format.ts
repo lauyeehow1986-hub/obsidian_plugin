@@ -13,6 +13,7 @@
  * Pure module: no Obsidian, no Node.
  */
 
+import { csvCell } from "../table/csv";
 import { formatDuration, toVaultDate } from "../time/dates";
 import { coerce, type AggregateValue, type QueryResult, type ResultGroup } from "./evaluate";
 import type { FieldDef, FieldKind, Row } from "./model";
@@ -53,10 +54,10 @@ export function formatAggregate(aggregate: AggregateValue): string {
 
 /* ------------------------------------------------------------------ CSV -- */
 
-/** RFC 4180: quote anything containing a comma, quote, CR or LF; double the quotes. */
-export function csvCell(value: string): string {
-  return /[",\r\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
-}
+// Quoting lives in `table/csv.ts` beside the parser D2 reads dictionaries with,
+// so an emitter and a reader of the same file format cannot drift apart.
+// Re-exported because callers have always imported it from here.
+export { csvCell };
 
 export function toCsv(result: QueryResult, options: FormatOptions): string {
   const grouped = result.groups.length > 1 || result.groups[0]?.key !== "";

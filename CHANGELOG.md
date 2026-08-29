@@ -5,6 +5,86 @@ clearly marked entry (CLAUDE.md §10).
 
 ## Unreleased
 
+### Added — D2, REDCap form designer (data dictionary half)
+
+A **Forms** tab over `88 Forms/` (§5.14), and four commands: **Show the REDCap
+forms register**, **New REDCap form**, **Export a REDCap data dictionary** and
+**Import a REDCap data dictionary**.
+
+§7 D2 orders its three deliverables deliberately, and this ships the first two.
+The **project ODM XML export is not here and was not attempted**: §11 blocks it
+until a real project XML exported from the target instance exists to build
+against, because those files carry REDCap extensions that vary by version and a
+guessed schema is a file REDCap rejects at the last step.
+
+**Validation is the value, and it runs before any export.** Field names against
+REDCap's shape, length and reserved list, and unique across the whole project
+rather than per instrument — the namespace is the project, and a per-instrument
+check exports two `dob` columns and fails on upload. Choice lists well-formed
+and codes unique. Branching logic and calculations checked against the fields
+they name: brackets and quotes balance, a checkbox is referenced as
+`[field(code)]` and a non-checkbox is not, and the code inside is one the
+checkbox actually offers. That last one matters most — a condition naming a
+renamed choice code uploads happily and then never fires, so the field never
+shows and nobody finds out until the data comes back empty.
+
+**Two severities, and the line between them is whether REDCap will take the
+file.** An error blocks; a warning is shown and exported past. Blocking on
+warnings would train the person to override, and an override that becomes
+routine has stopped being a control.
+
+**The governance hook is why this is here rather than in any form builder.**
+Every field flagged as an identifier is checked against the linked study's
+approved scope. One finding blocks — an identifier on a study approved to
+collect none — and exporting anyway takes a typed reason that lands in the
+ledger as a `gate-override` beside the `export` entry (§5.6). The rest ask:
+an identifier neither the field nor its catalogue variable justifies; a field
+that *looks* like a direct identifier and is not flagged, labelled as the guess
+from the name that it is; and a field disagreeing with the catalogue about
+whether the thing is an identifier at all, with neither treated as
+authoritative.
+
+**Silence is not approval.** A form naming no study, or naming one that records
+no `governance.identifiers`, reports its identifiers as *uncheckable* — not a
+pass and not a block. The same rule C3 applies to a script with no recorded run
+and C2 to a definition nobody dated. Reading a missing scope as `none` would
+produce loud false alarms that get ignored; reading it as permissive would
+approve by silence, which is worse.
+
+**A validation error cannot be overridden at all**, because there is nothing to
+weigh: REDCap will reject the file, and an override that produces a broken
+artefact wastes the person's time twice.
+
+**Import exists so an existing instrument can be edited rather than rebuilt**,
+and it reports what the format could never have carried — the catalogue
+variable a field collects, and why an identifier is held. A dictionary arrives
+with both blank, which is a list of questions, not a defect. Logged as a
+`bulk-edit` naming the counts on both sides.
+
+**New note types read, none invented.** `type: redcap-form` (§5.14) keeps its
+identity and links in frontmatter and its instruments in a ```` ```yaml redcap ````
+block in the body, per §7 — too large for frontmatter, and it diffs cleanly.
+Only the block is ever rewritten; the prose around it survives untouched
+(rule 8, §5.1). `type: study` in `20 Studies/` is read for the first time, and
+reuses §5.1's `governance.identifiers` vocabulary exactly — a request says what
+that request asks for, a study says what the approval permits, in the same
+words.
+
+CSV quoting moved from `domain/query/format.ts` to `domain/table/csv.ts`
+alongside the parser import needs, so an emitter and a reader of one file
+format cannot drift apart. Round-tripping is tested per §9 — export → import →
+export is byte-identical, on a synthetic form and on a shipped fixture.
+
+### Fixed
+
+- An unquoted `min: 2026-01-01` in a form block arrives as a `Date`, because
+  YAML's default schema resolves a bare date scalar and nobody quotes one. It
+  was being dropped, leaving a field looking unbounded on the board and
+  exporting an empty column. Now read, and formatted in UTC — YAML puts a
+  date-only scalar at UTC midnight, so a local-time formatter would shift the
+  bound by a day anywhere west of Greenwich.
+
+
 ### Added — C3, script documentation and versioning
 
 A **Scripts** tab over `50 Scripts/` (§5.14), answering the one question §7 C3

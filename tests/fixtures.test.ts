@@ -39,6 +39,16 @@ import { definitionInForceOn } from "../src/domain/catalogue/lineage";
 import { SCRIPT_DOC_TYPE, parseScriptDoc } from "../src/domain/script/scriptDoc";
 import { RUN_TYPE, parseRunRecord } from "../src/domain/script/runRecord";
 import { buildScriptRegister } from "../src/domain/script/register";
+import { REDCAP_FORM_TYPE } from "../src/domain/redcap/field";
+import { findBlock } from "../src/domain/redcap/block";
+import { parseFormSpec } from "../src/domain/redcap/form";
+import { buildRegister as buildFormsRegister } from "../src/domain/redcap/register";
+import {
+  fromDictionaryCsv,
+  instrumentsToBlock,
+  toDictionaryCsv,
+} from "../src/domain/redcap/dictionary";
+import { STUDY_TYPE, parseStudy } from "../src/domain/study/study";
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { readdirSync, readFileSync, statSync } from "node:fs";
@@ -1039,5 +1049,117 @@ describe("the profile fixtures (§5.9, §7 B7)", () => {
     const grants = notes.filter((note) => note.type === "grant").map(cvLine);
     expect(grants.filter((line) => /submitted/i.test(line))).toHaveLength(1);
     expect(grants.filter((line) => /awarded/i.test(line))).toHaveLength(0);
+  });
+});
+
+describe("REDCap forms and the governance hook (§5.14, §7 D2)", () => {
+  const studies = typed(STUDY_TYPE).map((note) =>
+    parseStudy({ path: note.rel, frontmatter: note.front }),
+  );
+  const variables = typed(VARIABLE_TYPE).map((note) => parseVariable(note.rel, note.front));
+
+  // Fields live in a fenced block in the body, not in frontmatter (§7 D2), so
+  // the fixture set is read from the file text rather than from `notes`.
+  const specs = typed(REDCAP_FORM_TYPE).map((note) => {
+    const file = files.find((entry) => entry.rel === note.rel)!;
+    const block = findBlock(file.text);
+    return parseFormSpec({
+      path: note.rel,
+      frontmatter: note.front,
+      block: block === null ? null : load(block.body),
+      blockProblems: block === null ? ["no block"] : [],
+    });
+  });
+
+  const register = buildFormsRegister({ specs, studies, variables });
+
+  it("ships studies and forms, so the board has something to open", () => {
+    expect(studies.length).toBeGreaterThan(0);
+    expect(specs.length).toBeGreaterThan(0);
+  });
+
+  it("reads every form's block without a parse problem of its own", () => {
+    for (const spec of specs) {
+      const unreadable = spec.problems.filter((problem) => /not readable as YAML|no `redcap` block/.test(problem));
+      expect({ id: spec.id, unreadable }).toEqual({ id: spec.id, unreadable: [] });
+    }
+  });
+
+  it("demonstrates every verdict the register can reach", () => {
+    // Pinned deliberately, as C2 and C3 are: each fixture exists to make one
+    // group render against a real note. A board that only ever shows problems
+    // teaches you to ignore it, so `ready` has a fixture too.
+    const byVerdict = Object.fromEntries(register.forms.map((form) => [form.spec.id, form.verdict]));
+    expect(byVerdict).toEqual({
+      "FORM-invented-screening": "blocked",
+      "FORM-invented-legacy": "invalid",
+      "FORM-invented-baseline": "questions",
+      "FORM-invented-followup": "ready",
+    });
+  });
+
+  it("blocks only the identifier outside an approved scope", () => {
+    const blocked = register.forms.find((form) => form.spec.id === "FORM-invented-screening")!;
+    const blocking = blocked.governance.findings.filter((finding) => finding.blocking);
+    expect(blocking).toHaveLength(1);
+    expect(blocking[0]?.field).toBe("screen_mrn");
+    expect(blocked.exportable).toBe(false);
+    // Justified on the field, and still blocked: why the facility wants it and
+    // whether anyone approved it are different questions.
+    expect(blocked.governance.findings.map((finding) => finding.kind)).toEqual(["unapproved"]);
+  });
+
+  it("reports an unrecorded scope as uncheckable rather than as a pass", () => {
+    expect(register.summary.uncheckable).toBe(1);
+    const legacy = register.forms.find((form) => form.spec.id === "FORM-invented-legacy")!;
+    expect(legacy.governance.findings.some((finding) => finding.kind === "unknown-scope")).toBe(true);
+  });
+
+  it("makes the C2 join fire: an identifier the catalogue cannot justify either", () => {
+    const baseline = register.forms.find((form) => form.spec.id === "FORM-invented-baseline")!;
+    const kinds = baseline.governance.findings.map((finding) => finding.kind);
+    expect(kinds).toContain("unjustified");
+    expect(kinds).toContain("unflagged");
+    expect(baseline.errors).toEqual([]);
+  });
+
+  it("fires one instance of each validation rule the broken fixture exists for", () => {
+    const legacy = register.forms.find((form) => form.spec.id === "FORM-invented-legacy")!;
+    const codes = new Set(legacy.errors.map((finding) => finding.code));
+    for (const code of [
+      "name-shape",
+      "name-reserved",
+      "choice-duplicate",
+      "calc-empty",
+      "bound-inverted",
+      "branching-invalid",
+    ]) {
+      expect({ code, present: codes.has(code) }).toEqual({ code, present: true });
+    }
+  });
+
+  it("leaves the clean form with nothing at all to say", () => {
+    const clean = register.forms.find((form) => form.spec.id === "FORM-invented-followup")!;
+    expect(clean.findings).toEqual([]);
+    expect(clean.governance.findings).toEqual([]);
+    expect(clean.exportable).toBe(true);
+  });
+
+  /** §9: export → import → export produces an identical file, on a real form. */
+  it("round-trips a shipped form through the dictionary unchanged", () => {
+    const baseline = register.forms.find((form) => form.spec.id === "FORM-invented-baseline")!;
+    const first = toDictionaryCsv(baseline.spec);
+    const back = fromDictionaryCsv(first);
+    // Through `instrumentsToBlock`, because that is the path the writer takes:
+    // a parsed field is not itself valid block input, and `fieldToBlock` is the
+    // documented bridge between the two (pinned in dictionary.test.ts).
+    const second = toDictionaryCsv(
+      parseFormSpec({
+        path: baseline.spec.path,
+        frontmatter: { id: baseline.spec.id },
+        block: instrumentsToBlock(back.instruments),
+      }),
+    );
+    expect(second).toBe(first);
   });
 });

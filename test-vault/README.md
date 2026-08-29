@@ -27,6 +27,8 @@ pick up a rebuild.
 | `87 Catalogue/` | four variables | C2: one with a real three-version chain whose first version recorded only a definition, one categorical, one identifier with **no** justification, and one bumped to v2 with an empty `history` so the "only the version number survives" finding fires |
 | `50 Scripts/` | six script docs and one `.R` file | C3: one per verdict the register can reach — failed run, a consumed definition revised since, an input dataset that moved, code differing from what ran, never run, and one genuinely current. `SCRIPT-cohort-build` is also the far end of the catalogue join: its three citations are stale (`@2` against a v3 variable), unversioned, and orphaned |
 | `94 Runs-fixtures/` | four run records | §5.12 provenance: one corroborating its script, one whose `script_hash` differs from the note it points at, one that failed and recorded almost nothing, and one orphan naming a script nothing documents |
+| `20 Studies/` | three studies | D2's governance hook: one approved for indirect identifiers, one approved for **none** (so a form on it is blocked), and one that records **no** scope at all — which reads as *uncheckable*, never as approved |
+| `88 Forms/` | four REDCap forms | D2: one per verdict — blocked on governance, rejected by REDCap, questions to answer, and one deliberately clean, because a board that only ever shows problems teaches you to ignore it |
 | `_config/messages/` | `chase-up.md` | the message template, so tone is the user's and not the plugin's |
 | `_config/reports/` | the five B7 templates | worked examples of the report format, exactly as "Write the built-in report templates to _config" writes them — a fixture test holds them equal to the built-ins, so editing one in code without writing it out again fails the suite |
 
@@ -76,3 +78,23 @@ clause 5.2 changes (**affected** — the extraction gate cites it), clause 5.4
 disappears (**clause gone** — the SOP cites it), clause 5.1 is untouched
 (**clear** — the SOP cites that too), and the consent form cites no clause at
 all (**review**, and it resolves to no note, so it also shows *not found*).
+
+### The forms fixtures are the only notes with a body block
+
+Every other note type in this vault keeps its payload in frontmatter. A
+`type: redcap-form` note keeps its instruments in a ```` ```yaml redcap ````
+fence in the body instead (§7 D2), because eighty fields do not belong in
+frontmatter and a body block diffs cleanly in git.
+
+Two consequences worth knowing while working here:
+
+- The plugin reads these notes from disk rather than from Obsidian's metadata
+  cache, which only holds frontmatter. That is why the Forms board loads with a
+  brief "Reading the form notes…" and the others do not.
+- The plugin replaces **only** the block. The prose above and below it is left
+  exactly as written, which is what makes a form note somewhere you can explain
+  why an instrument is shaped the way it is.
+
+Running **Import a REDCap data dictionary** against one of these does the real
+thing and dirties the note;
+`git checkout -- "test-vault/88 Forms"` puts it back.
