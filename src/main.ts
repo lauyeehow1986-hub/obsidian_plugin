@@ -56,6 +56,22 @@ import { noteCitations, type Citation } from "./domain/catalogue/dependants.js";
 import { buildCatalogue, type Catalogue } from "./domain/catalogue/register.js";
 import { InForceModal, NewVariableModal, ReviseVariableModal } from "./ui/VariableModals.js";
 import { VariablePicker } from "./ui/VariablePicker.js";
+import {
+  ScriptWriter,
+  RunRefused,
+  type NewScript,
+} from "./services/scriptWriter.js";
+import {
+  SCRIPT_DOC_TYPE,
+  parseScriptDoc,
+  scriptLabel,
+  type ScriptDoc,
+} from "./domain/script/scriptDoc.js";
+import { RUN_TYPE, parseRunRecord, type RunRecord } from "./domain/script/runRecord.js";
+import { buildScriptRegister, type ScriptRegister } from "./domain/script/register.js";
+import type { RunDraft } from "./domain/script/recordRun.js";
+import { NewScriptModal, RecordRunModal } from "./ui/ScriptModals.js";
+import { ScriptPicker } from "./ui/ScriptPicker.js";
 import { PolicyRevisionModal } from "./ui/PolicyRevisionModal.js";
 import { PolicyPicker } from "./ui/PolicyPicker.js";
 import { governanceRisk } from "./domain/request/analytics.js";
@@ -217,6 +233,7 @@ export default class ScdbCockpitPlugin extends Plugin {
   diagrams!: DiagramWriter;
   /** The variable catalogue and its version chain (§5.8, §7 C2). */
   catalogueWriter!: CatalogueWriter;
+  scriptWriter!: ScriptWriter;
 
   /** The mode HUD (§7 A3). Null until `onload` has run. */
   private statusBar: HTMLElement | null = null;
@@ -306,6 +323,15 @@ export default class ScdbCockpitPlugin extends Plugin {
       audit: this.audit,
       actor: () => this.settings.actor,
       catalogueFolder: () => this.settings.folders.catalogue,
+      reindex: (file) => this.notes.update(file),
+    });
+
+    this.scriptWriter = new ScriptWriter({
+      app: this.app,
+      audit: this.audit,
+      actor: () => this.settings.actor,
+      scriptsFolder: () => this.settings.folders.scripts,
+      runsFolder: () => this.settings.folders.runs,
       reindex: (file) => this.notes.update(file),
     });
 
@@ -847,6 +873,30 @@ export default class ScdbCockpitPlugin extends Plugin {
       id: "variable-in-force",
       name: "Which definition was in force",
       callback: () => this.pickVariable((variable) => this.askInForce(variable)),
+    });
+
+    this.addCommand({
+      id: "scripts",
+      name: "Show the script register",
+      callback: () => void this.activateCockpit("scripts"),
+    });
+
+    this.addCommand({
+      id: "new-script",
+      name: "New script documentation",
+      callback: () => this.newScript(),
+    });
+
+    this.addCommand({
+      id: "record-run",
+      name: "Record a script run",
+      callback: () => this.pickScript((doc) => this.recordScriptRun(doc)),
+    });
+
+    this.addCommand({
+      id: "check-script-hash",
+      name: "Check a script's file hash",
+      callback: () => this.pickScript((doc) => void this.checkScriptHash(doc)),
     });
 
     this.addCommand({
@@ -1692,6 +1742,130 @@ export default class ScdbCockpitPlugin extends Plugin {
       return;
     }
     new VariablePicker(this.app, variables, onPick).open();
+  }
+
+  // --- script documentation and provenance (§5.12, §5.14, §7 C3) ------------
+
+  /** Every script documentation note in the vault. */
+  scriptDocs(): ScriptDoc[] {
+    const docs: ScriptDoc[] = [];
+    for (const entry of this.notes.all()) {
+      if (entry.type !== SCRIPT_DOC_TYPE) continue;
+      docs.push(parseScriptDoc(entry.file.path, entry.frontmatter));
+    }
+    return docs.sort((a, b) => a.id.localeCompare(b.id) || a.path.localeCompare(b.path));
+  }
+
+  /**
+   * Every run record in the vault.
+   *
+   * Found by `type: run` rather than by folder, so a record filed somewhere
+   * other than `94 Runs/` still counts as evidence. Where a note lives is a
+   * filing preference; what it claims is what matters.
+   */
+  runRecords(): RunRecord[] {
+    const runs: RunRecord[] = [];
+    for (const entry of this.notes.all()) {
+      if (entry.type !== RUN_TYPE) continue;
+      runs.push(parseRunRecord(entry.file.path, entry.frontmatter));
+    }
+    return runs;
+  }
+
+  /** The script board's model, including the C2 join. */
+  scriptRegister(): ScriptRegister {
+    return buildScriptRegister({
+      docs: this.scriptDocs(),
+      runs: this.runRecords(),
+      variables: this.variables(),
+    });
+  }
+
+  /** Create a script documentation note from the dialog, then open it. */
+  newScript(): void {
+    new NewScriptModal(this.app, async (input: NewScript) => {
+      try {
+        const file = await this.scriptWriter.create(input);
+        this.refreshViews();
+        await this.app.workspace.getLeaf(true).openFile(file);
+        new Notice(`SCDB: ${input.id} documented.`, 6000);
+      } catch (error) {
+        reportError(error, "could not create the script note.");
+      }
+    }).open();
+  }
+
+  /** Write a §5.12 provenance record for a run that has already happened. */
+  recordScriptRun(doc: ScriptDoc): void {
+    const file = this.app.vault.getAbstractFileByPath(doc.path);
+    if (!(file instanceof TFile)) {
+      new Notice(`SCDB: ${doc.path} is no longer in the vault.`, 8000);
+      return;
+    }
+
+    new RecordRunModal(this.app, doc, this.settings.actor, async (draft: RunDraft) => {
+      try {
+        const plan = await this.scriptWriter.recordRun({ file, doc, draft });
+        this.refreshViews();
+        new Notice(
+          `SCDB: ${plan.id} recorded against ${doc.id || scriptLabel(doc)}.${plan.weaknesses.length > 0 ? ` ${plan.weaknesses.length} thing${plan.weaknesses.length === 1 ? "" : "s"} it cannot say.` : ""}`,
+          8000,
+        );
+      } catch (error) {
+        if (error instanceof RunRefused) {
+          new Notice(`SCDB: cannot record the run. ${error.message}`, 10000);
+        } else {
+          reportError(error, "could not record the run.");
+        }
+      }
+    }).open();
+  }
+
+  /**
+   * Hash the script file and compare it with what the note documents.
+   *
+   * Adopting the new hash is a second, deliberate step: seeing that the code
+   * moved and declaring the new version documented are different decisions,
+   * and collapsing them would mean the note silently caught up with every edit.
+   */
+  async checkScriptHash(doc: ScriptDoc): Promise<void> {
+    try {
+      const check = await this.scriptWriter.checkHash(doc);
+      new Notice(`SCDB: ${check.message}`, 12000);
+      if (check.outcome !== "differs" && check.outcome !== "not-recorded") return;
+
+      const file = this.app.vault.getAbstractFileByPath(doc.path);
+      if (!(file instanceof TFile)) return;
+
+      const ok = await confirm(
+        this.app,
+        [
+          `Record ${check.observed.slice(0, 12)}… on ${doc.id || doc.path} as the current version of ${doc.file}?`,
+          "Run records already written keep the hash they ran under, so the history of what produced what is unaffected.",
+        ].join("\n"),
+        "Record it",
+      );
+      if (!ok) return;
+
+      await this.scriptWriter.adoptHash(file, check.observed);
+      this.refreshViews();
+      new Notice(`SCDB: ${doc.id || doc.path} now documents ${check.observed.slice(0, 12)}….`, 6000);
+    } catch (error) {
+      reportError(error, "could not check the script hash.");
+    }
+  }
+
+  /** Pick a documented script, then act on it. */
+  private pickScript(onPick: (doc: ScriptDoc) => void): void {
+    const docs = this.scriptDocs();
+    if (docs.length === 0) {
+      new Notice(
+        `SCDB: nothing is documented yet. Add a note to ${this.settings.folders.scripts} with \`type: script-doc\`.`,
+        8000,
+      );
+      return;
+    }
+    new ScriptPicker(this.app, docs, onPick).open();
   }
 
   // --- publications (§5.4, §7 B5) -------------------------------------------

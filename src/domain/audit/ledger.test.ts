@@ -269,4 +269,14 @@ describe("action vocabulary", () => {
       expect(AUDIT_ACTIONS).toContain(action);
     }
   });
+
+  it("keeps a recorded run distinct from a run the plugin watched", () => {
+    // §5.12 logs `code-run` for an execution the plugin performed. A run typed
+    // in afterwards is hearsay, and `run-recorded` says so — the same
+    // distinction §5.11 draws between composing a message and sending one. An
+    // auditor weighs the two differently, so one action for both would destroy
+    // the only information that lets them.
+    expect(AUDIT_ACTIONS).toContain("run-recorded");
+    expect(AUDIT_ACTIONS).toContain("code-run");
+  });
 });

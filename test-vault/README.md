@@ -25,7 +25,8 @@ pick up a rebuild.
 | `00 Inbox/` | one capture | the note quick capture writes |
 | `40 Policies/` | three policies plus a reissued document | C1: one institutional policy at v3 with the v4 reissue waiting in `_incoming/`, one local SOP declaring the clauses it rests on from the *far* end, and one deliberately bare policy so the register's three findings fire |
 | `87 Catalogue/` | four variables | C2: one with a real three-version chain whose first version recorded only a definition, one categorical, one identifier with **no** justification, and one bumped to v2 with an empty `history` so the "only the version number survives" finding fires |
-| `50 Scripts/` | one script doc | the far end of the catalogue join: its three citations are stale (`@2` against a v3 variable), unversioned, and orphaned |
+| `50 Scripts/` | six script docs and one `.R` file | C3: one per verdict the register can reach — failed run, a consumed definition revised since, an input dataset that moved, code differing from what ran, never run, and one genuinely current. `SCRIPT-cohort-build` is also the far end of the catalogue join: its three citations are stale (`@2` against a v3 variable), unversioned, and orphaned |
+| `94 Runs-fixtures/` | four run records | §5.12 provenance: one corroborating its script, one whose `script_hash` differs from the note it points at, one that failed and recorded almost nothing, and one orphan naming a script nothing documents |
 | `_config/messages/` | `chase-up.md` | the message template, so tone is the user's and not the plugin's |
 | `_config/reports/` | the five B7 templates | worked examples of the report format, exactly as "Write the built-in report templates to _config" writes them — a fixture test holds them equal to the built-ins, so editing one in code without writing it out again fails the suite |
 
@@ -39,6 +40,18 @@ exactly this. A mis-click cannot reach a person.
 likely to hold something that must never reach a public repo. Rather than punch a
 hole in that rule for this vault, the two synthetic threads sit in
 `75 Correspondence-fixtures/`, a name the rule never covered.
+
+`94 Runs-fixtures/` exists for the same reason and reads the same way: `94 Runs/`
+is blanket-ignored because a real run record names data versions, row counts and
+output paths, and C3's register needs committed examples to demonstrate
+provenance against. The plugin finds them either way — run records are located by
+`type: run`, not by folder — and *new* ones it writes land in the real `94 Runs/`,
+so they stay out of git on their own.
+
+`50 Scripts/cohort-build.R` is pinned to LF in `.gitattributes`. It is hashed by
+its bytes, and the documentation note beside it records the digest it expects; on
+a machine with `core.autocrlf` on, a fresh clone would otherwise get CRLF and
+"Check a script's file hash" would report a change nobody made.
 
 The plugin still writes *new* threads to the real `75 Correspondence/` (that is
 the shipped default and the actual vault contract), so anything you generate here

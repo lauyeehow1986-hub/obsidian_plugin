@@ -479,6 +479,12 @@
   color: var(--scdb-at-risk);
 }
 
+/* A run that failed outright, as against one whose inputs have merely moved. */
+.scdb-chip--overdue {
+  border-color: var(--scdb-overdue);
+  color: var(--scdb-overdue);
+}
+
 .scdb-num {
   font-variant-numeric: tabular-nums;
   text-align: right;

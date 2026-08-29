@@ -36,6 +36,10 @@ import { VARIABLE_TYPE, parseVariable } from "../src/domain/catalogue/variable";
 import { noteCitations } from "../src/domain/catalogue/dependants";
 import { buildCatalogue } from "../src/domain/catalogue/register";
 import { definitionInForceOn } from "../src/domain/catalogue/lineage";
+import { SCRIPT_DOC_TYPE, parseScriptDoc } from "../src/domain/script/scriptDoc";
+import { RUN_TYPE, parseRunRecord } from "../src/domain/script/runRecord";
+import { buildScriptRegister } from "../src/domain/script/register";
+import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
@@ -450,7 +454,11 @@ describe("catalogue variables (§5.8, §7 C2)", () => {
     expect(catalogue.summary).toMatchObject({
       identifiers: 1,
       unjustified: 1,
-      stale: 1,
+      // Two, since C3: the script doc cites VAR-EJECTION@2 and so does the run
+      // record that executed it. Both are real findings and both should be
+      // listed — the script is the thing to fix, and the run is the evidence
+      // that a delivered output rests on the superseded definition.
+      stale: 2,
       orphans: 1,
     });
   });
@@ -491,6 +499,77 @@ describe("catalogue variables (§5.8, §7 C2)", () => {
     const row = catalogue.rows.find((entry) => entry.variable.id === "VAR-INDEX-DATE")!;
     expect(row.variable.problems).toEqual([]);
     expect(row.chain.join(" ")).toContain("only the version number survives");
+  });
+});
+
+describe("script documentation and provenance (§5.12, §5.14, §7 C3)", () => {
+  const docs = typed(SCRIPT_DOC_TYPE).map((note) => parseScriptDoc(note.rel, note.front));
+  const runs = typed(RUN_TYPE).map((note) => parseRunRecord(note.rel, note.front));
+  const variables = typed(VARIABLE_TYPE).map((note) => parseVariable(note.rel, note.front));
+  const register = buildScriptRegister({ docs, runs, variables });
+
+  it("ships scripts and runs, so the board has something to open", () => {
+    expect(docs.length).toBeGreaterThan(0);
+    expect(runs.length).toBeGreaterThan(0);
+  });
+
+  it("demonstrates every verdict the register can reach", () => {
+    // Pinned deliberately: each fixture exists to make one finding fire against
+    // a real note, and a board that only ever shows one group teaches nothing
+    // about what the others mean.
+    const byVerdict = Object.fromEntries(
+      register.rows.map((row) => [row.doc.id, row.assessment.verdict]),
+    );
+    expect(byVerdict).toEqual({
+      "SCRIPT-discharge-letters": "run-failed",
+      "SCRIPT-lvef-trend": "definition-moved",
+      "SCRIPT-admissions-load": "inputs-moved",
+      "SCRIPT-cohort-build": "code-moved",
+      "SCRIPT-frailty-index": "never-run",
+      "SCRIPT-echo-qc": "current",
+    });
+  });
+
+  it("counts the two findings the board leads with", () => {
+    expect(register.summary).toMatchObject({ unhashed: 1, orphanRuns: 1 });
+    expect(register.orphanRuns[0]?.id).toBe("RUN-2026-06-03-0001");
+  });
+
+  it("flags the input that moved and leaves the one that did not alone", () => {
+    const row = register.rows.find((entry) => entry.doc.id === "SCRIPT-admissions-load")!;
+    expect(row.assessment.findings).toHaveLength(1);
+    expect(row.assessment.findings[0]?.detail).toContain("SCDB-invented-admissions");
+    expect(row.assessment.findings[0]?.detail).toContain("2026-07-15");
+  });
+
+  it("makes the C2 join fire on a citation that names no version at all", () => {
+    // The catalogue board has nothing to call stale here — the ref is
+    // unversioned — and yet the figure was drawn under a definition that has
+    // since moved. Only a date can answer that, which is why C3 asks it.
+    const row = register.rows.find((entry) => entry.doc.id === "SCRIPT-lvef-trend")!;
+    expect(row.assessment.consumed[0]).toMatchObject({ citedVersion: null, revisedAfterRun: true });
+    expect(row.assessment.findings[0]?.detail).toContain("VAR-EJECTION moved to version 3");
+  });
+
+  it("separates the file's hash from the hash that actually ran", () => {
+    // The .R file beside the note still matches `file_hash`; the run recorded
+    // something else. A hash on the note proves the documentation is current,
+    // and only the hash on the run proves what made the numbers.
+    const doc = docs.find((entry) => entry.id === "SCRIPT-cohort-build")!;
+    const source = onDisk.find((file) => file.rel === "50 Scripts/cohort-build.R")!;
+    expect(createHash("sha256").update(source.text, "utf8").digest("hex")).toBe(doc.fileHash);
+
+    const run = runs.find((entry) => entry.id === "RUN-2026-05-12-0001")!;
+    expect(run.scriptHash).not.toBe(doc.fileHash);
+  });
+
+  it("keeps every fixture parsing clean apart from the staged gaps", () => {
+    for (const doc of docs) {
+      // SCRIPT-frailty-index deliberately records no hash and no run.
+      const staged = doc.id === "SCRIPT-frailty-index";
+      expect({ id: doc.id, clean: doc.problems.length === 0 }).toEqual({ id: doc.id, clean: true });
+      expect(doc.fileHash === "").toBe(staged);
+    }
   });
 });
 

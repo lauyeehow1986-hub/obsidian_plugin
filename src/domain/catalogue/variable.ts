@@ -420,7 +420,11 @@ export function refMatchesVariable(ref: string, variable: VariableNote): boolean
   );
 }
 
-/** The comparable half of a ref: brackets, alias, folder and `@version` gone. */
+/**
+ * The comparable half of a ref: brackets, alias, heading, `.md` and `@version`
+ * gone. Any folder is deliberately kept, so `refMatchesVariable` can compare a
+ * full-path wikilink against the note's own path.
+ */
 export function refTarget(ref: string): string {
   let text = ref.trim();
   const wikilink = /^\[\[([^\]]+)\]\]$/.exec(text);

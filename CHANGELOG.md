@@ -5,6 +5,79 @@ clearly marked entry (CLAUDE.md §10).
 
 ## Unreleased
 
+### Added — C3, script documentation and versioning
+
+A **Scripts** tab over `50 Scripts/` (§5.14), answering the one question §7 C3
+sets: *which of these needs re-running before anyone quotes its output again.*
+
+Rows are grouped by verdict, worst first, because any other grouping buries that
+question. Each opens onto what the script reads, the catalogue variables it
+consumes, what it produces, and every `94 Runs/` provenance record that points at
+it — with the interpreter and the hash each run actually executed.
+
+Four commands: **Show the script register**, **New script documentation**,
+**Record a script run**, and **Check a script's file hash**.
+
+**Six findings, and the order between them is deliberate.** `run-failed` leads
+because it is the only one where the outputs may not exist at all; a number that
+was never produced is not the same problem as an old one. `definition-moved`
+outranks `inputs-moved` because a changed definition means the numbers mean
+something different, not merely that they are stale. Then `code-moved`,
+`never-run`, and `undated`.
+
+**Silence is not freshness.** A script with no recorded run, or with runs that
+carry no date, is not reported as current — it is unanswerable, and it gets a
+finding saying so. Nothing is compared against a date the vault does not have.
+Same rule the catalogue applies when resolving a past definition: the honest
+answer to an unanswerable question is "not recorded", never the reassuring
+default.
+
+**The C2 join asks the time question, not the version question.** A script citing
+`VAR-LVEF@2` while the catalogue is at 3 is C2's `stale` finding and stays on the
+catalogue board. C3 adds what a version ref cannot tell you: the definition came
+into force *after this script last ran*, so its outputs were produced under the
+earlier one. That fires even when the citation names no version at all — which is
+the common case, and the one nothing else could catch.
+
+**A run that recorded no hash is not treated as a match.** Both hashes have to be
+present before `code-moved` can fire; a missing one means the run cannot say the
+code is unchanged, and the run's own record reports that gap rather than passing
+silently. Likewise the documented `file_hash` and the hash a run executed are
+kept apart: the first proves the documentation is current, and only the second
+proves what made the numbers.
+
+**The hash is only ever read from inside the vault.** `file:` may point at a
+portable R build's folder or a network share, and reaching those means `fs` and a
+path outside the vault — the boundary rule 8 draws. An outside path is reported
+as uncheckable from here rather than quietly resolved. Adopting an observed hash
+onto the note is a separate confirmation, because seeing that the code moved and
+declaring the new version documented are different decisions.
+
+**New note types read, none invented.** `type: script-doc` (§5.14) gains
+`purpose`, `file`, `file_hash`, `hash_checked`, `inputs` (each with a `changed`
+date, which is what a comparison needs — a version string is what a human
+quotes), `outputs`, `last_run` and `last_run_by`. `type: run` (§5.12) is now
+parsed for the first time; F1 will write them, and until then C3 does.
+
+Two keys beyond §5.12's example, on the same argument as `composed_only: true` in
+§5.10: **`recorded_by`** and **`recorded`**. The plugin did not run anything — it
+wrote down that a person says they did — and the record should say so.
+
+#### Ledger — a new action
+
+`run-recorded` joins the vocabulary, deliberately distinct from `code-run`.
+§5.12 logs `code-run` for an execution the plugin performed; a run typed in
+afterwards is hearsay, and an auditor weighs the two differently. One action for
+both would destroy the only information that lets them. Recording a run appends
+`run-recorded` with the run id, exit state and input/output counts — never
+content (rule 7).
+
+Recording a run refuses only what would make the record meaningless: a script it
+cannot point at, and a run it cannot place in time. A missing interpreter or hash
+weakens it considerably, and the dialog says so under *"What this record will not
+be able to say"* — but refusing over a forgotten R version would mean no record
+at all, which is strictly worse.
+
 ### Added — C2, the variable catalogue
 
 The management UI over `87 Catalogue/` (§5.8): browse and search the catalogue,

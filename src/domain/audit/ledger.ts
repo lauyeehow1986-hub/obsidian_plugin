@@ -55,6 +55,14 @@ export const AUDIT_ACTIONS = [
   // in its own right, and an auditor looks for it rather than reading every
   // revision's detail cell.
   "variable-revision",
+  // Writing a `94 Runs/` provenance record for an execution that happened
+  // somewhere else — RStudio, a server, a colleague's machine (§5.12, §7 C3).
+  // Deliberately *not* `code-run`: the plugin did not run anything, it wrote
+  // down that a person says they did. Same distinction as `message-composed`
+  // versus a send we cannot observe (§5.11 rule 6). When F1 executes a block
+  // itself it logs `code-run`, and the difference between the two rows is
+  // exactly what an auditor needs in order to weigh them.
+  "run-recorded",
   "correction",
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];

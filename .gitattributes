@@ -1,0 +1,15 @@
+# Script files are hashed by their bytes (§5.12, §7 C3), and the documentation
+# note beside each one records the digest it expects. With core.autocrlf on — as
+# it is on the dev machine — git would hand a fresh clone CRLF line endings, the
+# bytes would differ from the ones the hash was taken over, and "Check a
+# script's file hash" would report a change nobody made.
+#
+# Pinning these to LF keeps the fixture's whole point intact: a match means the
+# code is unchanged, and a difference means it really moved.
+#
+# Patterns here cannot contain spaces — git splits the line on whitespace — so
+# these are repo-wide by extension rather than scoped to `test-vault/50 Scripts`.
+# Nothing else in the repo carries these extensions.
+*.R text eol=lf
+*.py text eol=lf
+*.sql text eol=lf

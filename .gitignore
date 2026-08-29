@@ -28,6 +28,12 @@ main.js
 # so was never ignored in the first place. Drop a real thread into a folder
 # actually called `75 Correspondence/` — anywhere, including under test-vault —
 # and it stays out of this repo.
+#
+# `test-vault/94 Runs-fixtures/` follows the same pattern for the same reason:
+# C3's register needs committed §5.12 run records to demonstrate provenance, and
+# `**/94 Runs/` stays blanket-ignored so a real run — which names data versions,
+# row counts and output paths — never rides along. The plugin finds them either
+# way: run records are located by `type: run`, not by folder.
 
 # Obsidian per-machine state (never useful in the repo)
 **/.obsidian/workspace*
