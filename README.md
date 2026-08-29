@@ -405,6 +405,66 @@ frozen copy under, when the incoming text is identical, or when no one-line
 summary is given. Reissue under the same number is allowed — issuers do that —
 and the frozen copy takes a dated name so nothing is overwritten.
 
+## Running R and Python from a note
+
+Put an R or Python block in any note and run it. What comes back goes under the
+block: printed output, errors, and any plot it drew. A record of the run is
+written to `94 Runs/`, naming the interpreter version, a hash of the code that
+actually ran, and the data version if you gave one.
+
+Three ways in, all of which lead to the same dialog:
+
+- a **Run** row under the block in reading view;
+- **Run this R block** / **Run this Python block** in the editor's right-click
+  menu, which is the one that works while you are editing;
+- the **Run a code block from this note** command.
+
+### Nothing runs until you say so
+
+Opening a note runs nothing. Loading the vault runs nothing. Syncing runs
+nothing. Every route opens a dialog first, and that dialog shows you the whole
+block, which interpreter will run it, where it will run, and what it will
+write. A block in a note is code somebody wrote; reading it is the point.
+
+A block fenced ```` ```python no-run ```` is never offered — for the block in an
+SOP that shows what *not* to do.
+
+### Point it at your interpreters first
+
+Settings → SCDB Cockpit → **Running code**. Give the full path to `Rscript.exe`
+and to `python.exe`; a bare `python` is not enough, because the machine this is
+built for has neither on `PATH`.
+
+Press **Test** next to each. It reports the version it found and, for Python,
+which of matplotlib, pandas and numpy it can actually import — which is worth
+more than the version. Python runs isolated by default (`-I`), and that flag
+also hides anything installed with `pip install --user`. If Test says no
+matplotlib, switch **Python isolation** to *Allow per-user packages*: the
+working directory stays off `sys.path` and `PYTHONPATH` is still ignored.
+
+### Where it runs, and what it can touch
+
+In a temporary folder outside the vault, as a separate process. A file the block
+writes lands there and is discarded — only plots come back, and only files the
+harness itself named. R starts with `--vanilla` and Python with isolation flags,
+so a stray `.Rprofile` or a `random.py` sitting in the vault cannot get itself
+executed or imported.
+
+Every run has a timeout and a **Stop** button. Obsidian stays responsive
+throughout, and stopping costs nothing.
+
+### What ends up in the note, and what ends up in the record
+
+The note gets a plain `text` block under the code, replaced each time you re-run
+rather than piling up, plus the figures embedded. It is ordinary markdown; a
+vault opened without this plugin reads exactly the same.
+
+The history lives in `94 Runs/`. Each record says what ran, under which
+interpreter, when, for how long, how it ended, and keeps a verbatim copy of the
+code — so "which code produced this figure" stays answerable after the note has
+moved on. If you did not name a dataset and version, the record says so rather
+than implying the data is pinned when only the code is.
+
 ## Vault apps and the scratchpad
 
 A vault app is a note in `92 Apps/`: frontmatter saying what it may reach, and

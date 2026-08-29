@@ -8,7 +8,7 @@
 import type { AttachmentPolicy } from "../comms/emlThread";
 import type { TimerState } from "../effort/timer";
 
-export const CURRENT_SETTINGS_VERSION = 9;
+export const CURRENT_SETTINGS_VERSION = 10;
 
 /** The three hats. Mode is the organising metaphor, not a cosmetic filter (§7 A3). */
 export const MODES = ["biostat", "hod", "research-core"] as const;
@@ -62,6 +62,7 @@ export interface ScdbSettings {
   events: EventsConfig;
   publications: PublicationsConfig;
   apps: AppsConfig;
+  compute: ComputeConfig;
   /** Unrecognised keys are preserved verbatim — see rule 8, never destroy data. */
   [extra: string]: unknown;
 }
@@ -332,6 +333,60 @@ export function defaultApps(): AppsConfig {
   return { grants: {}, watchdogSeconds: 10 };
 }
 
+/**
+ * Running R and Python blocks (§5.12, §7 F1).
+ *
+ * **Both paths start empty, and that is the safe default rather than an
+ * oversight.** §7 F1 is explicit that discovery never assumes `PATH`: on the
+ * target machine the interpreters are a portable R build and a miniconda
+ * environment, neither of which is on `PATH`, and a plugin that guessed would
+ * either find nothing or find the wrong one. Empty means the Run action
+ * explains what to fill in, which is the honest failure.
+ *
+ * Nothing here can be triggered by a note. Rule 12: a block runs on an
+ * explicit action, after a dialog showing exactly what will run.
+ */
+export interface ComputeConfig {
+  /** Absolute path to `Rscript`. Empty until you point at one. */
+  rPath: string;
+  /** Absolute path to `python`. Empty until you point at one. */
+  pythonPath: string;
+  /**
+   * How much of its environment a Python run may see.
+   *
+   * "isolated" is §7 F1's `-I` and ships as the default. It also hides
+   * anything installed with `pip install --user`, which on a machine that
+   * installs that way means no matplotlib and therefore no plots — found by
+   * running it here, not by reading the flag. "user-site" keeps the working
+   * directory off `sys.path` and still ignores `PYTHONPATH`; it gives up only
+   * the exclusion of the per-user site directory.
+   */
+  pythonIsolation: string;
+  /** Seconds before a run is killed. Every run is out-of-process and killable. */
+  timeoutSeconds: number;
+  /** Per stream, in KB. A loop that prints would otherwise fill a note. */
+  maxOutputKb: number;
+  /**
+   * Whether reading view offers a Run button under R and Python blocks.
+   *
+   * A button is an affordance, not an execution — nothing runs until it is
+   * pressed and the dialog is confirmed. Off is for anyone who would rather
+   * reach every run through the command palette.
+   */
+  showRunButtons: boolean;
+}
+
+export function defaultCompute(): ComputeConfig {
+  return {
+    rPath: "",
+    pythonPath: "",
+    pythonIsolation: "isolated",
+    timeoutSeconds: 120,
+    maxOutputKb: 64,
+    showRunButtons: true,
+  };
+}
+
 export function defaultSettings(): ScdbSettings {
   return {
     schemaVersion: CURRENT_SETTINGS_VERSION,
@@ -347,6 +402,7 @@ export function defaultSettings(): ScdbSettings {
     events: defaultEvents(),
     publications: defaultPublications(),
     apps: defaultApps(),
+    compute: defaultCompute(),
   };
 }
 

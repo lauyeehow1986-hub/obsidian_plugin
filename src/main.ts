@@ -6,6 +6,12 @@ import type { AppAssessment } from "./domain/apps/register.js";
 import { AppWriter, type NewApp } from "./services/appWriter.js";
 import { readTheme, type AppHostContext } from "./services/appHost.js";
 import { GrantAppModal, NewAppModal, ProposeWriteModal, WedgedAppModal } from "./ui/AppModals.js";
+import { findRunnableBlocks, type RunnableBlock } from "./domain/compute/block";
+import { isPythonIsolation } from "./domain/compute/harness";
+import { ComputeRunner, runNotice } from "./services/computeRunner";
+import { BlockPicker } from "./ui/BlockPicker";
+import { RunBlockModal } from "./ui/RunBlockModal";
+import { registerRunButtons, registerRunMenu, activeMarkdownFile } from "./ui/runButtons";
 import { AppPicker } from "./ui/AppPicker.js";
 
 import { Notice, Plugin, TFile, debounce, type WorkspaceLeaf } from "obsidian";
@@ -269,6 +275,7 @@ export default class ScdbCockpitPlugin extends Plugin {
   redcap!: RedcapWriter;
   /** Vault apps: reading their notes, recording consent, exporting them (§5.13, §7 F3). */
   apps!: AppWriter;
+  compute!: ComputeRunner;
 
   /**
    * Bumped whenever a form note changes, so the forms board reloads.
@@ -418,6 +425,23 @@ export default class ScdbCockpitPlugin extends Plugin {
       runtime: sandboxRuntime,
     });
 
+    this.compute = new ComputeRunner({
+      app: this.app,
+      audit: this.audit,
+      actor: () => this.settings.actor,
+      runsFolder: () => this.settings.folders.runs,
+      settings: () => ({
+        rPath: this.settings.compute.rPath,
+        pythonPath: this.settings.compute.pythonPath,
+        pythonIsolation: isPythonIsolation(this.settings.compute.pythonIsolation)
+          ? this.settings.compute.pythonIsolation
+          : "isolated",
+        timeoutSeconds: this.settings.compute.timeoutSeconds,
+        maxOutputKb: this.settings.compute.maxOutputKb,
+      }),
+      reindex: (file) => this.notes.update(file),
+    });
+
     this.reportTemplates = new ReportTemplateStore(
       this.app,
       () => this.settings.folders.config,
@@ -529,6 +553,12 @@ export default class ScdbCockpitPlugin extends Plugin {
     this.registerView(DIAGRAM_VIEW_TYPE, (leaf: WorkspaceLeaf) => new DiagramView(leaf, this));
     this.registerView(APP_VIEW_TYPE, (leaf: WorkspaceLeaf) => new AppView(leaf, this));
     this.registerBasesViews();
+    registerRunButtons(this, {
+      enabled: () => this.settings.compute.showRunButtons,
+      open: (file, block) => this.runBlock(file, block),
+    });
+    registerRunMenu(this, { open: (file, block) => this.runBlock(file, block) });
+
     this.addSettingTab(new ScdbSettingsTab(this.app, this));
     this.registerCommands();
     this.addRibbonIcon("layout-dashboard", "SCDB Cockpit", () => void this.activateCockpit());
@@ -1035,6 +1065,17 @@ export default class ScdbCockpitPlugin extends Plugin {
       id: "scratchpad",
       name: "Open the JavaScript scratchpad",
       callback: () => void this.openScratchpad(),
+    });
+
+    this.addCommand({
+      id: "run-block",
+      name: "Run a code block from this note",
+      checkCallback: (checking: boolean) => {
+        const file = activeMarkdownFile(this);
+        if (file === null) return false;
+        if (!checking) void this.pickBlock(file);
+        return true;
+      },
     });
 
     this.addCommand({
@@ -2387,6 +2428,58 @@ export default class ScdbCockpitPlugin extends Plugin {
       return;
     }
     new AppPicker(this.app, register, onPick).open();
+  }
+
+  // --- running code blocks (§5.12, §7 F1) -----------------------------------
+
+  /**
+   * Offer the runnable blocks in a note.
+   *
+   * Nothing is run here. The picker leads to the dialog, and the dialog is
+   * where a person reads the code and decides (rule 12).
+   */
+  private async pickBlock(file: TFile): Promise<void> {
+    const text = await this.app.vault.read(file);
+    const blocks = findRunnableBlocks(text);
+    if (blocks.length === 0) {
+      new Notice("SCDB: no R or Python blocks in this note.", 6000);
+      return;
+    }
+    if (blocks.length === 1) {
+      const only = blocks[0];
+      if (only !== undefined) this.runBlock(file, only);
+      return;
+    }
+    new BlockPicker(this.app, blocks, (block) => this.runBlock(file, block)).open();
+  }
+
+  /**
+   * Open the run dialog for one block.
+   *
+   * The provenance fields are seeded from the note when it happens to be a
+   * script doc, because a person who already wrote down which extract a script
+   * consumes should not retype it to run a block in the same note.
+   */
+  runBlock(file: TFile, block: RunnableBlock): void {
+    const cache = this.app.metadataCache.getFileCache(file);
+    const frontmatter = cache?.frontmatter;
+    const doc =
+      frontmatter?.["type"] === "script-doc" ? parseScriptDoc(file.path, frontmatter) : null;
+
+    new RunBlockModal(this.app, {
+      runner: this.compute,
+      file,
+      block,
+      seed: {
+        request: doc?.requests[0] ?? "",
+        inputs: doc?.inputs.map((entry) => ({ dataset: entry.dataset, version: entry.version })) ?? [],
+        variables: doc?.variables ?? [],
+      },
+      onDone: (report) => {
+        new Notice(`SCDB: ${runNotice(report)}`, 8000);
+        this.refreshViews();
+      },
+    }).open();
   }
 
   // --- publications (§5.4, §7 B5) -------------------------------------------

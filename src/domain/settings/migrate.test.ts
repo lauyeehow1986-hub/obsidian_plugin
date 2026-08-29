@@ -483,6 +483,63 @@ describe("migrateSettings", () => {
   });
 
 
+  describe("running code (§7 F1)", () => {
+    it("configures no interpreter on upgrade from v9", () => {
+      const result = migrateSettings({ schemaVersion: 9 });
+      expect(result.settings.compute.rPath).toBe("");
+      expect(result.settings.compute.pythonPath).toBe("");
+      expect(result.notes.join(" ")).toContain("Neither");
+    });
+
+    it("keeps paths that were set", () => {
+      const result = migrateSettings({
+        schemaVersion: 10,
+        compute: {
+          rPath: "C:\\Program Files\\R\\R-4.5.2\\bin\\Rscript.exe",
+          pythonPath: "C:\\Python314\\python.exe",
+        },
+      });
+      expect(result.settings.compute.rPath).toBe("C:\\Program Files\\R\\R-4.5.2\\bin\\Rscript.exe");
+      expect(result.settings.compute.pythonPath).toBe("C:\\Python314\\python.exe");
+    });
+
+    // An unreadable value falls back to "not configured", not to a guess. The
+    // failure that produces is a dialog; the failure a guess produces is a run
+    // against an interpreter nobody chose, recorded as though they had.
+    it("falls back to not configured when the block is unreadable", () => {
+      const result = migrateSettings({ schemaVersion: 10, compute: "yes please" });
+      expect(result.settings.compute.pythonPath).toBe("");
+      expect(result.notes.join(" ")).toContain("no interpreter is configured");
+    });
+
+    it("keeps the hardened isolation when the stored value is not one we know", () => {
+      const result = migrateSettings({ schemaVersion: 10, compute: { pythonIsolation: "off" } });
+      expect(result.settings.compute.pythonIsolation).toBe("isolated");
+      expect(result.notes.join(" ")).toContain("using the isolated default");
+    });
+
+    it("keeps a relaxed isolation that was deliberately chosen", () => {
+      const result = migrateSettings({ schemaVersion: 10, compute: { pythonIsolation: "user-site" } });
+      expect(result.settings.compute.pythonIsolation).toBe("user-site");
+    });
+
+    // A person who typed 5000 meant "a long time". Zero and negative are the
+    // ones that matter, and they cannot survive the clamp.
+    it("clamps a timeout and an output cap rather than refusing them", () => {
+      const result = migrateSettings({
+        schemaVersion: 10,
+        compute: { timeoutSeconds: 100000, maxOutputKb: 0 },
+      });
+      expect(result.settings.compute.timeoutSeconds).toBe(3600);
+      expect(result.settings.compute.maxOutputKb).toBe(1);
+    });
+
+    it("never lets a timeout reach zero", () => {
+      const result = migrateSettings({ schemaVersion: 10, compute: { timeoutSeconds: -5 } });
+      expect(result.settings.compute.timeoutSeconds).toBe(5);
+    });
+  });
+
   describe("vault apps (§5.13, §7 F3)", () => {
     it("grants nothing on upgrade from v8", () => {
       const result = migrateSettings({ schemaVersion: 8 });

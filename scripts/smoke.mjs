@@ -27,6 +27,7 @@ class Component {
   registerInterval(id) {
     return id;
   }
+  registerDomEvent() {}
 }
 
 /**
@@ -83,6 +84,13 @@ class Plugin extends Component {
   }
   addSettingTab() {}
   registerView() {}
+  // §7 F1 draws a Run affordance under R and Python blocks in reading view.
+  // Collected rather than ignored, so the check below can assert that drawing
+  // a button is all it does — nothing is executed at registration time
+  // (rule 12).
+  registerMarkdownPostProcessor(processor) {
+    registeredPostProcessors.push(processor);
+  }
   async loadData() {
     return null;
   }
@@ -158,6 +166,7 @@ const stub = {
  */
 const created = [];
 const registeredCommands = [];
+const registeredPostProcessors = [];
 
 function stubApp() {
   const ref = {};
@@ -257,7 +266,7 @@ const checks = [
   // Pinned deliberately: this line failing means the schema moved, which is
   // the moment to check a migration step went with it (§10 — an upgrade must
   // never lose settings). Bump it only after writing that step.
-  ["settings carry a schema version", instance.settings.schemaVersion === 9],
+  ["settings carry a schema version", instance.settings.schemaVersion === 10],
   ["the hat filter defaults to the mode you are wearing", instance.settings.hatFilter === "mode"],
   // §7 B2. No timer on a fresh install, and every timer action reachable from
   // the keyboard — the status-bar segment is a shortcut, not the only door.
@@ -281,6 +290,25 @@ const checks = [
     "an app can be run, made and exported from the palette",
     ["run-app", "new-app", "export-app", "scratchpad"].every((id) => commands.includes(id)),
   ],
+  // §7 F1. Neither interpreter is configured on a fresh install, because
+  // §7 F1 forbids assuming PATH and the target machine has neither on it. An
+  // empty path means the Run dialog explains what to set; a guessed one means
+  // a run against an interpreter nobody chose.
+  [
+    "no interpreter is configured on a fresh install",
+    instance.settings.compute.rPath === "" && instance.settings.compute.pythonPath === "",
+  ],
+  [
+    "Python isolation defaults to the hardened flag",
+    instance.settings.compute.pythonIsolation === "isolated",
+  ],
+  ["the compute runner is wired", typeof instance.compute?.probe === "function"],
+  [
+    "a run is refused while no interpreter is set",
+    instance.compute.blockers("python").length > 0,
+  ],
+  ["a block can be run from the palette", commands.includes("run-block")],
+  ["the Run affordance is registered as a post-processor", registeredPostProcessors.length > 0],
   ["the effort log is wired", typeof instance.effort?.months === "function"],
   ["the effort log reads no months on an empty vault", instance.effort.months().length === 0],
   [

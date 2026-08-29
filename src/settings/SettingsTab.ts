@@ -10,6 +10,13 @@ import {
 } from "../domain/settings/schema.js";
 import { buildMailto, buildTeamsChat, MIN_URI_CEILING } from "../domain/comms/uri.js";
 import { probeHandler, reportLaunch } from "../services/protocol.js";
+import { LANGUAGE_LABELS, type RunLanguage } from "../domain/compute/block.js";
+import {
+  interpreterLabel,
+  isPythonIsolation,
+  ISOLATION_LABELS,
+  PYTHON_ISOLATION,
+} from "../domain/compute/harness.js";
 import type ScdbCockpitPlugin from "../main.js";
 
 export class ScdbSettingsTab extends PluginSettingTab {
@@ -98,6 +105,7 @@ export class ScdbSettingsTab extends PluginSettingTab {
     this.reportsSection(containerEl);
     this.eventsSection(containerEl);
     this.appsSection(containerEl);
+    this.computeSection(containerEl);
     this.backupSection(containerEl);
 
     // Surfacing migration notes here rather than only in the console: on the
@@ -469,6 +477,147 @@ export class ScdbSettingsTab extends PluginSettingTab {
   }
 
   /** Report templates (§7 B7). Nothing to configure until you want to edit one. */
+  /**
+   * Running R and Python blocks (§7 F1).
+   *
+   * The "test interpreter" button is the whole reason this screen is worth
+   * more than two text fields. §7 F1 asks for it by name, and running it on
+   * this machine showed why: the default isolation found Python 3.14 and *no*
+   * matplotlib, because the packages were installed with `pip install --user`
+   * and `-I` excludes that directory. Without a probe that reports packages as
+   * well as a version, that is a green tick followed by a failed plot and no
+   * hint connecting the two.
+   */
+  private computeSection(containerEl: HTMLElement): void {
+    containerEl.createEl("h3", { text: "Running code" });
+
+    containerEl.createEl("p", {
+      cls: "setting-item-description",
+      text:
+        "Runs an R or Python block from a note, out of process, in a temporary folder outside " +
+        "the vault, and writes a provenance record naming the interpreter, a hash of the code " +
+        "that ran and the data version. Nothing runs on its own: a block runs when you press " +
+        "Run and confirm a dialog showing the code.",
+    });
+
+    this.interpreterSetting(containerEl, "r");
+    this.interpreterSetting(containerEl, "python");
+
+    new Setting(containerEl)
+      .setName("Python isolation")
+      .setDesc(
+        "Isolated (-I) is the hardened default: the working directory stays off sys.path and " +
+          "PYTHONPATH is ignored. It also hides anything installed with “pip install --user”, " +
+          "which on some machines means no matplotlib and therefore no plots. The second option " +
+          "keeps both of those defences and gives up only that exclusion.",
+      )
+      .addDropdown((dropdown) => {
+        for (const option of PYTHON_ISOLATION) dropdown.addOption(option, ISOLATION_LABELS[option]);
+        dropdown
+          .setValue(
+            isPythonIsolation(this.plugin.settings.compute.pythonIsolation)
+              ? this.plugin.settings.compute.pythonIsolation
+              : "isolated",
+          )
+          .onChange(async (value) => {
+            this.plugin.settings.compute.pythonIsolation = value;
+            await this.plugin.saveSettings();
+          });
+      });
+
+    new Setting(containerEl)
+      .setName("Timeout")
+      .setDesc("Seconds before a run is killed. Every run is killable from the dialog too.")
+      .addText((text) =>
+        text
+          .setPlaceholder("120")
+          .setValue(String(this.plugin.settings.compute.timeoutSeconds))
+          .onChange(async (value) => {
+            const seconds = Number(value);
+            if (!Number.isFinite(seconds)) return;
+            this.plugin.settings.compute.timeoutSeconds = Math.min(3600, Math.max(5, Math.round(seconds)));
+            await this.plugin.saveSettings();
+          }),
+      );
+
+    new Setting(containerEl)
+      .setName("Keep at most")
+      .setDesc(
+        "KB of output per stream. Past this the middle is dropped and the note says so — a " +
+          "loop that prints would otherwise fill the note, the index and every export of it.",
+      )
+      .addText((text) =>
+        text
+          .setPlaceholder("64")
+          .setValue(String(this.plugin.settings.compute.maxOutputKb))
+          .onChange(async (value) => {
+            const kb = Number(value);
+            if (!Number.isFinite(kb)) return;
+            this.plugin.settings.compute.maxOutputKb = Math.min(4096, Math.max(1, Math.round(kb)));
+            await this.plugin.saveSettings();
+          }),
+      );
+
+    new Setting(containerEl)
+      .setName("Show a Run button on code blocks")
+      .setDesc(
+        "In reading view, under R and Python blocks. A button is an affordance, not an " +
+          "execution — it opens the dialog. Turn it off to reach every run through the palette.",
+      )
+      .addToggle((toggle) =>
+        toggle.setValue(this.plugin.settings.compute.showRunButtons).onChange(async (value) => {
+          this.plugin.settings.compute.showRunButtons = value;
+          await this.plugin.saveSettings();
+        }),
+      );
+  }
+
+  private interpreterSetting(containerEl: HTMLElement, language: RunLanguage): void {
+    const key = language === "r" ? "rPath" : "pythonPath";
+    const name = LANGUAGE_LABELS[language];
+    const example =
+      language === "r"
+        ? "C:\\Program Files\\R\\R-4.5.2\\bin\\Rscript.exe"
+        : "C:\\Users\\you\\miniconda3\\envs\\scdb\\python.exe";
+
+    const setting = new Setting(containerEl)
+      .setName(`${name} interpreter`)
+      .setDesc(
+        `Full path to the executable. Not a bare command: the target machine has neither ` +
+          `interpreter on PATH, so “${language === "r" ? "Rscript" : "python"}” would work here ` +
+          `and fail there.`,
+      )
+      .addText((text) =>
+        text
+          .setPlaceholder(example)
+          .setValue(this.plugin.settings.compute[key])
+          .onChange(async (value) => {
+            this.plugin.settings.compute[key] = value.trim();
+            await this.plugin.saveSettings();
+          }),
+      );
+
+    const report = containerEl.createEl("p", { cls: "setting-item-description scdb-probe" });
+
+    setting.addButton((button) =>
+      button.setButtonText("Test").onClick(async () => {
+        report.setText("Asking…");
+        const { reading, error } = await this.plugin.compute.probe(language);
+        if (error !== "") {
+          report.setText(`${name}: ${error}`);
+          return;
+        }
+        const packages =
+          language === "python"
+            ? reading.packages.length === 0
+              ? " · no matplotlib, pandas or numpy visible — plots will not work"
+              : ` · ${reading.packages.join(", ")}`
+            : "";
+        report.setText(`${interpreterLabel(language, reading)}${packages}`);
+      }),
+    );
+  }
+
   private reportsSection(containerEl: HTMLElement): void {
     containerEl.createEl("h3", { text: "Reports" });
 

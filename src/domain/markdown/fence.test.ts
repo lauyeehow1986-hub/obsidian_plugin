@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { findFence, renderFence, replaceFence } from "./fence";
+import { findFence, renderFence, replaceFence, scanFences } from "./fence";
 
 const APP = { languages: ["js", "javascript"] as const, tag: "app" };
 
@@ -35,3 +35,47 @@ describe("fenced blocks in a note body", () => {
     expect(after.indexOf("What it does.")).toBeLessThan(after.indexOf("```js app"));
   });
 });
+
+describe("scanning every fence (F1 needs all of them, not the first)", () => {
+  const text = [
+    "```python",
+    "print(1)",
+    "```",
+    "",
+    "```",
+    "a bare fence",
+    "```",
+    "",
+    "~~~r extra",
+    "1 + 1",
+    "~~~",
+    "",
+  ].join("\n");
+
+  it("returns them in document order, bare fences included", () => {
+    expect(scanFences(text).map((fence) => fence.words)).toEqual([["python"], [], ["r", "extra"]]);
+  });
+
+  it("lower-cases the info string, so RScript and R both match later", () => {
+    expect(scanFences("```PYTHON\nx\n```\n")[0]?.words).toEqual(["python"]);
+  });
+
+  it("gives ranges that slice back to the whole fence", () => {
+    const first = scanFences(text)[0];
+    if (first === undefined) throw new Error("fixture");
+    expect(text.slice(first.start, first.end)).toBe("```python\nprint(1)\n```");
+  });
+
+  it("finds nothing in prose", () => {
+    expect(scanFences("Just words.\n")).toEqual([]);
+  });
+});
+
+describe("rendering without a tag", () => {
+  // A trailing space in the info string would show up in the fence of every
+  // archived run record, and in the git diff of every one of them.
+  it("leaves no trailing space after the language", () => {
+    expect(renderFence("print(1)", "python", "")).toBe("```python\nprint(1)\n```");
+  });
+});
+

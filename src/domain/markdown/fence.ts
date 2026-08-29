@@ -34,6 +34,41 @@ export interface FenceLocation {
   tagged: boolean;
 }
 
+/** Every fence in a note, in the order they appear. */
+export interface ScannedFence {
+  /** The info string's words, lower-cased. `[]` for a bare fence. */
+  words: string[];
+  body: string;
+  start: number;
+  end: number;
+}
+
+/**
+ * Walk every fenced block in a note.
+ *
+ * Exported because F1 needs *all* the runnable blocks in a note and their
+ * positions, not the first one matching a tag. One scanner rather than a
+ * second regex somewhere else: the fence spellings CommonMark allows are the
+ * fiddly part, and getting them right twice is how the two copies drift.
+ */
+export function scanFences(text: string): ScannedFence[] {
+  const found: ScannedFence[] = [];
+
+  FENCE.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = FENCE.exec(text)) !== null) {
+    const info = (match[2] ?? "").trim().toLowerCase();
+    found.push({
+      words: info.split(/\s+/).filter((word) => word !== ""),
+      body: match[3] ?? "",
+      start: match.index,
+      end: match.index + match[0].length,
+    });
+  }
+
+  return found;
+}
+
 // Fence, optional info string, body, closing fence. Tolerates ``` and ~~~, and
 // more than three markers, because both are valid CommonMark and a note that
 // contains a fenced block inside the block needs the longer form.
@@ -51,21 +86,17 @@ const FENCE = /^([`~]{3,})[ \t]*([^\n]*)\n([\s\S]*?)^\1[`~]*[ \t]*$/gm;
 export function findFence(text: string, query: FenceQuery): FenceLocation | null {
   let fallback: FenceLocation | null = null;
 
-  FENCE.lastIndex = 0;
-  let match: RegExpExecArray | null;
-  while ((match = FENCE.exec(text)) !== null) {
-    const info = (match[2] ?? "").trim().toLowerCase();
-    const words = info.split(/\s+/).filter((word) => word !== "");
-    if (words.length === 0) continue;
+  for (const fence of scanFences(text)) {
+    if (fence.words.length === 0) continue;
 
-    const language = words[0] ?? "";
+    const language = fence.words[0] ?? "";
     if (!query.languages.includes(language)) continue;
 
     const location: FenceLocation = {
-      body: match[3] ?? "",
-      start: match.index,
-      end: match.index + match[0].length,
-      tagged: words.includes(query.tag),
+      body: fence.body,
+      start: fence.start,
+      end: fence.end,
+      tagged: fence.words.includes(query.tag),
     };
 
     if (location.tagged) return location;
@@ -86,7 +117,9 @@ export function renderFence(body: string, language: string, tag: string): string
   let longest = 0;
   for (const run of inner.match(/`{3,}/g) ?? []) longest = Math.max(longest, run.length);
   const marker = "`".repeat(Math.max(3, longest + 1));
-  return `${marker}${language} ${tag}\n${inner}\n${marker}`;
+  // An empty tag leaves no trailing space: ```python, not "```python ".
+  const info = tag === "" ? language : `${language} ${tag}`;
+  return `${marker}${info}\n${inner}\n${marker}`;
 }
 
 /**

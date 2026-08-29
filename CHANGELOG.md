@@ -5,6 +5,101 @@ clearly marked entry (CLAUDE.md §10).
 
 ## Unreleased
 
+### Added — F1, running R and Python blocks with provenance
+
+Run an R or Python block from a note. Output, errors and plots come back under
+the block; a §5.12 run record is written to `94 Runs/`; the ledger gets a
+`code-run` row. Reachable three ways: a **Run** row under the block in reading
+view, **Run this R/Python block** in the editor's right-click menu, and the
+**Run a code block from this note** command.
+
+**Nothing runs by surprise** (rule 12). Opening a note runs nothing, loading the
+vault runs nothing. Every route leads to a dialog that shows the whole block,
+names the interpreter, says where it will run and what it will write — and only
+then offers a button. The code is shown in full rather than summarised, because
+a block in a note somebody sent you is untrusted input and a person reading it
+is the only defence there is.
+
+**Interpreter hardening, and what running it actually proved.** `Rscript
+--vanilla` and `python -I`, `spawn` with `shell: false` and array arguments,
+and a temporary working directory outside the vault. Each of those was checked
+rather than assumed:
+
+- An `.Rprofile` planted in the working directory — §7 F1's stated threat, a
+  file arriving from a colleague's zip — **does not execute** under `--vanilla`.
+- `-I` keeps both the working directory and `PYTHONPATH` off `sys.path`, so the
+  `random.py`-shadows-the-stdlib problem is closed.
+- `-I` also implies `-s`, which hides anything installed with `pip install
+  --user`. On the dev machine that meant **no matplotlib and therefore no
+  plots**, with nothing to connect the two. So the "test interpreter" button
+  reports the packages it can see as well as the version, and a second
+  isolation setting keeps `-E -P` — the part the spec argues for — while
+  allowing the per-user site directory. The hardened option remains the default.
+
+**Plot capture by harness, not by hope**, and the first version of that was
+wrong in a way only running it showed. The figure sweep was an `atexit`
+handler; importing `matplotlib.pyplot` registers an atexit handler of its own
+that closes every figure, user code imports pyplot *after* ours is registered,
+and atexit runs LIFO — so matplotlib destroyed the figures first and the sweep
+found an empty list, silently. It now runs in a `finally`, which has no
+ordering to get wrong and still fires when the block raises. That is the run
+whose plots you most want.
+
+**Errors name your line, not the harness's.** Both runners execute the block
+from its own file, so a traceback reads `block.py line 3` and an R error reads
+`Error on line 3`. R warnings are reported through a calling handler that
+muffles and resumes: `tryCatch` on a warning unwinds, which would turn a
+cosmetic warning on line 2 into forty lines that silently never ran.
+
+**Python displays the last expression only**, the way a notebook cell does.
+Displaying every one, REPL-style, meant a block that drew a chart printed five
+lines of matplotlib repr around two lines of output. R keeps printing every
+visible result, which is R's own behaviour and quiet there because its plotting
+calls return invisibly.
+
+**Every run is out of process, timed and killable.** A Stop button ends it, and
+`killed` is recorded distinctly from `timeout` — one is a person deciding they
+had seen enough, the other is the machine deciding for them, and a record that
+conflated them would lose the difference. Output is capped per stream, cut in
+the middle rather than at the end, because the tail of a traceback is the part
+worth keeping.
+
+**Output in the note is replaced, never stacked**, and the region that gets
+replaced is defined narrowly enough that it can only match something this
+plugin wrote: our own `text scdb-run` fence immediately after the block, plus
+embed lines that are only an embed of a figure in the runs folder named after a
+run. The first line that is anything else ends the sweep, so a person's note
+under a block survives a re-run (rule 8). The fence is plain `text`, so a vault
+opened without the plugin reads the same.
+
+**The run record is an observation, not hearsay.** It carries `ran_by` and logs
+`code-run`, where a hand-recorded run (§7 C3) carries `recorded_by` and logs
+`run-recorded`. An auditor reading `94 Runs/` needs to know which they are
+holding. The record also keeps a verbatim copy of the code that ran, fenced
+`no-run`, so `script_hash` can be *checked* rather than merely compared once
+the note has moved on.
+
+A block fenced `no-run` is never offered — for the archived copy in a run
+record, and for the block in an SOP that illustrates what not to do.
+
+Settings schema **9 → 10**, with a migration. Neither interpreter path is set
+on upgrade: §7 F1 forbids assuming `PATH`, the target machine has neither on it,
+and a guessed path means a run against an interpreter nobody chose, recorded in
+a provenance record as though they had.
+
+**Still open (§11):** the real `Rscript.exe` and miniconda `python.exe` paths on
+the work laptop. They are settings values, not code — the "test interpreter"
+button answers them in ten seconds on that machine.
+
+### Changed
+
+- The reading-view Run control moved out of the code block to a row beneath it.
+  Obsidian's code blocks are scroll containers, so an absolutely positioned
+  child anchors to the scroll height: the button sat below the visible box and
+  was clipped away. Out here it cannot be clipped and does not compete with
+  Obsidian's own copy button for the corner.
+
+
 ### Added — F3, vault apps, the scratchpad and app export
 
 An **Apps** tab over `92 Apps/` (§5.13), a sandboxed pane that runs them, and

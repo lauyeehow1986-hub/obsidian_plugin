@@ -47,6 +47,7 @@ import { VAULT_APP_TYPE, parseManifest } from "../src/domain/apps/manifest";
 import { buildRegister as buildAppsRegister, summarise as summariseApps } from "../src/domain/apps/register";
 import { newGrant } from "../src/domain/apps/grant";
 import { buildFrame } from "../src/domain/apps/frame";
+import { findRunnableBlocks } from "../src/domain/compute/block";
 import {
   fromDictionaryCsv,
   instrumentsToBlock,
@@ -1252,5 +1253,53 @@ describe("vault apps (§5.13, §7 F3)", () => {
       expect(page.match(/<script/g)?.length, manifest.id).toBe(1);
       expect(page.match(/<\/script>/g)?.length, manifest.id).toBe(1);
     }
+  });
+});
+
+describe("runnable blocks (§5.12, §7 F1)", () => {
+  const workbench = files.find((file) => file.rel.endsWith("Invented block workbench.md"));
+
+  it("ships a note with blocks to run", () => {
+    expect(workbench).toBeDefined();
+  });
+
+  /**
+   * Pinned deliberately. The workbench is where F1 is exercised by hand, and
+   * a fixture that quietly lost its R block, or gained a runnable copy of the
+   * destructive one, would still look fine on screen.
+   */
+  it("offers exactly the blocks the note says it offers", () => {
+    const blocks = findRunnableBlocks(workbench?.text ?? "");
+    expect(blocks.map((block) => `${block.language} #${block.ordinal}`)).toEqual([
+      "python #1",
+      "python #2",
+      "r #1",
+      "r #2",
+    ]);
+  });
+
+  // The one block that must never be offered. It calls shutil.rmtree.
+  it("keeps the no-run block off the list", () => {
+    expect(workbench?.text).toContain("```python no-run");
+    const blocks = findRunnableBlocks(workbench?.text ?? "");
+    expect(blocks.some((block) => block.source.includes("rmtree"))).toBe(false);
+  });
+
+  /**
+   * A committed fixture must carry no output.
+   *
+   * Running one writes an output block and a figure into the note, and a
+   * committed copy of that would put a generated PNG and a machine-written
+   * transcript into a public repo — and would make the next run look like it
+   * had already happened.
+   */
+  it("carries no output from a previous run", () => {
+    expect(workbench?.text).not.toContain("scdb-run");
+    expect(workbench?.text).not.toContain("![[94 Runs/");
+  });
+
+  it("commits no run records or figures", () => {
+    const runs = files.filter((file) => file.rel.startsWith("94 Runs/"));
+    expect(runs.map((file) => file.rel)).toEqual([]);
   });
 });

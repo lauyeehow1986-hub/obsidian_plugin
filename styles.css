@@ -2382,3 +2382,100 @@
   font-size: var(--font-ui-smaller);
   white-space: pre;
 }
+
+/* --- Running code blocks (§7 F1) ---------------------------------------- */
+
+/* The Run affordance in reading view. Sits in the corner of the block the way
+   Obsidian's own copy button does, and stays out of the way until hovered —
+   a button under every code block in the vault should not compete with the
+   code for attention. It is always reachable by keyboard. */
+/* A row under the block, not a button inside it.
+
+   Inside was the obvious place and it was wrong: Obsidian's code blocks are
+   scroll containers, so an absolutely positioned child anchors to the scroll
+   height rather than the visible box and the button sat below the fold, clipped
+   away. Out here it is in normal flow, cannot be clipped, and does not compete
+   with Obsidian's own copy button for the corner. */
+.scdb-run-bar {
+  display: flex;
+  justify-content: flex-end;
+  margin: calc(var(--scdb-1) * -1) 0 var(--scdb-2);
+}
+
+.scdb-run-button {
+  padding: 2px 10px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  background: var(--background-primary);
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  line-height: 1.6;
+  /* Quiet, not hidden. A hover-only control is a control a keyboard user and
+     anybody reading on a touch screen never finds, and this one is how the
+     feature is discovered at all. */
+  opacity: 0.55;
+  cursor: pointer;
+  transition: opacity 120ms ease;
+}
+
+.scdb-run-bar:hover > .scdb-run-button,
+.scdb-run-button:hover,
+.scdb-run-button:focus-visible {
+  opacity: 1;
+  color: var(--text-normal);
+  border-color: var(--interactive-accent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scdb-run-button {
+    transition: none;
+  }
+}
+
+/* The dialog shows the whole block, not a preview: a person cannot vet code
+   they can only see four lines of. Taller than the app-source box for that
+   reason, and still bounded so the buttons stay on screen. */
+.scdb-code--tall {
+  max-height: 40vh;
+}
+
+/* Run and Cancel stay put while the code scrolls. Checked at 620x720, where
+   a fourteen-line block pushed them below the fold — reachable by scrolling,
+   but a person who cannot see the button assumes the dialog is broken. Same
+   fix the agenda and extract dialogs carry. */
+.scdb-run-dialog .scdb-modal__actions {
+  position: sticky;
+  bottom: 0;
+  margin-bottom: 0;
+  padding: var(--scdb-2) 0;
+  background: var(--background-primary);
+}
+
+.scdb-run-extra {
+  margin: var(--scdb-2) 0 0;
+}
+
+.scdb-run-extra > summary {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  cursor: pointer;
+}
+
+.scdb-run-result {
+  margin-top: var(--scdb-2);
+  padding-top: var(--scdb-2);
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+/* Weaknesses in a run record are advisories, not failures — the run happened
+   and the record is real. Muted rather than red, so the colour that means
+   "this went wrong" keeps meaning that. */
+.scdb-list--advisory li {
+  color: var(--text-muted);
+}
+
+.scdb-probe {
+  margin: calc(var(--scdb-1) * -1) 0 var(--scdb-2);
+  font-family: var(--font-monospace);
+  font-size: var(--font-ui-smaller);
+}

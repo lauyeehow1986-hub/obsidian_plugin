@@ -18,6 +18,7 @@ import {
   defaultEffort,
   defaultEvents,
   defaultApps,
+  defaultCompute,
   defaultPublications,
   defaultSettings,
   isMode,
@@ -29,11 +30,13 @@ import {
   type FolderKey,
   type AppGrantSetting,
   type AppsConfig,
+  type ComputeConfig,
   type PublicationsConfig,
   type ScdbSettings,
 } from "./schema.js";
 import { ATTACHMENT_POLICIES, type AttachmentPolicy } from "../comms/emlThread.js";
 import { MIN_IDLE_MINUTES, type TimerState } from "../effort/timer.js";
+import { isPythonIsolation } from "../compute/harness.js";
 
 export interface MigrationResult {
   settings: ScdbSettings;
@@ -182,6 +185,7 @@ export function migrateSettings(raw: unknown): MigrationResult {
   merged.events = repairEvents(merged.events, notes);
   merged.publications = repairPublications(merged.publications, notes);
   merged.apps = repairApps(merged.apps, notes);
+  merged.compute = repairCompute(merged.compute, notes);
 
   // Folders: fill gaps, keep customised values, drop nothing.
   const folders: Record<string, unknown> = isRecord(merged.folders) ? { ...merged.folders } : {};
@@ -260,6 +264,14 @@ export function migrateSettings(raw: unknown): MigrationResult {
       "Migrated v8 -> v9: added vault apps. No app is allowed to run until you " +
         "say so — the upgrade grants nothing, and an app that later asks for " +
         "more will ask you again.",
+    );
+  }
+
+  if (storedVersion > 0 && storedVersion < 10) {
+    notes.push(
+      "Migrated v9 -> v10: added running R and Python blocks. Neither " +
+        "interpreter path is set, so nothing can run until you point at one — " +
+        "and a block only ever runs from an explicit action.",
     );
   }
 
@@ -444,6 +456,56 @@ function repairApps(value: unknown, notes: string[]): AppsConfig {
       `${dropped} vault-app consent${dropped === 1 ? "" : "s"} could not be read and ${dropped === 1 ? "was" : "were"} dropped; those apps will ask again.`,
     );
   }
+
+  return base;
+}
+
+/**
+ * Compute settings (§7 F1).
+ *
+ * An unreadable value here falls back to "not configured" rather than to a
+ * guess. The failure that produces is a dialog saying where to point the
+ * setting; the failure a guess produces is a run against an interpreter the
+ * person did not choose, recorded in a provenance record as though they had.
+ *
+ * The timeout and the output cap are clamped rather than rejected: a person
+ * who typed 5000 seconds meant "a long time", and refusing their number
+ * outright would be pedantry. Zero and negative are the ones that matter, and
+ * they cannot survive the clamp.
+ */
+function repairCompute(value: unknown, notes: string[]): ComputeConfig {
+  const base = defaultCompute();
+  if (!isRecord(value)) {
+    if (value !== undefined) {
+      notes.push("Compute settings were not readable; no interpreter is configured.");
+    }
+    return base;
+  }
+
+  for (const key of ["rPath", "pythonPath"] as const) {
+    const stored = value[key];
+    if (typeof stored === "string") base[key] = stored.trim();
+  }
+
+  const isolation = value["pythonIsolation"];
+  if (isPythonIsolation(isolation)) {
+    base.pythonIsolation = isolation;
+  } else if (isolation !== undefined) {
+    notes.push("Python isolation was not a value we recognise; using the isolated default.");
+  }
+
+  const timeout = value["timeoutSeconds"];
+  if (typeof timeout === "number" && Number.isFinite(timeout)) {
+    base.timeoutSeconds = Math.min(3600, Math.max(5, Math.round(timeout)));
+  }
+
+  const cap = value["maxOutputKb"];
+  if (typeof cap === "number" && Number.isFinite(cap)) {
+    base.maxOutputKb = Math.min(4096, Math.max(1, Math.round(cap)));
+  }
+
+  const buttons = value["showRunButtons"];
+  if (typeof buttons === "boolean") base.showRunButtons = buttons;
 
   return base;
 }

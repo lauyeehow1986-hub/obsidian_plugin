@@ -30,6 +30,7 @@ pick up a rebuild.
 | `20 Studies/` | three studies | D2's governance hook: one approved for indirect identifiers, one approved for **none** (so a form on it is blocked), and one that records **no** scope at all — which reads as *uncheckable*, never as approved |
 | `88 Forms/` | four REDCap forms | D2: one per verdict — blocked on governance, rejected by REDCap, questions to answer, and one deliberately clean, because a board that only ever shows problems teaches you to ignore it |
 | `92 Apps/` | four vault apps | F3: one ordinary app, one that proposes writes, one deliberately greedy that prints every refusal it collects — including `fetch()` blocked by the page policy — and one with no code at all, so the board says *why* it cannot run rather than offering a Run button that does nothing |
+| `50 Scripts/Invented block workbench` | five runnable blocks | F1: Python and R that work, Python and R that fail on purpose, and one fenced `no-run` that calls `shutil.rmtree` and must never be offered |
 | `_config/messages/` | `chase-up.md` | the message template, so tone is the user's and not the plugin's |
 | `_config/reports/` | the five B7 templates | worked examples of the report format, exactly as "Write the built-in report templates to _config" writes them — a fixture test holds them equal to the built-ins, so editing one in code without writing it out again fails the suite |
 
@@ -101,6 +102,28 @@ Two consequences worth knowing while working here:
 Running **Import a REDCap data dictionary** against one of these does the real
 thing and dirties the note;
 `git checkout -- "test-vault/88 Forms"` puts it back.
+
+### The workbench really runs, and needs interpreters to do it
+
+`50 Scripts/Invented block workbench` is where F1 is exercised by hand. Nothing
+on it runs on its own (rule 12): a block runs from **Run**, from the editor's
+right-click menu, or from the palette, and each shows the code first.
+
+- **It needs paths set.** Settings -> SCDB Cockpit -> Running code. With neither
+  set, the dialog refuses and says what to fill in - which is itself worth
+  seeing once.
+- **Running it dirties the note.** The output block and an embedded figure are
+  written into it, a record lands in `94 Runs/`, and a `code-run` row is
+  appended to the ledger. `git checkout -- "test-vault/50 Scripts"` puts the
+  note back; delete the run records and PNGs by hand. A committed test asserts
+  the note carries no output and that `94 Runs/` is empty, so a stray artefact
+  fails the suite rather than reaching the repo.
+- **The two "fails on purpose" blocks are the interesting ones.** Both should
+  report the line number *in this note*, not a line inside the harness. If a
+  traceback starts naming `runner.py`, the block-from-its-own-file arrangement
+  has been broken.
+- **The `no-run` block calls `shutil.rmtree`.** It is there to be refused. If a
+  Run button ever appears under it, the opt-out has stopped working.
 
 ### The app fixtures run real code, and nothing runs on its own
 
