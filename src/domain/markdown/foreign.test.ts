@@ -30,6 +30,28 @@ describe("neutralising text from outside the vault", () => {
     expect(foreignText("a \\[[x]]")).toBe("a \\\\\\[\\[x\\]\\]");
   });
 
+  it("stops a fetched value becoming live HTML", () => {
+    // Obsidian renders inline HTML inside a note, so an angle bracket arriving
+    // from outside is markup rather than text. This surfaced with the RSS
+    // guideline feeds, where a title may legitimately carry an escaped tag
+    // that the XML decode then turns back into a real one.
+    expect(foreignText("<script>alert(1)</script>")).toBe(
+      // The slash is not escaped, and should not be: it carries no markdown
+      // meaning, and escaping more than necessary makes titles unreadable.
+      "\\<script\\>alert(1)\\</script\\>",
+    );
+    // Asserted as the escaped form rather than "does not contain `<img`":
+    // `\<img` contains that substring too, so the negative would pass on
+    // unescaped output as well and prove nothing.
+    expect(foreignText('<img src=x onerror="go()">')).toBe('\\<img src=x onerror="go()"\\>');
+  });
+
+  it("keeps a comparison operator readable in a title", () => {
+    // The escape must not make ordinary scientific prose look broken: a
+    // backslash renders as nothing, and the character survives.
+    expect(foreignText("LVEF <40%")).toBe("LVEF \\<40%");
+  });
+
   it("keeps the text readable rather than stripping it", () => {
     // A title someone will compare against the source has to survive intact.
     expect(foreignText("[Article in French]")).toBe("\\[Article in French\\]");

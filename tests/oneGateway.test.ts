@@ -101,8 +101,20 @@ describe("only one module can reach a network (rule 3)", () => {
   });
 
   it("declares exactly the hosts the sources need, and no more", () => {
+    // **This test is meant to fail when a host is added.** That is the whole
+    // design: the allowlist is a constant in code precisely so that widening it
+    // cannot happen quietly, and a red test in the diff is what makes a
+    // reviewer look at the new name. Update the list here only in the same
+    // change that adds the source, the settings switch and the changelog entry.
     const gateway = readFileSync("src/domain/sources/gateway.ts", "utf8");
     const hosts = [...code(gateway).matchAll(/host:\s*"([^"]+)"/g)].map((match) => match[1]);
-    expect(hosts).toEqual(["eutils.ncbi.nlm.nih.gov", "clinicaltrials.gov"]);
+    expect(hosts).toEqual([
+      "eutils.ncbi.nlm.nih.gov",
+      "clinicaltrials.gov",
+      // Added for cardiac guideline feeds. `domain/sources/guidelines` records
+      // which societies were probed, and which two publish nothing readable.
+      "www.eacts.org",
+      "www.escardio.org",
+    ]);
   });
 });

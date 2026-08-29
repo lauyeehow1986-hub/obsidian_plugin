@@ -282,6 +282,22 @@ export function migrateSettings(raw: unknown): MigrationResult {
     );
   }
 
+  if (storedVersion > 0 && storedVersion < 11) {
+    // Added by E1 and missed at the time: the version was bumped without a
+    // line in the trail, which is the thing the v2 step exists to prevent.
+    notes.push(
+      "Migrated v10 -> v11: added PubMed and ClinicalTrials.gov. Both are off, " +
+        "and every request shows you its address before anything is sent.",
+    );
+  }
+
+  if (storedVersion > 0 && storedVersion < 12) {
+    notes.push(
+      "Migrated v11 -> v12: added the EACTS guideline feed and the ESC sitemap. " +
+        "Both are off, like every other source.",
+    );
+  }
+
   merged.schemaVersion = CURRENT_SETTINGS_VERSION;
 
   const changed = JSON.stringify(raw) !== JSON.stringify(merged);
@@ -541,6 +557,8 @@ function repairSources(value: unknown, notes: string[]): SourcesConfig {
   // must not switch a network source on.
   base.pubmed = value["pubmed"] === true;
   base.ctgov = value["ctgov"] === true;
+  base.eacts = value["eacts"] === true;
+  base.esc = value["esc"] === true;
 
   const email = value["contactEmail"];
   if (typeof email === "string") base.contactEmail = email.trim();

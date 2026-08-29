@@ -10,6 +10,7 @@
 
 import { collapse, foreignLine, foreignText, startOfLine } from "../markdown/foreign";
 import { humanPhase, humanStatus, type TrialRecord } from "./ctgov";
+import type { FeedEntry } from "./feeds";
 import { SOURCES, type SourceId } from "./gateway";
 import { isPmid, type PubmedRecord } from "./pubmed";
 
@@ -37,18 +38,39 @@ export interface BriefingInput {
   total: number;
   papers?: readonly PubmedRecord[];
   trials?: readonly TrialRecord[];
+  guidelines?: readonly FeedEntry[];
+  /**
+   * What this source's results do and do not mean.
+   *
+   * Rendered above the entries rather than as a footnote. An ESC date is when
+   * a page changed, not when a guideline was revised, and the note outlives
+   * the conversation in which somebody explained that.
+   */
+  caveat?: string;
 }
 
 export function buildSourceBriefing(input: BriefingInput): SourceBriefing {
   const spec = SOURCES[input.source];
   const papers = input.papers ?? [];
   const trials = input.trials ?? [];
-  const kept = papers.length + trials.length;
+  const guidelines = input.guidelines ?? [];
+  const kept = papers.length + trials.length + guidelines.length;
 
-  const items = input.source === "pubmed" ? papers.map(paperLines) : trials.map(trialLines);
+  const items =
+    guidelines.length > 0
+      ? guidelines.map(guidelineLines)
+      : input.source === "pubmed"
+        ? papers.map(paperLines)
+        : trials.map(trialLines);
+
+  // A guideline source has no query — the address is fixed — so the caller
+  // passes the source's own name. Without this, both the heading and the
+  // filename read "EACTS guidelines — EACTS guidelines".
+  const query = collapse(input.query);
+  const named = query !== "" && query !== spec.label;
 
   const body = [
-    `# ${spec.label} — ${foreignLine(input.query)}`,
+    named ? `# ${spec.label} — ${foreignLine(input.query)}` : `# ${spec.label}`,
     "",
     // The provenance paragraph is the point of the note as much as the results
     // are. §5.1's argument about the eData system applies here too: this vault
@@ -58,6 +80,8 @@ export function buildSourceBriefing(input: BriefingInput): SourceBriefing {
     `${spec.label} reported **${input.total.toLocaleString("en-GB")}** matches; ` +
       `the **${kept}** below are the ones that were kept.`,
     "",
+    // Written by us, so not escaped — and deliberately before the results.
+    ...(input.caveat === undefined || input.caveat === "" ? [] : [input.caveat, ""]),
     `This is a snapshot of one search on one day, not a systematic review, and ` +
       `nothing in it has been checked against anything. Re-running the same ` +
       `search tomorrow will give a different answer.`,
@@ -68,13 +92,15 @@ export function buildSourceBriefing(input: BriefingInput): SourceBriefing {
   ].join("\n");
 
   return {
-    stem: `${input.date} ${spec.label} — ${fileSafe(input.query)}`,
+    stem: named
+      ? `${input.date} ${spec.label} — ${fileSafe(input.query)}`
+      : `${input.date} ${spec.label}`,
     frontmatter: {
       type: SOURCE_BRIEFING_TYPE,
       source: input.source,
       // Collapsed, not escaped: frontmatter is YAML and a backslash written
       // here is a backslash you read back out of the note forever.
-      query: collapse(input.query),
+      query,
       host: spec.host,
       url: input.url,
       fetched: input.fetchedAt,
@@ -147,6 +173,30 @@ function trialLines(record: TrialRecord): string[] {
     record.countries.length === 0 ? "" : startOfLine(record.countries.map(foreignText).join(", ")),
     dates.join(" · "),
     `[${record.nctId}](https://clinicaltrials.gov/study/${record.nctId})`,
+    "",
+  ].filter((line, index, all) => !(line === "" && all[index - 1] === ""));
+}
+
+/**
+ * One guideline, from a feed or a sitemap.
+ *
+ * Sparser than a paper on purpose: a title, a date and a link is everything
+ * either source gives, and inventing a richer-looking record would misrepresent
+ * how much is actually known about it.
+ */
+function guidelineLines(entry: FeedEntry): string[] {
+  const meta: string[] = [];
+  if (entry.date !== "") meta.push(foreignText(entry.date));
+
+  // The link is already proved to be an unadorned http(s) URL by `safeLink`,
+  // so it cannot carry a bracket that would break out of the markdown target.
+  const link = entry.link === "" ? "" : `[Open](${entry.link})`;
+
+  return [
+    `### ${foreignText(entry.title === "" ? "(untitled)" : entry.title)}`,
+    "",
+    meta.length === 0 ? "" : startOfLine(meta.join(" · ")),
+    link,
     "",
   ].filter((line, index, all) => !(line === "" && all[index - 1] === ""));
 }

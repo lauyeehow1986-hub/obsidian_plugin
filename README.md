@@ -638,8 +638,31 @@ is a limit of where we looked, not evidence the DOI is wrong.
   enough to triage, and the abstract is a paragraph of someone else's prose that
   would then live in a vault holding institutional data. The link is one click.
 
-Guideline feeds are not built: the plan names the category but no host, and the
-allowlist takes hosts.
+### Cardiac guideline feeds
+
+Two societies, and a plain account of why not four.
+
+- **EACTS** publishes a proper clinical practice guidelines feed. Switch it on and you get the
+  most recent guidelines and consensus documents with their dates and links — including the
+  joint ESC/EACTS and EACTS/STS/AATS ones.
+- **ESC** publishes no feed. What it does publish is a sitemap, and the guideline topics sit
+  in one place in it with a "last changed" date each. That is useful, but **the date is when
+  the page changed, not when the guideline was revised** — a fixed link moves it too. The
+  results say so, and so does the note, because that is the sort of thing you would otherwise
+  remember for a fortnight and then forget.
+- **ACC is not there, deliberately.** Their `robots.txt` asks automated clients to stay out of
+  the guidelines section. That is the site telling us not to, and no amount of cleverness
+  makes it all right.
+- **STS is not there** because on that site "guidelines" means abstract-submission rules as
+  often as it means clinical practice, and a list that mixed the two would be worse than none.
+
+Neither absence is a dead end. Both societies publish their guidelines in journals PubMed
+indexes, and the dialog offers a one-click search that finds them there — ACC/AHA in
+*Circulation* and *JACC*, STS in the *Annals*. It costs no extra host, and the trade is that
+it finds the published paper rather than a web announcement, a few days or weeks later.
+
+A guideline fetch is the only kind that carries **nothing at all** — the address is fixed, so
+there is no search term to send. The confirmation says so.
 
 ## Encrypted backup, and how to restore one
 

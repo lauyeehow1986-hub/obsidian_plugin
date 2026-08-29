@@ -429,7 +429,18 @@ behaviour.
 
 Logged actions: `stage-change`, `gate-override`, `identifier-scope`, `evidence-added`,
 `evidence-removed`, `delete`, `export`, `bulk-edit`, `schema-migration`, `settings-change`
-where the setting is governance-relevant.
+where the setting is governance-relevant, `correction`, and — added by later tracks, each
+for the reason below — `message-composed` (§5.11), `code-run` and `run-recorded` (§5.12),
+`policy-revision` (§7 C1), `variable-revision` (§5.8), `app-granted` and `app-write`
+(§5.13), and `source-fetch` (§7 E1).
+
+**Each of those is its own action rather than a borrowed one**, on the same argument that
+earns `export` its place: an auditor asks *when did this happen and who did it*, and has to
+find the answer **by action**, not by reading every detail cell. Three of the distinctions
+are deliberate and worth keeping: `message-composed` never claims a send we cannot observe;
+`code-run` is the plugin executing something, `run-recorded` is a person saying they ran it
+elsewhere; and `source-fetch` is logged **whether the request succeeded or not**, because a
+failed request still left the machine.
 
 **A gate override always requires a typed reason.** Refusing to give one cancels the override.
 That single rule is most of the audit value.
@@ -685,9 +696,22 @@ styling stays in `styles.css` under an `scdb-` prefix.
 - `type: capture` in `00 Inbox/` — raw quick-capture, awaiting triage.
 - `type: redcap-form` in `88 Forms/` — see §7.
 - `type: diagram` in `89 Diagrams/` — see §7.
-- `type: policy` in `40 Policies/`, with frozen copies in `_revisions/`.
+- `type: policy` in `40 Policies/`, with frozen copies in `_revisions/` carrying
+  `type: policy-revision` — never edited, so a superseded rule stays readable.
 - `type: script-doc` in `50 Scripts/` — purpose, inputs, outputs, data version, last run,
   hash of the script file.
+- `type: study` in `20 Studies/` — the study or registry the rest of the vault links to.
+- `type: event` in `60 Events/` — a dated commitment; with a `recurrence` block it is an
+  obligation (§5.7).
+- `type: briefing` in `90 Dashboards/Briefings/` — the generated daily briefing (§7 B1).
+  Under Dashboards rather than beside the saved views: a briefing is a dated record of one
+  morning, and a year of them would swamp the folder the views live in.
+- `type: scdb-report` in `95 Exports/` — a rendered report, CV or research profile (§7 B7).
+  It goes through the same export guard as a CSV: confirmed by name and row count, and
+  logged.
+- `type: source-briefing` in `90 Dashboards/Briefings/` — what was kept from one external
+  search (§7 E1), carrying the query, the host, the literal URL, the time, how many matched
+  and how many were kept. A snapshot of one search on one day, and it says so on its face.
 
 ---
 
@@ -945,6 +969,19 @@ unjustified identifiers are flagged before the form ever reaches REDCap.
 opt-in per source, read-only, summarised into a briefing note. Also enriches publications from
 DOI/PMID — always on explicit request, never automatically.
 
+*Guideline feeds, as built.* The societies asked for were ESC, ACC/AHA and cardiothoracic
+surgery. All four sites were probed before any code was written, and only two publish
+something a machine may read: **EACTS** has a declared clinical-practice-guidelines RSS feed,
+and **ESC** has no feed but names a sitemap in `robots.txt` whose guideline topics sit under
+one path prefix with a `lastmod` each. **ACC is not built and will not be** — `acc.org/robots.txt`
+disallows `/guideline-recommendations`, which is the guidelines path itself, and the site's own
+statement about automated access settles it. **STS is not built** because on that site
+"guidelines" covers abstract submission and media relations as often as clinical practice, with
+no path that separates them. Both are reached instead through a saved PubMed query over the
+journals they publish in, which costs no host. An ESC `lastmod` is when a *page* changed, not
+when a guideline was revised; that caveat is rendered above the results and into the note,
+because omitting it would be the misleading part.
+
 **E2 · Outlook COM bridge (email Tier 2).** Populate correspondence threads from the live
 Outlook session via a local PowerShell/COM reader — no credentials, no API. Off by default,
 **out of process with a hard timeout** (COM blocks for minutes on a modal dialog; Obsidian must
@@ -1094,7 +1131,9 @@ step was skipped, say which and why.
 - **D2 (blocking XML export):** one real REDCap project XML exported from your instance, plus
   the REDCap version number.
 - **B4 (optional path):** can Ollama be installed and run on the target machine?
-- **E1:** which external hosts, if any, the target machine can reach.
+- **E1:** which external hosts, if any, the target machine can reach. The allowlist is fixed
+  in code at four — `eutils.ncbi.nlm.nih.gov`, `clinicaltrials.gov`, `www.eacts.org`,
+  `www.escardio.org` — so this is a firewall question, not a configuration one.
 - **B2:** cost-centre and rate structure for chargeback — real values or placeholders?
 - **B1 (verify on the target machine, not here):** is Outlook registered as the `mailto:` handler,
   what is the real URI length ceiling before it truncates, and does the `msteams:` /

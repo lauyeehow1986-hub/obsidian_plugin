@@ -16,8 +16,8 @@
  * Settings say which **sources** are switched on. Nothing on a fresh install is.
  */
 
-/** The sources §7 E1 names, minus one. See `MISSING_SOURCE` below. */
-export const SOURCE_IDS = ["pubmed", "ctgov"] as const;
+/** The sources §7 E1 names. Four hosts, and adding a fifth is a code change. */
+export const SOURCE_IDS = ["pubmed", "ctgov", "eacts", "esc"] as const;
 export type SourceId = (typeof SOURCE_IDS)[number];
 
 export interface SourceSpec {
@@ -42,20 +42,35 @@ export const SOURCES: Record<SourceId, SourceSpec> = {
     host: "clinicaltrials.gov",
     operator: "US National Library of Medicine",
   },
+  eacts: {
+    id: "eacts",
+    label: "EACTS guidelines",
+    host: "www.eacts.org",
+    operator: "European Association for Cardio-Thoracic Surgery",
+  },
+  esc: {
+    id: "esc",
+    label: "ESC guidelines",
+    host: "www.escardio.org",
+    operator: "European Society of Cardiology",
+  },
 };
 
 /**
- * Why §7's third source is absent.
+ * Why the guideline list stops at two societies.
  *
- * §7 E1 says "PubMed, ClinicalTrials.gov and guideline feeds". The first two
- * name a service; "guideline feeds" names a category, and there is no host to
- * put in the list above. Choosing one would be inventing an allowlist entry —
- * the same objection §5.2 makes about inventing a workflow stage to make a
- * feature work. It stays out until the user names the source, and §11 carries
- * the question.
+ * §7 E1 said "guideline feeds", which named a category rather than a host. The
+ * user named the societies — ESC, ACC/AHA and cardiothoracic surgery — and all
+ * four sites were probed before anything was written. Two publish something a
+ * machine may read; two do not, and one of those asks in `robots.txt` not to be
+ * read at the guidelines path at all. `domain/sources/guidelines` records the
+ * finding per society, and `DECLINED_SOURCES` puts it in front of the user
+ * rather than leaving a half-delivered feature looking whole.
+ *
+ * The two that are absent are reachable through PubMed, which is already here.
  */
-export const MISSING_SOURCE =
-  "Guideline feeds are not built: §7 names the category but no host, and the allowlist takes hosts.";
+export const DECLINED_NOTE =
+  "ACC and STS publish no readable guideline feed. Both are covered by the PubMed guideline search instead.";
 
 export function isSourceId(value: unknown): value is SourceId {
   return typeof value === "string" && (SOURCE_IDS as readonly string[]).includes(value);
@@ -152,6 +167,11 @@ export function previewRequest(url: string, carries: string): RequestPreview | {
 export const MIN_INTERVAL_MS: Record<SourceId, number> = {
   pubmed: 350,
   ctgov: 250,
+  // A society web server, not an API built for programmatic use. One request
+  // per check is all these ever make, and the interval is generous because
+  // being wrong about it here costs somebody else bandwidth, not us.
+  eacts: 1000,
+  esc: 1000,
 };
 
 /** Cap on results per search, so one action cannot pull down a whole database. */

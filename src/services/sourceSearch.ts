@@ -15,7 +15,18 @@ import {
   type CtgovSearchOptions,
   type TrialRecord,
 } from "../domain/sources/ctgov";
-import { previewRequest, type RequestPreview, type SourceId } from "../domain/sources/gateway";
+import type { FeedEntry } from "../domain/sources/feeds";
+import {
+  previewRequest,
+  SOURCES,
+  type RequestPreview,
+  type SourceId,
+} from "../domain/sources/gateway";
+import {
+  GUIDELINE_SOURCES,
+  parseGuidelines,
+  type GuidelineSourceId,
+} from "../domain/sources/guidelines";
 import {
   parsePubmedSearch,
   parsePubmedSummaries,
@@ -52,6 +63,14 @@ export interface PubmedSearchOutcome {
   translation: string;
 }
 
+export interface GuidelineOutcome {
+  entries: FeedEntry[];
+  /** Everything the source offered before the cap, so the note can say so. */
+  total: number;
+  url: string;
+  caveat: string;
+}
+
 export type Outcome<T> = { ok: true; value: T } | { ok: false; why: string };
 
 export class SourceSearch {
@@ -77,6 +96,18 @@ export class SourceSearch {
   previewCtgov(options: CtgovSearchOptions): RequestPreview | { why: string } {
     const url = ctgovSearchUrl({ ...options, pageSize: options.pageSize ?? this.deps.maxResults() });
     return previewRequest(url, "the words you typed");
+  }
+
+  /**
+   * A guideline fetch carries **nothing**, which is worth saying out loud.
+   *
+   * The other sources send words the user typed. This asks a society's server
+   * for a document it publishes at a fixed address, so the only thing that
+   * leaves is the request itself. The confirmation says that rather than
+   * leaving the user to infer it.
+   */
+  previewGuidelines(source: GuidelineSourceId): RequestPreview | { why: string } {
+    return previewRequest(GUIDELINE_SOURCES[source].url(), "nothing from your vault — only the request");
   }
 
   previewLookup(reference: string): RequestPreview | { why: string } {
@@ -137,10 +168,35 @@ export class SourceSearch {
   }
 
   /**
+   * One guideline source, one request.
+   *
+   * The ESC sitemap is the whole site and gets filtered down here rather than
+   * at the far end; that is the cost of a source with no feed, and it is paid
+   * once per check rather than by the user.
+   */
+  async guidelines(source: GuidelineSourceId): Promise<Outcome<GuidelineOutcome>> {
+    const spec = GUIDELINE_SOURCES[source];
+    const url = spec.url();
+    // The ledger's subject column already carries the host, so this says what
+    // was asked for rather than repeating it. `source` is the raw id and would
+    // read as "eacts guideline list".
+    const found = await this.deps.gateway.fetch(url, `${SOURCES[source].label}, the published list`);
+    if (!found.ok) return { ok: false, why: found.why };
+
+    const parsed = parseGuidelines(source, found.body, this.deps.maxResults());
+    if ("why" in parsed) return { ok: false, why: parsed.why };
+
+    return {
+      ok: true,
+      value: { entries: parsed.entries, total: parsed.total, url, caveat: spec.caveat },
+    };
+  }
+
+  /**
    * Look one publication up by PMID or DOI.
    *
    * A DOI is resolved through PubMed's own index rather than through Crossref,
-   * which keeps the allowlist at two hosts. The cost is honest and worth
+   * which keeps Crossref off the allowlist. The cost is honest and worth
    * stating in the UI: a DOI PubMed has never indexed — a book chapter, a
    * non-biomedical journal — will not be found, and that is a limit of where we
    * looked rather than evidence the DOI is wrong.

@@ -8,7 +8,7 @@
 import type { AttachmentPolicy } from "../comms/emlThread";
 import type { TimerState } from "../effort/timer";
 
-export const CURRENT_SETTINGS_VERSION = 11;
+export const CURRENT_SETTINGS_VERSION = 12;
 
 /** The three hats. Mode is the organising metaphor, not a cosmetic filter (§7 A3). */
 export const MODES = ["biostat", "hod", "research-core"] as const;
@@ -413,6 +413,16 @@ export interface SourcesConfig {
   /** ClinicalTrials.gov API v2. */
   ctgov: boolean;
   /**
+   * The EACTS clinical practice guidelines feed, and the ESC sitemap.
+   *
+   * Separate switches rather than one "guidelines" switch, because they are
+   * separate hosts and the point of a per-source switch is that turning one on
+   * says nothing about the other. See `domain/sources/guidelines` for why the
+   * other two societies the user named are not here.
+   */
+  eacts: boolean;
+  esc: boolean;
+  /**
    * An address sent to NCBI so they can contact whoever is overloading them,
    * which their usage policy asks for.
    *
@@ -428,7 +438,15 @@ export interface SourcesConfig {
 }
 
 export function defaultSources(): SourcesConfig {
-  return { pubmed: false, ctgov: false, contactEmail: "", timeoutSeconds: 20, maxResults: 20 };
+  return {
+    pubmed: false,
+    ctgov: false,
+    eacts: false,
+    esc: false,
+    contactEmail: "",
+    timeoutSeconds: 20,
+    maxResults: 20,
+  };
 }
 
 export function defaultSettings(): ScdbSettings {

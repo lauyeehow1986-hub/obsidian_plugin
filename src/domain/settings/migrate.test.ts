@@ -610,12 +610,38 @@ describe("migrateSettings", () => {
       expect(result.settings.sources).toEqual({
         pubmed: false,
         ctgov: false,
+        eacts: false,
+        esc: false,
         contactEmail: "",
         timeoutSeconds: 20,
         maxResults: 20,
       });
-      expect(result.settings.schemaVersion).toBe(11);
+      expect(result.settings.schemaVersion).toBe(12);
       expect(result.settings.actor).toBe("yh");
+    });
+
+    it("leaves the guideline sources off on an upgrade from v11", () => {
+      // The same rule, one version later: somebody already using PubMed does
+      // not thereby start talking to two society web servers.
+      const result = migrateSettings({
+        schemaVersion: 11,
+        sources: { pubmed: true, ctgov: false, contactEmail: "a@b.org" },
+      });
+      expect(result.settings.sources.pubmed).toBe(true);
+      expect(result.settings.sources.eacts).toBe(false);
+      expect(result.settings.sources.esc).toBe(false);
+      expect(result.settings.schemaVersion).toBe(12);
+      expect(result.notes.join(" ")).toContain("v11 -> v12");
+    });
+
+    it("refuses a stored value that is not exactly true", () => {
+      // A hand-edited `data.json` carrying "yes" or 1 is not consent.
+      const result = migrateSettings({
+        schemaVersion: 11,
+        sources: { eacts: "yes", esc: 1 },
+      });
+      expect(result.settings.sources.eacts).toBe(false);
+      expect(result.settings.sources.esc).toBe(false);
     });
 
     it("keeps the switches the user actually set", () => {

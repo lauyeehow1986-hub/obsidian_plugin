@@ -269,7 +269,7 @@ const checks = [
   // Pinned deliberately: this line failing means the schema moved, which is
   // the moment to check a migration step went with it (§10 — an upgrade must
   // never lose settings). Bump it only after writing that step.
-  ["settings carry a schema version", instance.settings.schemaVersion === 11],
+  ["settings carry a schema version", instance.settings.schemaVersion === 12],
   ["the hat filter defaults to the mode you are wearing", instance.settings.hatFilter === "mode"],
   // §7 B2. No timer on a fresh install, and every timer action reachable from
   // the keyboard — the status-bar segment is a shortcut, not the only door.
@@ -328,7 +328,9 @@ const checks = [
   // install, and a default that drifts to "on" is the one regression here that
   // would be silent.
   ["external sources are all off on a fresh install", instance.settings.sources.pubmed === false &&
-    instance.settings.sources.ctgov === false],
+    instance.settings.sources.ctgov === false &&
+    instance.settings.sources.eacts === false &&
+    instance.settings.sources.esc === false],
   ["no contact address is invented", instance.settings.sources.contactEmail === ""],
   ["the gateway exists but is enabled by nothing", typeof instance.gateway?.fetch === "function"],
   ["searching an external source is reachable", commands.includes("search-source")],
@@ -345,6 +347,21 @@ const checks = [
     (await instance.gateway.fetch("https://evil.example/x", "smoke check")).why?.includes(
       "not on the allowlist",
     ) === true,
+  ],
+  // The guideline sources are two more hosts on the same allowlist, and the
+  // same two guards have to hold for them: off by default, and refused while
+  // off even though the host itself is allowed.
+  [
+    "a guideline feed is refused while its source is off",
+    (await instance.gateway.fetch(
+      "https://www.eacts.org/clinical-practice-guidelines/feed/",
+      "smoke check",
+    )).why?.includes("switched off") === true,
+  ],
+  [
+    "a lookalike of an allowlisted guideline host is refused",
+    (await instance.gateway.fetch("https://www.eacts.org.evil.example/x", "smoke check")).why
+      ?.includes("not on the allowlist") === true,
   ],
   ["the effort log is wired", typeof instance.effort?.months === "function"],
   ["the effort log reads no months on an empty vault", instance.effort.months().length === 0],

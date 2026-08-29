@@ -159,3 +159,105 @@ describe("the filename", () => {
     expect(fileSafe("///")).toBe("search");
   });
 });
+
+describe("a guideline briefing", () => {
+  const base = {
+    source: "eacts" as const,
+    query: "EACTS guidelines",
+    url: "https://www.eacts.org/clinical-practice-guidelines/feed/",
+    fetchedAt: "2026-08-30T09:15",
+    date: "2026-08-30",
+    total: 32,
+    caveat: "From the EACTS clinical practice guidelines feed.",
+  };
+
+  it("renders title, date and link, and says how many were offered", () => {
+    const note = buildSourceBriefing({
+      ...base,
+      guidelines: [
+        {
+          title: "2024 EACTS Guidelines on perioperative medication",
+          link: "https://www.eacts.org/clinical-practice-guideline/perioperative-medication/",
+          date: "2024-09-01",
+          rawDate: "Sun, 01 Sep 2024 00:00:00 +0000",
+        },
+      ],
+    });
+
+    expect(note.body).toContain("### 2024 EACTS Guidelines on perioperative medication");
+    expect(note.body).toContain("2024-09-01");
+    expect(note.body).toContain(
+      "[Open](https://www.eacts.org/clinical-practice-guideline/perioperative-medication/)",
+    );
+    expect(note.body).toContain("**32**");
+    expect(note.frontmatter["kept"]).toBe(1);
+  });
+
+  it("puts the caveat above the results, not after them", () => {
+    // A reader who stops at the first heading has still seen what the dates
+    // mean. Below the entries it would be a footnote nobody reaches.
+    const note = buildSourceBriefing({
+      ...base,
+      guidelines: [{ title: "A guideline", link: "", date: "2026-01-01", rawDate: "" }],
+    });
+    expect(note.body.indexOf(base.caveat)).toBeLessThan(note.body.indexOf("### A guideline"));
+  });
+
+  it("keeps an entry whose link was dropped for being unsafe", () => {
+    // `safeLink` empties a `javascript:` target. The document is still real and
+    // still worth listing; it simply has nothing to click.
+    const note = buildSourceBriefing({
+      ...base,
+      guidelines: [{ title: "No link", link: "", date: "", rawDate: "" }],
+    });
+    expect(note.body).toContain("### No link");
+    expect(note.body).not.toContain("[Open]");
+  });
+
+  it("neutralises a title that would embed a request note", () => {
+    const note = buildSourceBriefing({
+      ...base,
+      guidelines: [
+        { title: "![[10 Requests/REQ-2026-014]]", link: "", date: "", rawDate: "" },
+      ],
+    });
+    // The embed must not survive: a fetched string that can transclude a
+    // request note into a briefing is not a cosmetic problem (§5.10).
+    expect(note.body).not.toContain("![[10 Requests");
+    expect(note.body).toContain("\\!\\[\\[10 Requests");
+  });
+});
+
+describe("a briefing whose query is just the source", () => {
+  it("does not repeat the source name in the heading or the filename", () => {
+    // A guideline source has a fixed address and nothing to search for, so the
+    // caller passes the source's own label. "EACTS guidelines — EACTS
+    // guidelines" is what that produced before this was handled.
+    const note = buildSourceBriefing({
+      source: "eacts",
+      query: "EACTS guidelines",
+      url: "https://www.eacts.org/clinical-practice-guidelines/feed/",
+      fetchedAt: "2026-08-30T09:15",
+      date: "2026-08-30",
+      total: 1,
+      guidelines: [{ title: "A guideline", link: "", date: "", rawDate: "" }],
+    });
+    expect(note.body).toContain("# EACTS guidelines\n");
+    expect(note.body).not.toContain("EACTS guidelines — EACTS guidelines");
+    expect(note.stem).toBe("2026-08-30 EACTS guidelines");
+  });
+
+  it("still names a real query when there is one", () => {
+    const note = buildSourceBriefing({
+      source: "pubmed",
+      query: "heart failure readmission",
+      url: "https://eutils.ncbi.nlm.nih.gov/x",
+      fetchedAt: "2026-08-30T09:15",
+      date: "2026-08-30",
+      total: 0,
+      papers: [],
+    });
+    expect(note.body).toContain("# PubMed — heart failure readmission");
+    expect(note.stem).toBe("2026-08-30 PubMed — heart failure readmission");
+  });
+});

@@ -2,7 +2,15 @@ import { Notice, type App, type TFile } from "obsidian";
 import { useCallback, useMemo, useState } from "preact/hooks";
 import type { TrialRecord } from "../domain/sources/ctgov";
 import { TRIAL_STATUSES, humanPhase, humanStatus } from "../domain/sources/ctgov";
-import { MISSING_SOURCE, SOURCES, type SourceId } from "../domain/sources/gateway";
+import type { FeedEntry } from "../domain/sources/feeds";
+import { DECLINED_NOTE, SOURCES, SOURCE_IDS, type SourceId } from "../domain/sources/gateway";
+import {
+  DECLINED_SOURCES,
+  GUIDELINE_SOURCES,
+  isGuidelineSourceId,
+  PUBMED_GUIDELINES,
+  PUBMED_GUIDELINES_LABEL,
+} from "../domain/sources/guidelines";
 import type { PubmedRecord } from "../domain/sources/pubmed";
 import type { SourceSearch } from "../services/sourceSearch";
 import type { SourceWriter } from "../services/sourceWriter";
@@ -58,8 +66,11 @@ interface Results {
   total: number;
   papers: PubmedRecord[];
   trials: TrialRecord[];
+  guidelines: FeedEntry[];
   warnings: string[];
   translation: string;
+  /** What this source's results do and do not mean. Carried into the note. */
+  caveat: string;
 }
 
 function SearchForm(props: {
@@ -70,10 +81,7 @@ function SearchForm(props: {
   onWritten: (file: TFile) => void;
   close: () => void;
 }) {
-  const available = useMemo(
-    () => (["pubmed", "ctgov"] as const).filter((id) => props.enabled(id)),
-    [props],
-  );
+  const available = useMemo(() => SOURCE_IDS.filter((id) => props.enabled(id)), [props]);
 
   const [source, setSource] = useState<SourceId>(available[0] ?? "pubmed");
   const [query, setQuery] = useState("");
@@ -95,6 +103,7 @@ function SearchForm(props: {
   }, [recent]);
 
   const preview = useMemo(() => {
+    if (isGuidelineSourceId(source)) return props.search.previewGuidelines(source);
     if (source === "pubmed") return props.search.previewPubmed({ query, sort: "pub_date", ...dates });
     return props.search.previewCtgov({
       condition,
@@ -103,16 +112,40 @@ function SearchForm(props: {
     });
   }, [props.search, source, query, condition, status, dates]);
 
-  const ready =
-    source === "pubmed" ? query.trim() !== "" : condition.trim() !== "" || query.trim() !== "";
+  // A guideline source needs no input: the address is fixed, and there is
+  // nothing to type into a request that carries nothing.
+  const ready = isGuidelineSourceId(source)
+    ? true
+    : source === "pubmed"
+      ? query.trim() !== ""
+      : condition.trim() !== "" || query.trim() !== "";
 
   const run = useCallback(() => {
     setPhase("running");
     setError("");
     const label = source === "pubmed" ? query : [condition, query].filter((p) => p !== "").join(" / ");
 
-    const done =
-      source === "pubmed"
+    const done = isGuidelineSourceId(source)
+      ? props.search.guidelines(source).then((outcome) =>
+          outcome.ok
+            ? {
+                ok: true as const,
+                value: {
+                  source,
+                  query: SOURCES[source].label,
+                  url: outcome.value.url,
+                  total: outcome.value.total,
+                  papers: [],
+                  trials: [],
+                  guidelines: outcome.value.entries,
+                  warnings: [],
+                  translation: "",
+                  caveat: outcome.value.caveat,
+                },
+              }
+            : outcome,
+        )
+      : source === "pubmed"
         ? props.search
             .pubmed({ query, sort: "pub_date", ...dates })
             .then((outcome) =>
@@ -126,13 +159,15 @@ function SearchForm(props: {
                       total: outcome.value.total,
                       papers: outcome.value.papers,
                       trials: [],
+                      guidelines: [],
                       warnings: outcome.value.warnings,
                       translation: outcome.value.translation,
+                      caveat: "",
                     },
                   }
                 : outcome,
             )
-        : props.search
+          : props.search
             .ctgov({
               condition,
               term: query,
@@ -149,12 +184,14 @@ function SearchForm(props: {
                       total: outcome.value.total,
                       papers: [],
                       trials: outcome.value.trials,
+                      guidelines: [],
                       warnings: [],
                       translation: "",
+                      caveat: "",
                     },
                   }
                 : outcome,
-            );
+              );
 
     void done.then(
       (outcome) => {
@@ -189,6 +226,8 @@ function SearchForm(props: {
         total: results.total,
         papers: results.papers.filter((paper) => keep.has(paper.pmid)),
         trials: results.trials.filter((trial) => keep.has(trial.nctId)),
+        guidelines: results.guidelines.filter((entry) => keep.has(guidelineKey(entry))),
+        caveat: results.caveat,
       })
       .then(
         (file) => {
@@ -210,7 +249,7 @@ function SearchForm(props: {
           This is the only part of the plugin that reaches a network, and it is off until you turn
           a source on in settings. Nothing has been sent.
         </p>
-        <p class="scdb-muted">{MISSING_SOURCE}</p>
+        <p class="scdb-muted">{DECLINED_NOTE}</p>
         <div class="scdb-modal__actions">
           <button class="scdb-control" onClick={props.close}>Close</button>
         </div>
@@ -259,15 +298,56 @@ function SearchForm(props: {
             </label>
           )}
 
-          <label class="scdb-field">
-            <span class="scdb-field__label">{source === "ctgov" ? "Other words" : "Search"}</span>
-            <input
-              type="text"
-              value={query}
-              placeholder={source === "pubmed" ? "30-day readmission heart failure" : "readmission"}
-              onInput={(event) => setQuery((event.currentTarget as HTMLInputElement).value)}
-            />
-          </label>
+          {!isGuidelineSourceId(source) && (
+            <label class="scdb-field">
+              <span class="scdb-field__label">{source === "ctgov" ? "Other words" : "Search"}</span>
+              <input
+                type="text"
+                value={query}
+                placeholder={source === "pubmed" ? "30-day readmission heart failure" : "readmission"}
+                onInput={(event) => setQuery((event.currentTarget as HTMLInputElement).value)}
+              />
+            </label>
+          )}
+
+          {isGuidelineSourceId(source) && (
+            <>
+              <p class="scdb-muted">{GUIDELINE_SOURCES[source].caveat}</p>
+
+              {/*
+                The two societies that were asked for and cannot be fetched.
+                Shown with the way to get at them anyway, rather than as a
+                dead end — the PubMed query below finds the same documents
+                where they are actually published.
+              */}
+              <details class="scdb-details">
+                <summary>Why ACC and STS are not in this list</summary>
+                <ul class="scdb-list">
+                  {DECLINED_SOURCES.map((declined) => (
+                    <li key={declined.society}>
+                      <strong>{declined.society}.</strong> {declined.why}
+                    </li>
+                  ))}
+                </ul>
+                {props.enabled("pubmed") ? (
+                  <button
+                    class="scdb-control"
+                    onClick={() => {
+                      setSource("pubmed");
+                      setQuery(PUBMED_GUIDELINES);
+                    }}
+                  >
+                    {PUBMED_GUIDELINES_LABEL}
+                  </button>
+                ) : (
+                  <p class="scdb-muted">
+                    Switching PubMed on in settings would let you search for those guidelines
+                    where they are published instead.
+                  </p>
+                )}
+              </details>
+            </>
+          )}
 
           {source === "pubmed" && (
             <label class="scdb-check">
@@ -369,7 +449,9 @@ function ConfirmSend(props: {
         <dd>
           {preview.source === "pubmed"
             ? "Titles, journals, dates and identifiers — no abstracts."
-            : "Trial titles, status, sponsor, enrolment and countries."}{" "}
+            : preview.source === "ctgov"
+              ? "Trial titles, status, sponsor, enrolment and countries."
+              : "Guideline titles, dates and links — no document text."}{" "}
           Shown to you before anything is written.
         </dd>
         <dt>Recorded</dt>
@@ -414,6 +496,8 @@ function ResultList(props: {
         returned {rows.length}. Tick what is worth keeping.
       </p>
 
+      {results.caveat !== "" && <p class="scdb-muted">{results.caveat}</p>}
+
       {results.warnings.length > 0 && (
         <ul class="scdb-list scdb-list--problems">
           {results.warnings.map((warning) => (
@@ -451,6 +535,22 @@ function ResultList(props: {
             </label>
           </li>
         ))}
+        {results.guidelines.map((entry) => {
+          const id = guidelineKey(entry);
+          return (
+            <li key={id}>
+              <label class="scdb-check">
+                <input type="checkbox" checked={keep.has(id)} onChange={() => toggle(id)} />
+                <span>
+                  <strong>{entry.title === "" ? "(untitled)" : entry.title}</strong>
+                  <small class="scdb-field__hint">
+                    {entry.date === "" ? "no date given" : entry.date}
+                  </small>
+                </span>
+              </label>
+            </li>
+          );
+        })}
         {results.trials.map((trial) => (
           <li key={trial.nctId}>
             <label class="scdb-check">
@@ -485,5 +585,21 @@ function ResultList(props: {
 }
 
 function idsOf(results: Results): string[] {
-  return [...results.papers.map((paper) => paper.pmid), ...results.trials.map((trial) => trial.nctId)];
+  return [
+    ...results.papers.map((paper) => paper.pmid),
+    ...results.trials.map((trial) => trial.nctId),
+    ...results.guidelines.map(guidelineKey),
+  ];
+}
+
+/**
+ * A guideline has no identifier, so one is made from what it does have.
+ *
+ * The link first because it is unique per document; the title as a fallback for
+ * an entry whose link was dropped for being unsafe. Two entries with neither
+ * would collide, and would also be indistinguishable to a reader — so
+ * collapsing them into one tick box is the honest behaviour rather than a bug.
+ */
+function guidelineKey(entry: FeedEntry): string {
+  return entry.link !== "" ? entry.link : entry.title;
 }

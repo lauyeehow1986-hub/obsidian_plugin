@@ -5,6 +5,60 @@ clearly marked entry (CLAUDE.md §10).
 
 ## Unreleased
 
+### Added — cardiac guideline feeds (E1)
+
+Two more sources, and the reason there are only two. The societies asked for were ESC,
+ACC/AHA and cardiothoracic surgery; all four sites were probed against the live web before
+any code was written.
+
+- **EACTS** publishes a declared clinical practice guidelines RSS feed. It is the best source
+  found: real document titles, links and dates, including the joint ESC/EACTS and
+  EACTS/STS/AATS guidelines. Verified live — 20 entries, correct dates.
+- **ESC** publishes no feed. Its sitemap, named in its own `robots.txt`, carries every
+  guideline topic under one path prefix with a `lastmod`. Verified live — 31 topics filtered
+  out of 2,899 URLs in 591 ms. **The caveat is rendered above the results and written into the
+  note:** a `lastmod` is when a page changed, not when a guideline was revised.
+- **ACC is not built and should not be.** `acc.org/robots.txt` carries
+  `Disallow: /guideline-recommendations` — the guidelines path itself. That is the site's own
+  statement about automated access and it settles the question. Its sitemap is also 5.7 MB,
+  over the gateway's `MAX_BYTES`, with no prefix separating guidelines from press releases.
+- **STS is not built** because on that site "guidelines" matches abstract-submission rules and
+  media-relations policy as often as clinical practice documents.
+
+Both absences are named in settings and in the dialog rather than left as a gap, each with a
+one-click route to the PubMed query that finds the same documents where they are actually
+published — 1,248 records, top hits ACC/AHA and STS, confirmed against the live service.
+
+**Two new hosts on the allowlist, and the guard made that deliberate.**
+`tests/oneGateway.test.ts` failed the moment they were added, which is exactly its job: the
+allowlist is a constant in code so that widening it cannot happen quietly.
+
+Settings schema v11 → v12. Both sources ship **off**, and an upgrade from a real v11
+`data.json` with PubMed already on leaves them off — verified by loading it, not only in a
+unit test. The v11 migration note that E1 forgot to write is added at the same time.
+
+XML is read by a small `indexOf`-based scanner rather than `DOMParser` or a dependency:
+`domain/` stays free of the browser, the bundle grows by 8 KB, and a backtracking regex over a
+megabyte of remote response cannot hang the UI thread.
+
+### Fixed
+
+- **`foreignText` did not escape `<` or `>`.** Obsidian renders inline HTML inside a note, so
+  a fetched value carrying a tag was markup rather than text. Found via the RSS feeds, where a
+  title may legitimately contain an escaped tag that the XML decode turns back into a real one
+  — but it was always true of a PubMed title too, so the fix is in the escaper rather than in
+  one caller.
+- **Entities were decoded before tags were stripped**, so `&lt;p&gt;` — text a feed had
+  deliberately escaped in order to show it — became a tag and was then deleted. The order is
+  now CDATA, tags, entities, and a test pins it.
+- **The PubMed guideline query quoted its publication types**, and PubMed answered with
+  `quotedphrasesnotfound`: it dropped the term and ran a narrower search without saying so.
+  This is the trap the results view's warning line exists for, and it caught our own query.
+  Unquoted, the same search returns the same 1,248 records with no warning.
+- A guideline briefing was titled "EACTS guidelines — EACTS guidelines" in both the heading
+  and the filename, because a source with a fixed address has no query to name.
+
+
 ### Added — E1, PubMed and ClinicalTrials.gov behind one gateway
 
 The first feature in this plugin that reaches a network, and the whole design is

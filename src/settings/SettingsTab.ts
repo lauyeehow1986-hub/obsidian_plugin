@@ -12,11 +12,12 @@ import { buildMailto, buildTeamsChat, MIN_URI_CEILING } from "../domain/comms/ur
 import { probeHandler, reportLaunch } from "../services/protocol.js";
 import { LANGUAGE_LABELS, type RunLanguage } from "../domain/compute/block.js";
 import {
+  DECLINED_NOTE,
   MAX_RESULTS,
-  MISSING_SOURCE,
   SOURCES,
   SOURCE_IDS,
 } from "../domain/sources/gateway.js";
+import { DECLINED_SOURCES } from "../domain/sources/guidelines.js";
 import {
   interpreterLabel,
   isPythonIsolation,
@@ -576,7 +577,17 @@ export class ScdbSettingsTab extends PluginSettingTab {
           }),
       );
 
-    containerEl.createEl("p", { cls: "setting-item-description", text: MISSING_SOURCE });
+    // The two societies that were asked for and cannot be delivered. Named
+    // here rather than left out: the user asked for four by name, and a screen
+    // showing two would read as the feature simply working.
+    containerEl.createEl("h4", { text: "Not available, and why" });
+    containerEl.createEl("p", { cls: "setting-item-description", text: DECLINED_NOTE });
+    const list = containerEl.createEl("ul", { cls: "setting-item-description" });
+    for (const declined of DECLINED_SOURCES) {
+      const item = list.createEl("li");
+      item.createEl("strong", { text: `${declined.society}. ` });
+      item.appendText(declined.why);
+    }
   }
 
   /** Report templates (§7 B7). Nothing to configure until you want to edit one. */

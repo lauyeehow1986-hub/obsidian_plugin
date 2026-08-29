@@ -14,6 +14,12 @@
  *   arbitrary note is not a cosmetic problem.
  * - `|` ends a cell early and silently reshapes a table.
  * - A backtick opens a code span that swallows the rest of the line.
+ * - `<` opens **live HTML**. Obsidian renders inline HTML inside a note, so a
+ *   fetched value carrying a tag is markup rather than text. This one surfaced
+ *   with the guideline feeds — an RSS title may legitimately contain
+ *   `&lt;i&gt;`, and once decoded it is a tag like any other — but it was
+ *   always true of a PubMed title too, so it is fixed here rather than in one
+ *   caller.
  *
  * The fix is escaping rather than stripping, because the text is a title
  * someone will read and compare against the source: `[Article in French]` and
@@ -25,7 +31,7 @@
  */
 
 /** Characters whose markdown meaning would change the note rather than the text. */
-const ESCAPE = /[[\]|`!\\]/g;
+const ESCAPE = /[[\]|`!<>\\]/g;
 
 /**
  * Escape one line of foreign text for use in prose, a heading or a table cell.
