@@ -25,6 +25,7 @@ import { PolicyBoard } from "./PolicyBoard";
 import { CatalogueBoard } from "./CatalogueBoard";
 import { ScriptBoard } from "./ScriptBoard";
 import { FormsBoard } from "./FormsBoard";
+import { AppsBoard } from "./AppsBoard";
 import { DeadlinesBoard } from "./DeadlinesBoard";
 import { lapsed } from "../domain/events/schedule";
 import { groupOutreachByParty, type AgedThread } from "../domain/comms/thread";
@@ -45,6 +46,7 @@ export type CockpitTab =
   | "catalogue"
   | "scripts"
   | "forms"
+  | "apps"
   | "deadlines"
   | "migration"
   | "health";
@@ -62,6 +64,7 @@ const TABS: { id: CockpitTab; label: string }[] = [
   { id: "catalogue", label: "Catalogue" },
   { id: "scripts", label: "Scripts" },
   { id: "forms", label: "Forms" },
+  { id: "apps", label: "Apps" },
   { id: "deadlines", label: "Deadlines" },
   { id: "migration", label: "Migration" },
   { id: "health", label: "Health" },
@@ -586,6 +589,7 @@ export function CockpitPanel({
         {tab === "catalogue" && <CatalogueBoard plugin={plugin} />}
         {tab === "scripts" && <ScriptBoard plugin={plugin} />}
         {tab === "forms" && <FormsBoard plugin={plugin} />}
+          {tab === "apps" && <AppsBoard plugin={plugin} />}
         {tab === "deadlines" && <DeadlinesBoard plugin={plugin} />}
         {tab === "migration" && <MigrationBoard plugin={plugin} />}
         {tab === "health" && <HealthBoard views={views} plugin={plugin} />}

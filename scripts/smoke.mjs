@@ -257,7 +257,7 @@ const checks = [
   // Pinned deliberately: this line failing means the schema moved, which is
   // the moment to check a migration step went with it (§10 — an upgrade must
   // never lose settings). Bump it only after writing that step.
-  ["settings carry a schema version", instance.settings.schemaVersion === 8],
+  ["settings carry a schema version", instance.settings.schemaVersion === 9],
   ["the hat filter defaults to the mode you are wearing", instance.settings.hatFilter === "mode"],
   // §7 B2. No timer on a fresh install, and every timer action reachable from
   // the keyboard — the status-bar segment is a shortcut, not the only door.
@@ -267,6 +267,19 @@ const checks = [
     ["start-timer", "toggle-timer", "stop-timer", "add-time-entry"].every((id) =>
       commands.includes(id),
     ),
+  ],
+  // §5.13, §7 F3. Nothing is granted on a fresh install: an app cannot run
+  // until a person says what it may reach, and there is no switch that skips
+  // asking.
+  ["no vault app is granted on a fresh install", Object.keys(instance.settings.apps.grants).length === 0],
+  ["the vault-app writer is wired", typeof instance.apps?.register === "function"],
+  [
+    "the sandbox runtime is carried inside the bundle",
+    typeof instance.sandboxRuntime() === "string" && instance.sandboxRuntime().length > 1000,
+  ],
+  [
+    "an app can be run, made and exported from the palette",
+    ["run-app", "new-app", "export-app", "scratchpad"].every((id) => commands.includes(id)),
   ],
   ["the effort log is wired", typeof instance.effort?.months === "function"],
   ["the effort log reads no months on an empty vault", instance.effort.months().length === 0],

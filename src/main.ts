@@ -1,3 +1,13 @@
+import sandboxRuntime from "virtual:sandbox-runtime";
+
+import type { AppGrant } from "./domain/apps/grant.js";
+import { VAULT_APP_TYPE, type AppManifest } from "./domain/apps/manifest.js";
+import type { AppAssessment } from "./domain/apps/register.js";
+import { AppWriter, type NewApp } from "./services/appWriter.js";
+import { readTheme, type AppHostContext } from "./services/appHost.js";
+import { GrantAppModal, NewAppModal, ProposeWriteModal, WedgedAppModal } from "./ui/AppModals.js";
+import { AppPicker } from "./ui/AppPicker.js";
+
 import { Notice, Plugin, TFile, debounce, type WorkspaceLeaf } from "obsidian";
 import { BasesFiles } from "./data/basesFiles.js";
 import { stageLabels } from "./domain/bases/config.js";
@@ -125,6 +135,7 @@ import {
 import { ScdbSettingsTab } from "./settings/SettingsTab.js";
 import { COCKPIT_VIEW_TYPE, CockpitView, type CockpitTab } from "./ui/CockpitView.js";
 import { DIAGRAM_VIEW_TYPE, DiagramView } from "./ui/DiagramView.js";
+import { APP_VIEW_TYPE, AppView } from "./ui/AppView.js";
 import { RequestPicker } from "./ui/RequestPicker.js";
 import { WorkflowPicker } from "./ui/WorkflowPicker.js";
 import { DiagramWriter } from "./services/diagramWriter.js";
@@ -256,6 +267,8 @@ export default class ScdbCockpitPlugin extends Plugin {
   catalogueWriter!: CatalogueWriter;
   scriptWriter!: ScriptWriter;
   redcap!: RedcapWriter;
+  /** Vault apps: reading their notes, recording consent, exporting them (§5.13, §7 F3). */
+  apps!: AppWriter;
 
   /**
    * Bumped whenever a form note changes, so the forms board reloads.
@@ -266,6 +279,15 @@ export default class ScdbCockpitPlugin extends Plugin {
    * answer it has is stale. A counter is the smallest honest one.
    */
   formsVersion = 0;
+
+  /**
+   * Bumped whenever an app note or a grant changes, so the apps board reloads.
+   *
+   * Same reason as `formsVersion`: an app's code lives in the note body, which
+   * the metadata cache does not hold, so the board reads files and needs a
+   * signal that what it is showing is stale.
+   */
+  appsVersion = 0;
 
   /** The mode HUD (§7 A3). Null until `onload` has run. */
   private statusBar: HTMLElement | null = null;
@@ -382,6 +404,20 @@ export default class ScdbCockpitPlugin extends Plugin {
       },
     });
 
+    this.apps = new AppWriter({
+      app: this.app,
+      notes: this.notes,
+      audit: this.audit,
+      exporter: this.exporter,
+      actor: () => this.settings.actor,
+      appsFolder: () => this.settings.folders.apps,
+      grants: () => this.settings.apps.grants as Readonly<Record<string, AppGrant>>,
+      saveGrant: (id, grant) => this.saveGrant(id, grant),
+      rows: (types, now) => this.rowsFor(types, now),
+      theme: () => readTheme(document.body),
+      runtime: sandboxRuntime,
+    });
+
     this.reportTemplates = new ReportTemplateStore(
       this.app,
       () => this.settings.folders.config,
@@ -491,6 +527,7 @@ export default class ScdbCockpitPlugin extends Plugin {
 
     this.registerView(COCKPIT_VIEW_TYPE, (leaf: WorkspaceLeaf) => new CockpitView(leaf, this));
     this.registerView(DIAGRAM_VIEW_TYPE, (leaf: WorkspaceLeaf) => new DiagramView(leaf, this));
+    this.registerView(APP_VIEW_TYPE, (leaf: WorkspaceLeaf) => new AppView(leaf, this));
     this.registerBasesViews();
     this.addSettingTab(new ScdbSettingsTab(this.app, this));
     this.registerCommands();
@@ -968,6 +1005,36 @@ export default class ScdbCockpitPlugin extends Plugin {
       id: "import-dictionary",
       name: "Import a REDCap data dictionary",
       callback: () => void this.pickForm((spec) => void this.importDictionary(spec.path)),
+    });
+
+    this.addCommand({
+      id: "apps",
+      name: "Show the vault apps",
+      callback: () => void this.activateCockpit("apps"),
+    });
+
+    this.addCommand({
+      id: "new-app",
+      name: "New vault app",
+      callback: () => this.newApp(),
+    });
+
+    this.addCommand({
+      id: "run-app",
+      name: "Run a vault app",
+      callback: () => void this.pickApp((entry) => void this.runApp(entry.manifest.path)),
+    });
+
+    this.addCommand({
+      id: "export-app",
+      name: "Export a vault app with its data",
+      callback: () => void this.pickApp((entry) => void this.exportApp(entry.manifest.path)),
+    });
+
+    this.addCommand({
+      id: "scratchpad",
+      name: "Open the JavaScript scratchpad",
+      callback: () => void this.openScratchpad(),
     });
 
     this.addCommand({
@@ -2086,6 +2153,240 @@ export default class ScdbCockpitPlugin extends Plugin {
       return;
     }
     new FormPicker(this.app, specs, onPick).open();
+  }
+
+  // --- vault apps and the scratchpad (§5.13, §7 F3) --------------------------
+
+  /**
+   * The bundled sandbox runtime, as source text.
+   *
+   * Built separately from `main.js` (see `esbuild.config.mjs`) because it runs
+   * inside the iframe, where there is no module loader and no origin to fetch
+   * a second file from.
+   */
+  sandboxRuntime(): string {
+    return sandboxRuntime;
+  }
+
+  /** Note types the index actually holds. What the scratchpad may read. */
+  indexedTypes(): string[] {
+    return this.notes.types().map((entry) => entry.type);
+  }
+
+  async appsRegister(): Promise<AppAssessment[]> {
+    return this.apps.register();
+  }
+
+  async assessApp(file: TFile): Promise<AppAssessment> {
+    return this.apps.assess(file);
+  }
+
+  /**
+   * Everything a running app is allowed to ask for.
+   *
+   * Note what is *not* here: `this`, `this.app`, the vault, the adapter. §5.13
+   * forbids passing any of them into an app, and the way to make that true is
+   * for the object the host holds to be a set of narrow functions rather than
+   * a plugin. The confirmation callback is the one place a person is inserted,
+   * and it is the only path by which an app changes anything.
+   */
+  appHostContext(): AppHostContext {
+    return {
+      app: this.app,
+      audit: this.audit,
+      actor: () => this.settings.actor,
+      rows: (types, now) => this.rowsFor(types, now),
+      fields: (types) => this.catalogueFor(types),
+      watchdogSeconds: () => this.settings.apps.watchdogSeconds,
+      confirmWrite: (manifest, proposal, changes) =>
+        new Promise<boolean>((resolve) => {
+          new ProposeWriteModal(this.app, manifest, proposal, changes, (ok) => {
+            if (ok) {
+              this.notes.rebuild();
+              this.refreshViews();
+            }
+            resolve(ok);
+          }).open();
+        }),
+    };
+  }
+
+  /** Store or clear one app's consent. Kept in settings, never in the note. */
+  private async saveGrant(id: string, grant: AppGrant | null): Promise<void> {
+    const grants = { ...this.settings.apps.grants };
+    if (grant === null) delete grants[id];
+    else grants[id] = grant;
+    this.settings.apps = { ...this.settings.apps, grants };
+    await this.saveSettings();
+    this.appsVersion += 1;
+    this.refreshViews();
+  }
+
+  /**
+   * Run an app, asking first if it needs asking.
+   *
+   * The manifest is re-read here rather than taken from whatever the board is
+   * showing: the board may be a minute old, and the whole point of the grant
+   * hash is that the note can change between one look and the next.
+   */
+  async runApp(path: string): Promise<void> {
+    const file = this.app.vault.getAbstractFileByPath(path);
+    if (!(file instanceof TFile)) {
+      new Notice(`SCDB: "${path}" is no longer in the vault.`, 8000);
+      return;
+    }
+
+    try {
+      const assessment = await this.apps.assess(file);
+      const { manifest } = assessment;
+
+      if (manifest.source.trim() === "") {
+        new Notice(`SCDB: ${manifest.id} has no code to run.`, 8000);
+        return;
+      }
+
+      if (assessment.needsConsent) {
+        const allowed = await new Promise<boolean>((resolve) => {
+          new GrantAppModal(this.app, manifest, assessment.check, resolve).open();
+        });
+        if (!allowed) return;
+        await this.apps.grant(manifest, assessment.grant);
+      }
+
+      await this.openAppView((view) => view.showApp(file, manifest));
+    } catch (error) {
+      reportError(error, "could not run that app.");
+    }
+  }
+
+  /** Withdraw an app's permission. It asks again before it next runs. */
+  async revokeApp(path: string): Promise<void> {
+    const file = this.app.vault.getAbstractFileByPath(path);
+    if (!(file instanceof TFile)) return;
+    try {
+      const manifest = await this.apps.manifestFor(file);
+      await this.apps.revoke(manifest);
+      new Notice(`SCDB: ${manifest.id} can no longer run until you allow it again.`, 6000);
+    } catch (error) {
+      reportError(error, "could not withdraw that app's permission.");
+    }
+  }
+
+  /**
+   * Export an app as a self-contained page (§5.13).
+   *
+   * The confirmation names the row count *and* what was left out, because
+   * §5.10 excludes correspondence from exports by default and a page that
+   * silently lost half its data is one nobody can explain to the person they
+   * sent it to.
+   */
+  async exportApp(path: string): Promise<void> {
+    const file = this.app.vault.getAbstractFileByPath(path);
+    if (!(file instanceof TFile)) return;
+
+    try {
+      const manifest = await this.apps.manifestFor(file);
+      const snapshot = this.apps.snapshotFor(manifest);
+      const planned = this.exporter.plannedPath(manifest.id, "html");
+
+      const lines = [
+        `Write ${manifest.title} and a snapshot of ${snapshot.count} note${snapshot.count === 1 ? "" : "s"} to:`,
+        `• ${planned}`,
+        "",
+        "The file is self-contained: it opens in any browser, makes no network request, and is not live.",
+      ];
+      for (const exclusion of snapshot.exclusions) lines.push(`• ${exclusion}`);
+
+      if (!(await confirm(this.app, lines.join("\n"), "Export"))) return;
+
+      const result = await this.apps.exportApp(manifest);
+      new Notice(`SCDB: ${result.rows} row${result.rows === 1 ? "" : "s"} → ${result.path}`, 8000);
+    } catch (error) {
+      reportError(error, "could not export that app.");
+    }
+  }
+
+  /** Create an app note from the dialog, then open it for editing. */
+  newApp(): void {
+    new NewAppModal(this.app, this.indexedTypes(), (input: NewApp | null) => {
+      if (input === null) return;
+      void (async () => {
+        try {
+          const file = await this.apps.create(input);
+          this.notes.update(file);
+          this.appsVersion += 1;
+          await this.app.workspace.getLeaf(true).openFile(file);
+          new Notice(`SCDB: ${input.id} created. Run it from the Apps board when you are ready.`, 8000);
+        } catch (error) {
+          reportError(error, "could not create the app note.");
+        }
+      })();
+    }).open();
+  }
+
+  /** Open the JavaScript scratchpad. Nothing runs until Run is pressed. */
+  async openScratchpad(): Promise<void> {
+    await this.openAppView((view) => view.showScratchpad());
+  }
+
+  /** Withdraw an app's permission by id, from the settings tab. */
+  async withdrawGrant(id: string): Promise<void> {
+    await this.saveGrant(id, null);
+  }
+
+  /** Ask whether to tear down an app that has stopped answering (§5.13). */
+  async askWedged(title: string, detail: string): Promise<boolean> {
+    return new Promise<boolean>((resolve) => {
+      new WedgedAppModal(this.app, title, detail, resolve).open();
+    });
+  }
+
+  /**
+   * Show the app pane, reusing the one that is already open.
+   *
+   * **`setViewState` is only called for a leaf that is not already an app
+   * pane**, and that distinction was found the hard way. Calling it on a leaf
+   * that already holds this view type makes Obsidian rebuild the view: the
+   * `await` resolves before the replacement is attached, so `leaf.view` is
+   * sometimes the old instance and sometimes the new one. The visible symptom
+   * was a pane whose title said "Scratchpad" while a watchdog behind it
+   * complained about an app that had been detached — two live instances, one
+   * of them orphaned with a running session.
+   *
+   * Reusing means reusing the instance, so the session it owns is the session
+   * that gets stopped. The target is still set after the pane exists rather
+   * than through view state — see the note on `DiagramView` for what carrying
+   * our own key in the workspace serialisation did to that pane.
+   */
+  private async openAppView(setup: (view: AppView) => void): Promise<void> {
+    const workspace = this.app.workspace;
+
+    for (const leaf of workspace.getLeavesOfType(APP_VIEW_TYPE)) {
+      if (leaf.view instanceof AppView) {
+        workspace.revealLeaf(leaf);
+        setup(leaf.view);
+        return;
+      }
+    }
+
+    const leaf = workspace.getLeaf(true);
+    await leaf.setViewState({ type: APP_VIEW_TYPE, active: true });
+    workspace.revealLeaf(leaf);
+    const view = leaf.view;
+    if (view instanceof AppView) setup(view);
+  }
+
+  /** Pick an app, then act on it. */
+  private async pickApp(onPick: (entry: AppAssessment) => void): Promise<void> {
+    const register = await this.apps.register();
+    if (register.length === 0) {
+      new Notice(
+        `SCDB: no vault apps yet. Add a note to ${this.settings.folders.apps} with \`type: vault-app\`, or use "New vault app".`,
+        8000,
+      );
+      return;
+    }
+    new AppPicker(this.app, register, onPick).open();
   }
 
   // --- publications (§5.4, §7 B5) -------------------------------------------

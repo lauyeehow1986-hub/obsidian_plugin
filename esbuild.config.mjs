@@ -1,7 +1,7 @@
 import esbuild from "esbuild";
 import builtins from "builtin-modules";
 import { copyFileSync, mkdirSync, existsSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
 const prod = process.argv.includes("--prod");
 
@@ -22,6 +22,56 @@ function copyStaticAssets() {
     copyFileSync(file, join(OUT_DIR, file));
   }
 }
+
+/**
+ * The vault-app sandbox runtime (§5.13, §7 F3).
+ *
+ * `src/sandbox/runtime.ts` runs on the *other side* of a security boundary: it
+ * is injected into a sandboxed iframe's `srcdoc`, where there is no module
+ * loader, no Obsidian and no origin to fetch a second file from. So it cannot
+ * be linked into `main.js` — it has to arrive as a string. This builds it into
+ * one self-contained IIFE (Preact, hooks and htm included) and exposes it as
+ * the module `virtual:sandbox-runtime`, whose default export is that text.
+ *
+ * The size is reported separately from the bundle because it is carried
+ * *inside* it: every byte here is a byte of main.js too.
+ */
+const sandboxRuntime = {
+  name: "sandbox-runtime",
+  setup(build) {
+    build.onResolve({ filter: /^virtual:sandbox-runtime$/ }, () => ({
+      path: "sandbox-runtime",
+      namespace: "scdb-virtual",
+    }));
+
+    build.onLoad({ filter: /.*/, namespace: "scdb-virtual" }, async () => {
+      const entry = resolve("src", "sandbox", "runtime.ts");
+      const built = await esbuild.build({
+        entryPoints: [entry],
+        bundle: true,
+        format: "iife",
+        target: "es2022",
+        platform: "browser",
+        jsx: "automatic",
+        jsxImportSource: "preact",
+        // Always minified, in dev too: this is embedded in an HTML attribute
+        // and the point of reading it is never to debug it there.
+        minify: true,
+        legalComments: "none",
+        write: false,
+        logLevel: "silent",
+      });
+      const text = built.outputFiles[0].text;
+      console.log(`[scdb-cockpit] sandbox runtime ${(text.length / 1024).toFixed(1)} KB (inside main.js)`);
+      return {
+        contents: `export default ${JSON.stringify(text)};`,
+        loader: "js",
+        // Enough for the dev watch loop to notice an edit to the runtime.
+        watchFiles: [entry],
+      };
+    });
+  },
+};
 
 const context = await esbuild.context({
   entryPoints: ["src/main.ts"],
@@ -51,6 +101,7 @@ const context = await esbuild.context({
   logLevel: "info",
   outfile: join(OUT_DIR, "main.js"),
   plugins: [
+    sandboxRuntime,
     {
       name: "copy-assets-and-report",
       setup(build) {

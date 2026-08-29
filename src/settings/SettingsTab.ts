@@ -97,6 +97,7 @@ export class ScdbSettingsTab extends PluginSettingTab {
     this.publicationsSection(containerEl);
     this.reportsSection(containerEl);
     this.eventsSection(containerEl);
+    this.appsSection(containerEl);
     this.backupSection(containerEl);
 
     // Surfacing migration notes here rather than only in the console: on the
@@ -390,6 +391,81 @@ export class ScdbSettingsTab extends PluginSettingTab {
         "written out in full, or a single word — the list says so rather than " +
         "renaming a collaborator silently.",
     });
+  }
+
+  /**
+   * Vault apps (§5.13, §7 F3).
+   *
+   * The one screen that answers "what have I allowed to run against my notes",
+   * which is a question you cannot answer by reading the app notes themselves
+   * — a manifest says what an app *asks* for, and this says what it was
+   * *given*. Withdrawing is here rather than only on the board because the
+   * moment you want to revoke something is rarely the moment you are browsing
+   * apps.
+   */
+  private appsSection(containerEl: HTMLElement): void {
+    containerEl.createEl("h3", { text: "Vault apps" });
+
+    containerEl.createEl("p", {
+      cls: "setting-item-description",
+      text:
+        "An app runs in a sandbox with no access to the vault, the filesystem or the network. " +
+        "Everything it reads comes back through the plugin, and only the note types you allowed. " +
+        "It can never change a note by itself: it proposes, you confirm.",
+    });
+
+    const grants = Object.entries(this.plugin.settings.apps.grants);
+    if (grants.length === 0) {
+      containerEl.createEl("p", {
+        cls: "setting-item-description",
+        text: "No app is allowed to run. Nothing is granted on install, and nothing grants itself.",
+      });
+    } else {
+      for (const [id, grant] of grants.sort((a, b) => a[0].localeCompare(b[0]))) {
+        const types = grant.capabilities.query;
+        new Setting(containerEl)
+          .setName(id)
+          .setDesc(
+            [
+              types.length === 0 ? "Reads nothing" : `Reads ${types.join(", ")}`,
+              grant.capabilities.write === "propose"
+                ? "may propose changes you confirm"
+                : "cannot write",
+              grant.at === "" ? "" : `allowed ${grant.at}`,
+            ]
+              .filter((part) => part !== "")
+              .join(" · "),
+          )
+          .addButton((button) =>
+            button
+              .setButtonText("Withdraw")
+              .setTooltip("The app will ask again before it next runs.")
+              .onClick(async () => {
+                await this.plugin.withdrawGrant(id);
+                this.display();
+              }),
+          );
+      }
+    }
+
+    new Setting(containerEl)
+      .setName("Wait before reporting an app as stuck")
+      .setDesc(
+        "Seconds of silence before the plugin offers to close a running app. A watchdog that " +
+          "fires on a healthy app is a watchdog you turn off, so this is longer than it looks " +
+          "like it needs to be. It detects an app that has stopped answering; it cannot rescue " +
+          "one that is holding the whole window.",
+      )
+      .addText((text) =>
+        text
+          .setValue(String(this.plugin.settings.apps.watchdogSeconds))
+          .onChange(async (value) => {
+            const seconds = Number.parseInt(value, 10);
+            if (!Number.isFinite(seconds)) return;
+            this.plugin.settings.apps.watchdogSeconds = Math.min(120, Math.max(2, seconds));
+            await this.plugin.saveSettings();
+          }),
+      );
   }
 
   /** Report templates (§7 B7). Nothing to configure until you want to edit one. */

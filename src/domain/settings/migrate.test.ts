@@ -482,4 +482,67 @@ describe("migrateSettings", () => {
     });
   });
 
+
+  describe("vault apps (§5.13, §7 F3)", () => {
+    it("grants nothing on upgrade from v8", () => {
+      const result = migrateSettings({ schemaVersion: 8 });
+      expect(result.settings.apps.grants).toEqual({});
+      expect(result.notes.join(" ")).toContain("No app is allowed to run until you say so");
+    });
+
+    it("keeps a grant that was given", () => {
+      const result = migrateSettings({
+        schemaVersion: 9,
+        apps: {
+          grants: {
+            "APP-x": {
+              hash: "abc123",
+              at: "2026-08-29",
+              capabilities: { query: ["run"], write: "propose", network: false },
+            },
+          },
+        },
+      });
+      expect(result.settings.apps.grants["APP-x"]?.hash).toBe("abc123");
+      expect(result.settings.apps.grants["APP-x"]?.capabilities.write).toBe("propose");
+    });
+
+    /**
+     * Every failure path here has to land on "granted nothing". Getting it
+     * wrong this way costs one dialog; getting it wrong the other way runs
+     * someone's code against the vault with nobody's consent.
+     */
+    it("drops a grant with no hash, and says those apps will ask again", () => {
+      const result = migrateSettings({
+        schemaVersion: 9,
+        apps: { grants: { "APP-x": { at: "2026-08-29" }, "APP-y": "yes" } },
+      });
+      expect(result.settings.apps.grants).toEqual({});
+      expect(result.notes.join(" ")).toContain("will ask again");
+    });
+
+    it("grants nothing when the block is not a mapping", () => {
+      const result = migrateSettings({ schemaVersion: 9, apps: "trust everything" });
+      expect(result.settings.apps.grants).toEqual({});
+      expect(result.notes.join(" ")).toContain("no app is granted");
+    });
+
+    it("never restores network access to a stored grant", () => {
+      const result = migrateSettings({
+        schemaVersion: 9,
+        apps: {
+          grants: {
+            "APP-x": { hash: "h", at: "", capabilities: { query: [], write: "none", network: true } },
+          },
+        },
+      });
+      expect(result.settings.apps.grants["APP-x"]?.capabilities.network).toBe(false);
+    });
+
+    it("clamps a watchdog nobody could wait for", () => {
+      expect(migrateSettings({ schemaVersion: 9, apps: { watchdogSeconds: 0 } }).settings.apps.watchdogSeconds).toBe(2);
+      expect(migrateSettings({ schemaVersion: 9, apps: { watchdogSeconds: 9000 } }).settings.apps.watchdogSeconds).toBe(120);
+    });
+  });
+
 });

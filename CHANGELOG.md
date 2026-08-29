@@ -5,6 +5,96 @@ clearly marked entry (CLAUDE.md §10).
 
 ## Unreleased
 
+### Added — F3, vault apps, the scratchpad and app export
+
+An **Apps** tab over `92 Apps/` (§5.13), a sandboxed pane that runs them, and
+five commands: **Show the vault apps**, **New vault app**, **Run a vault app**,
+**Export a vault app with its data** and **Open the JavaScript scratchpad**.
+
+§7 F3 asks for three surfaces on one runtime, and this is all three: a saved
+mini-app, a scratchpad you type into, and a self-contained HTML export. They
+share one sandbox, one broker and one runtime, because two hosts would drift
+and the differences would be in the guards.
+
+**The frame is where the guarantees live.** `sandbox="allow-scripts"` with no
+`allow-same-origin` gives an app an opaque origin: no access to this document,
+no `localStorage`, no Obsidian. What that attribute does **not** do is stop a
+network call — a sandboxed frame can still `fetch()` a public host, or point an
+image at one with the data in the query string. So the page also carries a
+`default-src 'none'` content-security policy with `connect-src 'none'`. Rules 3
+and 4 rest on both together, and the shipped overreach fixture calls `fetch()`
+and prints the refusal so that stays true rather than being assumed.
+
+**Nothing live crosses the boundary.** §5.13 forbids passing `App`, `Plugin`,
+`Vault` or `adapter` into an app — `app.vault.adapter` is arbitrary filesystem
+access, and handing it over would make the manifest decorative. An app gets a
+message port and a pre-bound runtime: `html` (htm already bound to Preact),
+`render`, the hooks, and `useQuery` / `useNotes` / `useProposeWrite` with plain
+`query` / `notes` / `proposeWrite` beside them for code that runs on a click
+rather than during a render. Preact, hooks and htm are bundled separately into
+17 KB of source text and injected into the frame, because there is no module
+loader and no origin to fetch a second file from on that side.
+
+**Consent is recorded against a hash of what was granted, not against the app.**
+The manifest lives in a note, so it can be edited later — by you, by an update,
+or by whoever sent it to you. Every run compares. Widening re-prompts and names
+exactly what changed ("it now also wants to read correspondence"); narrowing
+does not, because asking about less would train you to click through the dialog
+that matters. Re-ordering the type list is not a change. The consent lives in
+settings rather than in the note: a consent stored next to the thing it
+authorises is not a consent.
+
+**An app proposes; it never writes.** `write: propose` lets an app offer a
+change, which is shown in full — the note, every field that moves, both values,
+and the app's stated reason quoted as *its* claim — and written only if you
+confirm. An app may only propose changes to note types it may read, or one
+granted type plus `propose` would be write access to the whole vault. `uid`,
+`type` and `history` are refused whatever the manifest says: history is what
+every dwell, bounce and turnaround figure is computed from, and corrupting it
+would not break anything visible, it would quietly change the numbers in a
+report.
+
+**`network: true` is refused, not honoured.** Rule 3 says outbound traffic goes
+through one gateway that is off unless a specific module is enabled, and no app
+is that module. A manifest asking for it parses, reports the request on the
+board and in the consent dialog, and is granted `false`.
+
+**Nothing runs by surprise** (rule 12). Opening an app note runs nothing;
+loading the vault runs nothing; the scratchpad opens stopped. The board shows
+what an app may reach and its code before offering to run it.
+
+**Export carries a snapshot, and says what it left out.** A self-contained page
+in `95 Exports/` — the app plus frozen data, no network request, opens in any
+browser. Correspondence notes and correspondence-derived fields are excluded by
+default per §5.10, and the confirmation names what was dropped: a page that
+quietly lost half its data is one nobody can explain to the person they sent
+it to.
+
+**The watchdog is honest about what it buys.** It pings; an app that stops
+answering is offered for teardown. §11's F3 question — whether this Electron
+build isolates a sandboxed iframe into its own renderer process — is still
+open, and it decides whether a runaway loop stalls only the app or the whole
+window. If it is the latter the watchdog's own timer will not fire either, so
+this detects a *wedged* app, not every possible one.
+
+Two new ledger actions (§5.6): `app-granted` when an app is allowed to run or
+its permission is withdrawn, and `app-write` when a proposal is confirmed. The
+write itself is a `bulk-edit`; `app-write` records that an app was the origin,
+which is the part a reader cannot reconstruct from the note afterwards.
+
+Settings schema **8 → 9**, with a migration. The upgrade grants nothing, every
+unreadable stored grant is dropped rather than trusted, and there is no "trust
+all apps" switch — it would be one click, taken on a busy morning, and it would
+turn every later manifest edit into something that happens silently.
+
+### Changed
+
+- The fenced-block reader D2 wrote for `yaml redcap` moved to
+  `domain/markdown/fence.ts` and now serves the `js app` block too. A second
+  copy would be a second place to get "replace only the block, never the prose"
+  subtly wrong, and that rule is what keeps rule 8 true for both note types.
+
+
 ### Added — D2, REDCap form designer (data dictionary half)
 
 A **Forms** tab over `88 Forms/` (§5.14), and four commands: **Show the REDCap

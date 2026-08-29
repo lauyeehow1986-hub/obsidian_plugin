@@ -2296,3 +2296,89 @@
   gap: var(--scdb-1);
   align-items: center;
 }
+
+/* --- vault apps and the scratchpad (§5.13, §7 F3) ------------------------- */
+
+/* The pane's chrome sits above the frame and never moves when the app
+   repaints: a status update that reflowed the layout would be a status update
+   that restarted the app. */
+.scdb-app-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--scdb-2);
+  padding: var(--scdb-1) 0 var(--scdb-2);
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.scdb-app-bar__title {
+  font-weight: 600;
+}
+
+.scdb-app-bar__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--scdb-1);
+  margin-left: auto;
+}
+
+/* State is colour plus a word, never colour alone (§6). */
+.scdb-app-state {
+  font-size: var(--font-ui-smaller);
+  padding: 0 var(--scdb-1);
+  border-radius: var(--radius-s);
+  border: 1px solid var(--background-modifier-border);
+  color: var(--text-muted);
+}
+
+.scdb-app-state--running {
+  color: var(--scdb-on-track);
+  border-color: var(--scdb-on-track);
+}
+
+.scdb-app-state--wedged,
+.scdb-app-state--failed {
+  color: var(--scdb-overdue);
+  border-color: var(--scdb-overdue);
+}
+
+/* The frame fills what is left. `min-height` rather than a fixed height so the
+   pane is usable at sidebar width as well as full width (§6). */
+.scdb-app-host {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 320px;
+  margin-top: var(--scdb-2);
+}
+
+.scdb-app-frame {
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: 320px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  background: var(--background-primary);
+}
+
+.scdb-app-editor {
+  width: 100%;
+  min-height: 220px;
+  resize: vertical;
+  white-space: pre;
+  overflow-x: auto;
+  margin-top: var(--scdb-2);
+}
+
+/* Source shown before an app runs, and in the consent dialog. Scrolls rather
+   than stretching the dialog past the screen. */
+.scdb-code {
+  max-height: 320px;
+  overflow: auto;
+  padding: var(--scdb-1) var(--scdb-2);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  background: var(--background-primary-alt);
+  font-family: var(--font-monospace);
+  font-size: var(--font-ui-smaller);
+  white-space: pre;
+}

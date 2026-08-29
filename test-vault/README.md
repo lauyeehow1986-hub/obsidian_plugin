@@ -29,6 +29,7 @@ pick up a rebuild.
 | `94 Runs-fixtures/` | four run records | §5.12 provenance: one corroborating its script, one whose `script_hash` differs from the note it points at, one that failed and recorded almost nothing, and one orphan naming a script nothing documents |
 | `20 Studies/` | three studies | D2's governance hook: one approved for indirect identifiers, one approved for **none** (so a form on it is blocked), and one that records **no** scope at all — which reads as *uncheckable*, never as approved |
 | `88 Forms/` | four REDCap forms | D2: one per verdict — blocked on governance, rejected by REDCap, questions to answer, and one deliberately clean, because a board that only ever shows problems teaches you to ignore it |
+| `92 Apps/` | four vault apps | F3: one ordinary app, one that proposes writes, one deliberately greedy that prints every refusal it collects — including `fetch()` blocked by the page policy — and one with no code at all, so the board says *why* it cannot run rather than offering a Run button that does nothing |
 | `_config/messages/` | `chase-up.md` | the message template, so tone is the user's and not the plugin's |
 | `_config/reports/` | the five B7 templates | worked examples of the report format, exactly as "Write the built-in report templates to _config" writes them — a fixture test holds them equal to the built-ins, so editing one in code without writing it out again fails the suite |
 
@@ -79,12 +80,14 @@ disappears (**clause gone** — the SOP cites it), clause 5.1 is untouched
 (**clear** — the SOP cites that too), and the consent form cites no clause at
 all (**review**, and it resolves to no note, so it also shows *not found*).
 
-### The forms fixtures are the only notes with a body block
+### Forms and apps are the only notes with a body block
 
-Every other note type in this vault keeps its payload in frontmatter. A
-`type: redcap-form` note keeps its instruments in a ```` ```yaml redcap ````
-fence in the body instead (§7 D2), because eighty fields do not belong in
-frontmatter and a body block diffs cleanly in git.
+Every other note type in this vault keeps its payload in frontmatter. Two do
+not. A `type: redcap-form` note keeps its instruments in a ```` ```yaml redcap ````
+fence in the body (§7 D2), because eighty fields do not belong in frontmatter
+and a body block diffs cleanly in git. A `type: vault-app` note keeps its code
+in a ```` ```js app ```` fence (§5.13), for the plainer reason that JavaScript
+is not frontmatter. Both use the same fence reader and the same replace rule.
 
 Two consequences worth knowing while working here:
 
@@ -98,3 +101,25 @@ Two consequences worth knowing while working here:
 Running **Import a REDCap data dictionary** against one of these does the real
 thing and dirties the note;
 `git checkout -- "test-vault/88 Forms"` puts it back.
+
+### The app fixtures run real code, and nothing runs on its own
+
+Rule 12: opening one of these notes runs nothing, and loading the vault runs
+nothing. An app starts only from **Run** on the Apps board or the palette, and
+the first run of each asks what it may reach and shows the code it will run.
+
+Three things worth knowing while working here:
+
+- **Your consent is stored in the plugin's `data.json`, which is gitignored.**
+  It is not in the app note, deliberately — a consent stored next to the thing
+  it authorises is not a consent. So a fresh clone starts with every app in
+  *Not yet allowed to run*, which is the correct starting state and not a
+  missing fixture.
+- **`APP-invented-overreach` is the one to run when changing anything in
+  `domain/apps/` or `sandbox/`.** It prints four refusals — a note type outside
+  its manifest, another app's notes, a protected field, and a network call — and
+  each is enforced somewhere the app cannot reach. If any line changes to "this
+  should not have happened", a guard has gone.
+- **`APP-invented-triage` writes.** Confirming one of its proposals really does
+  set `priority: high` on a request fixture and really does append to the
+  ledger. `git checkout -- "test-vault/10 Requests"` puts it back.

@@ -43,6 +43,10 @@ import { REDCAP_FORM_TYPE } from "../src/domain/redcap/field";
 import { findBlock } from "../src/domain/redcap/block";
 import { parseFormSpec } from "../src/domain/redcap/form";
 import { buildRegister as buildFormsRegister } from "../src/domain/redcap/register";
+import { VAULT_APP_TYPE, parseManifest } from "../src/domain/apps/manifest";
+import { buildRegister as buildAppsRegister, summarise as summariseApps } from "../src/domain/apps/register";
+import { newGrant } from "../src/domain/apps/grant";
+import { buildFrame } from "../src/domain/apps/frame";
 import {
   fromDictionaryCsv,
   instrumentsToBlock,
@@ -1161,5 +1165,92 @@ describe("REDCap forms and the governance hook (§5.14, §7 D2)", () => {
       }),
     );
     expect(second).toBe(first);
+  });
+});
+
+describe("vault apps (§5.13, §7 F3)", () => {
+  // An app's code lives in a fenced block in the body, so the fixture set is
+  // read from the file text rather than from `notes` — same as the forms.
+  const manifests = typed(VAULT_APP_TYPE).map((note) => {
+    const file = files.find((entry) => entry.rel === note.rel)!;
+    return parseManifest({ path: note.rel, frontmatter: note.front, body: file.text });
+  });
+
+  it("ships apps, so the board has something to open", () => {
+    expect(manifests.length).toBeGreaterThan(0);
+  });
+
+  /**
+   * Pinned by id. These four are the four states the board groups by, and a
+   * fixture that quietly stops demonstrating its state teaches the wrong thing.
+   */
+  it("covers every state the board can show", () => {
+    const register = buildAppsRegister(manifests, {});
+    const byState = Object.fromEntries(
+      register.map((entry) => [entry.manifest.id, entry.state]),
+    );
+    expect(byState).toEqual({
+      "APP-invented-empty": "broken",
+      "APP-invented-queue": "consent",
+      "APP-invented-triage": "consent",
+      "APP-invented-overreach": "consent",
+    });
+    expect(summariseApps(register).broken).toBe(1);
+  });
+
+  it("moves an app to ready once it has been granted, and only that app", () => {
+    const queue = manifests.find((entry) => entry.id === "APP-invented-queue")!;
+    const grants = { "APP-invented-queue": newGrant(queue.capabilities, "2026-08-29") };
+    const register = buildAppsRegister(manifests, grants);
+    const ready = register.filter((entry) => entry.state === "ready");
+    expect(ready.map((entry) => entry.manifest.id)).toEqual(["APP-invented-queue"]);
+  });
+
+  /** §5.13: an app trusted at one scope, edited to ask for more, must re-ask. */
+  it("catches the shipped app being widened after it was granted", () => {
+    const queue = manifests.find((entry) => entry.id === "APP-invented-queue")!;
+    const grants = { "APP-invented-queue": newGrant(queue.capabilities, "2026-08-29") };
+    const widened = {
+      ...queue,
+      capabilities: { ...queue.capabilities, query: [...queue.capabilities.query, CORRESPONDENCE_TYPE] },
+    };
+    const [entry] = buildAppsRegister([widened], grants);
+    expect(entry?.state).toBe("changed");
+    expect(entry?.check.changes.join(" ")).toContain(CORRESPONDENCE_TYPE);
+  });
+
+  /** Rule 3: no app is the gateway, whatever its manifest says. */
+  it("refuses the greedy fixture's request for the network, and says so", () => {
+    const greedy = manifests.find((entry) => entry.id === "APP-invented-overreach")!;
+    expect(greedy.capabilities.network).toBe(false);
+    expect(greedy.problems.join(" ")).toContain("Vault apps never get it");
+  });
+
+  it("says the unfinished fixture has nothing to run rather than offering to run it", () => {
+    const empty = manifests.find((entry) => entry.id === "APP-invented-empty")!;
+    expect(empty.source).toBe("");
+    expect(empty.problems.join(" ")).toContain("nothing to run");
+  });
+
+  /**
+   * Every shipped app is put through the real page builder. The frame is where
+   * rules 3 and 4 are actually enforced, and a fixture whose source broke the
+   * page open would be a fixture that silently stopped testing them.
+   */
+  it("builds a page for every shipped app with its guards intact", () => {
+    for (const manifest of manifests) {
+      if (manifest.source === "") continue;
+      const page = buildFrame({
+        runtime: "globalThis.__scdbRuntime = {};",
+        source: manifest.source,
+        title: manifest.title,
+        theme: {},
+      });
+      expect(page, manifest.id).toContain("connect-src 'none'");
+      // One script element, opened once and closed once: app source that
+      // escaped it would spill the rest of the file into the page as markup.
+      expect(page.match(/<script/g)?.length, manifest.id).toBe(1);
+      expect(page.match(/<\/script>/g)?.length, manifest.id).toBe(1);
+    }
   });
 });

@@ -8,7 +8,7 @@
 import type { AttachmentPolicy } from "../comms/emlThread";
 import type { TimerState } from "../effort/timer";
 
-export const CURRENT_SETTINGS_VERSION = 8;
+export const CURRENT_SETTINGS_VERSION = 9;
 
 /** The three hats. Mode is the organising metaphor, not a cosmetic filter (§7 A3). */
 export const MODES = ["biostat", "hod", "research-core"] as const;
@@ -61,6 +61,7 @@ export interface ScdbSettings {
   effort: EffortConfig;
   events: EventsConfig;
   publications: PublicationsConfig;
+  apps: AppsConfig;
   /** Unrecognised keys are preserved verbatim — see rule 8, never destroy data. */
   [extra: string]: unknown;
 }
@@ -292,6 +293,45 @@ export const DEFAULT_FOLDERS: Record<FolderKey, string> = {
   config: "_config",
 };
 
+/**
+ * Vault apps (§5.13, §7 F3).
+ *
+ * `grants` is the record of what you agreed each app could reach. It lives in
+ * settings rather than in the app's own note for the obvious reason: a consent
+ * stored next to the thing it authorises is not a consent. Anyone who can edit
+ * the note could edit the grant, which is exactly the attack §5.13's manifest
+ * hash exists to make visible.
+ *
+ * There is deliberately no "trust all apps" switch. It would be one click, it
+ * would be taken on a busy morning, and it would turn every later manifest
+ * edit into something that happens silently.
+ */
+export interface AppsConfig {
+  /** Keyed by the app's `id`. See `domain/apps/grant.ts`. */
+  grants: Record<string, AppGrantSetting>;
+  /**
+   * How long the host waits for an app to answer a ping before offering to
+   * tear it down (§5.13's watchdog).
+   *
+   * Configurable because the honest answer to "how long is too long" depends
+   * on the machine: a locked-down laptop mid-antivirus-sweep is slow in ways a
+   * dev machine never is, and a watchdog that fires on a healthy app is a
+   * watchdog that gets turned off.
+   */
+  watchdogSeconds: number;
+}
+
+/** The stored shape of a grant. Mirrors `AppGrant` without importing it. */
+export interface AppGrantSetting {
+  hash: string;
+  at: string;
+  capabilities: { query: string[]; write: string; network: boolean };
+}
+
+export function defaultApps(): AppsConfig {
+  return { grants: {}, watchdogSeconds: 10 };
+}
+
 export function defaultSettings(): ScdbSettings {
   return {
     schemaVersion: CURRENT_SETTINGS_VERSION,
@@ -306,6 +346,7 @@ export function defaultSettings(): ScdbSettings {
     effort: defaultEffort(),
     events: defaultEvents(),
     publications: defaultPublications(),
+    apps: defaultApps(),
   };
 }
 

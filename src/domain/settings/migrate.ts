@@ -17,6 +17,7 @@ import {
   defaultComms,
   defaultEffort,
   defaultEvents,
+  defaultApps,
   defaultPublications,
   defaultSettings,
   isMode,
@@ -26,6 +27,8 @@ import {
   type EffortConfig,
   type EventsConfig,
   type FolderKey,
+  type AppGrantSetting,
+  type AppsConfig,
   type PublicationsConfig,
   type ScdbSettings,
 } from "./schema.js";
@@ -178,6 +181,7 @@ export function migrateSettings(raw: unknown): MigrationResult {
   merged.effort = repairEffort(merged.effort, notes);
   merged.events = repairEvents(merged.events, notes);
   merged.publications = repairPublications(merged.publications, notes);
+  merged.apps = repairApps(merged.apps, notes);
 
   // Folders: fill gaps, keep customised values, drop nothing.
   const folders: Record<string, unknown> = isRecord(merged.folders) ? { ...merged.folders } : {};
@@ -248,6 +252,14 @@ export function migrateSettings(raw: unknown): MigrationResult {
       "Migrated v7 -> v8: added the publications tracker. Citations format as " +
         "Vancouver until you choose otherwise, and no publication note is touched " +
         "until you move a manuscript's stage yourself.",
+    );
+  }
+
+  if (storedVersion > 0 && storedVersion < 9) {
+    notes.push(
+      "Migrated v8 -> v9: added vault apps. No app is allowed to run until you " +
+        "say so — the upgrade grants nothing, and an app that later asks for " +
+        "more will ask you again.",
     );
   }
 
@@ -381,6 +393,58 @@ function repairPublications(value: unknown, notes: string[]): PublicationsConfig
   if (format !== undefined) {
     notes.push(`Unknown citation format ${JSON.stringify(format)}; reset to "${base.citationFormat}".`);
   }
+  return base;
+}
+
+/**
+ * The vault-apps block (§5.13).
+ *
+ * Every failure here lands on "granted nothing". A grant is consent to run
+ * someone's code against your notes; a half-read settings file must never
+ * produce one, and the cost of getting it wrong in this direction is one
+ * dialog, while the cost of getting it wrong in the other has no ceiling.
+ */
+function repairApps(value: unknown, notes: string[]): AppsConfig {
+  const base = defaultApps();
+  if (!isRecord(value)) {
+    if (value !== undefined) notes.push("Vault-app settings were not readable; no app is granted.");
+    return base;
+  }
+
+  const seconds = value["watchdogSeconds"];
+  if (typeof seconds === "number" && Number.isFinite(seconds)) {
+    base.watchdogSeconds = Math.min(120, Math.max(2, Math.round(seconds)));
+  }
+
+  const stored = value["grants"];
+  if (!isRecord(stored)) {
+    if (stored !== undefined) notes.push("Vault-app consents were not readable; no app is granted.");
+    return base;
+  }
+
+  let dropped = 0;
+  for (const [id, entry] of Object.entries(stored)) {
+    if (!isRecord(entry) || typeof entry["hash"] !== "string" || entry["hash"] === "") {
+      dropped += 1;
+      continue;
+    }
+    const capabilities = isRecord(entry["capabilities"]) ? entry["capabilities"] : {};
+    const query = Array.isArray(capabilities["query"])
+      ? capabilities["query"].filter((type): type is string => typeof type === "string")
+      : [];
+    const write = capabilities["write"] === "propose" ? "propose" : "none";
+    base.grants[id] = {
+      hash: entry["hash"],
+      at: typeof entry["at"] === "string" ? entry["at"] : "",
+      capabilities: { query, write, network: false },
+    } satisfies AppGrantSetting;
+  }
+  if (dropped > 0) {
+    notes.push(
+      `${dropped} vault-app consent${dropped === 1 ? "" : "s"} could not be read and ${dropped === 1 ? "was" : "were"} dropped; those apps will ask again.`,
+    );
+  }
+
   return base;
 }
 

@@ -63,6 +63,18 @@ export const AUDIT_ACTIONS = [
   // itself it logs `code-run`, and the difference between the two rows is
   // exactly what an auditor needs in order to weigh them.
   "run-recorded",
+  // Allowing a vault app to run with the capabilities it declares, or
+  // withdrawing that (§5.13, §7 F3). Its own action rather than
+  // `settings-change`: the question is not "when did a preference move" but
+  // "when did this code gain access to these notes, and who allowed it" —
+  // which has to be findable by action. §5.13 makes a widened manifest ask
+  // again, and each answer lands here, so the ledger carries the whole
+  // sequence of what an app was permitted to reach over time.
+  "app-granted",
+  // A vault app proposed a change and the person confirmed it. The write
+  // itself is a `bulk-edit`; this records that an app was the origin, which
+  // is the part a reader cannot reconstruct from the note afterwards.
+  "app-write",
   "correction",
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];

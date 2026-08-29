@@ -405,6 +405,60 @@ frozen copy under, when the incoming text is identical, or when no one-line
 summary is given. Reissue under the same number is allowed — issuers do that —
 and the frozen copy takes a dated name so nothing is overwritten.
 
+## Vault apps and the scratchpad
+
+A vault app is a note in `92 Apps/`: frontmatter saying what it may reach, and
+its code in a ```` ```js app ```` block. The **Apps** tab lists them. Open the
+**scratchpad** instead to run JavaScript you type on the spot.
+
+Apps are useful for the things a saved view cannot do — a calculator, an
+interactive chart, a small entry form — over data the plugin already holds.
+
+### What an app can and cannot do
+
+An app runs in a sandboxed frame with **no access to the vault, the filesystem,
+the network, or Obsidian**. It cannot read a note directly. It asks the plugin,
+and the plugin answers only for the note types you allowed.
+
+```yaml
+capabilities:
+  query: [scdb-request, run]   # note types it may read
+  write: none                  # none | propose
+  network: false               # always false
+```
+
+- **`write: none`** — it can read and draw, and change nothing.
+- **`write: propose`** — it can *offer* a change. You see the note, every field
+  that would move, both values, and the app's stated reason, and nothing is
+  written unless you confirm. It can only propose changes to note types it may
+  read, and never to `uid`, `type` or `history`.
+- **`network`** is always false. An app asking for it is told no, and the board
+  says so.
+
+### Nothing runs until you say so
+
+Opening an app note runs nothing. Loading the vault runs nothing. The first time
+you run an app it asks what it may reach and shows you the code first.
+
+If the note is later edited to ask for **more** — by you, by an update, or by
+whoever sent it to you — it asks again and names exactly what changed. Asking
+for less does not re-prompt. Your permissions are listed in Settings → SCDB
+Cockpit, where each can be withdrawn.
+
+Allowing an app, withdrawing it, and confirming a change it proposed all land in
+the audit ledger.
+
+### Handing one to someone else
+
+**Export a vault app with its data** writes a self-contained HTML file to
+`95 Exports/` — the app plus a frozen snapshot of what it was allowed to read.
+It opens in any browser with no Obsidian and makes no network request. It is a
+snapshot, not a live view, and it says so on the page.
+
+Correspondence notes and correspondence-derived fields are left out by default,
+because an export is a file that travels and those hold message content. The
+confirmation names what was dropped before anything is written.
+
 ## Encrypted backup, and how to restore one
 
 Set a destination folder outside the vault in Settings → SCDB Cockpit, then run
