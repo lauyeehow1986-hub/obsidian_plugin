@@ -2479,3 +2479,290 @@
   font-family: var(--font-monospace);
   font-size: var(--font-ui-smaller);
 }
+
+/* --- the interpreter console (§7 F2) ------------------------------------
+ *
+ * Three regions: a toolbar, a transcript with an input under it, and a side
+ * column holding the environment and the plots. At sidebar width the side
+ * column stops being a column and stacks underneath, because §6 asks every
+ * view to be usable at ~300px and a three-column console at 300px is four
+ * columns of nothing.
+ */
+
+.scdb-console {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.scdb-console__bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--scdb-1);
+  padding: var(--scdb-1) 0;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.scdb-console__langs {
+  display: flex;
+  gap: 2px;
+}
+
+.scdb-root button.scdb-console__lang.is-active {
+  border-color: var(--interactive-accent);
+  color: var(--text-normal);
+  font-weight: 600;
+}
+
+/* State is colour plus a word, never colour alone (§6). */
+.scdb-console__state {
+  font-size: var(--font-ui-smaller);
+  padding: 0 var(--scdb-1);
+  border-radius: var(--radius-s);
+  border: 1px solid var(--background-modifier-border);
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.scdb-console__state--ready {
+  color: var(--scdb-on-track);
+  border-color: var(--scdb-on-track);
+}
+
+.scdb-console__state--busy,
+.scdb-console__state--starting {
+  color: var(--scdb-blocked);
+  border-color: var(--scdb-blocked);
+}
+
+.scdb-console__state--failed {
+  color: var(--scdb-overdue);
+  border-color: var(--scdb-overdue);
+}
+
+.scdb-console__detail {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+  flex: 1 1 12ch;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scdb-console__detail--bad {
+  color: var(--scdb-overdue);
+  white-space: normal;
+  overflow: visible;
+}
+
+.scdb-console__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--scdb-1);
+  margin-left: auto;
+}
+
+.scdb-console__body {
+  display: flex;
+  gap: var(--scdb-2);
+  flex: 1 1 auto;
+  min-height: 0;
+  padding-top: var(--scdb-1);
+}
+
+.scdb-console__main {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+}
+
+.scdb-console__side {
+  flex: 0 0 clamp(200px, 26%, 320px);
+  display: flex;
+  flex-direction: column;
+  gap: var(--scdb-2);
+  min-height: 0;
+  overflow-y: auto;
+}
+
+@container (max-width: 700px) {
+  .scdb-console__body {
+    flex-direction: column;
+  }
+
+  .scdb-console__side {
+    flex: 0 0 auto;
+    flex-direction: row;
+    flex-wrap: wrap;
+    overflow-y: visible;
+  }
+
+  .scdb-console__section {
+    flex: 1 1 240px;
+  }
+}
+
+/* The transcript. `min-height: 0` on a flex child is what lets it scroll
+ * instead of pushing the input off the bottom of the pane. */
+.scdb-console__log {
+  flex: 1 1 auto;
+  min-height: 6em;
+  overflow-y: auto;
+  padding: var(--scdb-1);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  background: var(--background-primary-alt);
+}
+
+.scdb-console__line {
+  margin: 0;
+  padding: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: var(--font-monospace);
+  font-size: var(--font-ui-smaller);
+  line-height: 1.45;
+  background: none;
+  border: none;
+}
+
+/* Sent code, marked by a rule down its left so it is distinguishable from
+ * output at a glance and without relying on colour. */
+.scdb-console__in {
+  border-left: 3px solid var(--interactive-accent);
+  padding-left: var(--scdb-1);
+  margin: var(--scdb-1) 0 2px;
+  color: var(--text-normal);
+}
+
+.scdb-console__out {
+  color: var(--text-normal);
+}
+
+.scdb-console__err {
+  color: var(--scdb-overdue);
+}
+
+.scdb-console__result {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  font-variant-numeric: tabular-nums;
+  margin-bottom: var(--scdb-1);
+}
+
+.scdb-console__note {
+  color: var(--text-muted);
+  font-style: italic;
+  white-space: pre-wrap;
+}
+
+.scdb-console__divider {
+  border-top: 1px solid var(--background-modifier-border);
+  margin: var(--scdb-1) 0;
+}
+
+.scdb-console__trimmed {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+  padding-bottom: var(--scdb-1);
+  border-bottom: 1px dashed var(--background-modifier-border);
+  margin-bottom: var(--scdb-1);
+}
+
+.scdb-console__foot {
+  padding-top: var(--scdb-1);
+}
+
+.scdb-console__input {
+  width: 100%;
+  resize: vertical;
+  min-height: 4.5em;
+  font-family: var(--font-monospace);
+  font-size: var(--font-ui-smaller);
+  line-height: 1.45;
+  tab-size: 2;
+}
+
+.scdb-console__send {
+  display: flex;
+  align-items: center;
+  gap: var(--scdb-2);
+  padding-top: var(--scdb-1);
+}
+
+.scdb-console__send .scdb-muted {
+  font-size: var(--font-ui-smaller);
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.scdb-console__section {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.scdb-console__head {
+  display: flex;
+  align-items: center;
+  gap: var(--scdb-1);
+  font-size: var(--font-ui-smaller);
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding-bottom: var(--scdb-1);
+}
+
+.scdb-console__icon {
+  display: inline-flex;
+}
+
+.scdb-console__icon svg {
+  width: 14px;
+  height: 14px;
+}
+
+.scdb-console__envhost {
+  overflow: auto;
+  max-height: 40vh;
+}
+
+.scdb-console__env {
+  font-size: var(--font-ui-smaller);
+  width: 100%;
+}
+
+.scdb-console__env td {
+  vertical-align: top;
+}
+
+.scdb-console__name {
+  font-family: var(--font-monospace);
+  overflow-wrap: anywhere;
+}
+
+.scdb-console__plots {
+  display: flex;
+  flex-direction: column;
+  gap: var(--scdb-1);
+  overflow-y: auto;
+  max-height: 50vh;
+}
+
+.scdb-console__plot img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  /* Plots are drawn on white by both interpreters; without this they read as
+   * a hole punched in a dark theme. */
+  background: #fff;
+}

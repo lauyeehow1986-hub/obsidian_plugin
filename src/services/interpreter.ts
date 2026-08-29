@@ -174,6 +174,95 @@ export function runProcess(request: SpawnRequest): RunHandle {
   };
 }
 
+/** A long-lived interpreter. Ends only when killed or when it exits itself. */
+export interface SessionProcess {
+  /** One protocol line, already terminated. Ignored once the process is gone. */
+  write(line: string): void;
+  /** Ends it. Safe to call repeatedly, and after it has already ended. */
+  kill(): void;
+  alive(): boolean;
+}
+
+/**
+ * Start an interpreter and keep it (§7 F2).
+ *
+ * Streaming rather than buffering is the whole difference from `runProcess`:
+ * a session's output is read as it arrives, so a loop that prints for a minute
+ * prints for a minute rather than appearing all at once at the end. Nothing
+ * here parses anything — `SessionParser` does that, and keeping the split
+ * means the protocol is unit-testable without spawning a process.
+ *
+ * **There is no interrupt on Windows, and pretending otherwise would be a lie
+ * in a button label.** `child.kill("SIGINT")` was tried against a real Python
+ * session sleeping for 30 seconds: the process terminated. Windows has no
+ * signal delivery of that kind, and Node maps every signal except a few onto
+ * `TerminateProcess`. So the honest control is Stop, which ends the session and
+ * says that it ends the session — §7 F2's "a wedged interpreter must be
+ * killable without restarting Obsidian", met exactly and not oversold.
+ */
+export function spawnSession(request: {
+  command: string;
+  args: string[];
+  cwd: string;
+  onStdout: (chunk: string) => void;
+  onStderr: (chunk: string) => void;
+  /** Called exactly once. `error` is set only when it never started. */
+  onExit: (code: number | null, error: string) => void;
+}): SessionProcess {
+  let child: ChildProcessWithoutNullStreams;
+  let ended = false;
+
+  const end = (code: number | null, error: string): void => {
+    if (ended) return;
+    ended = true;
+    request.onExit(code, error);
+  };
+
+  try {
+    child = spawn(request.command, request.args, {
+      cwd: request.cwd,
+      env: childEnv(),
+      shell: false,
+      windowsHide: true,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    // Asynchronously, so a caller still wiring itself up is not called back
+    // before its own constructor has returned.
+    setTimeout(() => end(null, message), 0);
+    return { write: () => {}, kill: () => {}, alive: () => false };
+  }
+
+  child.stdout.setEncoding("utf8");
+  child.stderr.setEncoding("utf8");
+  child.stdout.on("data", (chunk: string) => request.onStdout(chunk));
+  child.stderr.on("data", (chunk: string) => request.onStderr(chunk));
+  child.on("error", (error: Error) => end(null, error.message));
+  child.on("close", (code: number | null) => end(code, ""));
+  // A dead pipe must not reach Node as an unhandled error event: a session
+  // killed mid-write is ordinary, not exceptional.
+  child.stdin.on("error", () => {});
+
+  return {
+    write: (line: string) => {
+      if (ended) return;
+      try {
+        child.stdin.write(line);
+      } catch {
+        /* the exit handler is the one that reports this */
+      }
+    },
+    kill: () => {
+      if (ended || child.killed) return;
+      child.kill();
+      setTimeout(() => {
+        if (!ended) child.kill("SIGKILL");
+      }, 2000);
+    },
+    alive: () => !ended,
+  };
+}
+
 /**
  * A working directory for one run, outside the vault.
  *
@@ -217,13 +306,20 @@ export async function readWorkBinary(dir: string, sub: string, name: string): Pr
 /**
  * Remove a working directory once its outputs are safely in the vault.
  *
- * Failure is ignored on purpose. A leftover temporary directory is untidy; an
- * error notice about one, after a run that otherwise succeeded, is noise that
- * teaches people to dismiss notices.
+ * **Retried, because on Windows the first attempt loses a race.** A killed
+ * process has not necessarily let go of its current directory by the time
+ * `close` fires, and removing a directory something still has open fails with
+ * `EBUSY` or `EPERM`. Found by restarting a session and finding its directory
+ * still there afterwards — one leak per restart, which over a working day is a
+ * lot of stale copies of code somebody ran.
+ *
+ * Failure after the retries is still ignored on purpose. A leftover temporary
+ * directory is untidy; an error notice about one, after work that otherwise
+ * succeeded, is noise that teaches people to dismiss notices.
  */
 export async function removeWorkDir(dir: string): Promise<void> {
   try {
-    await fs.rm(dir, { recursive: true, force: true });
+    await fs.rm(dir, { recursive: true, force: true, maxRetries: 8, retryDelay: 250 });
   } catch {
     /* ignore */
   }

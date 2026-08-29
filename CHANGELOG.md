@@ -5,6 +5,84 @@ clearly marked entry (CLAUDE.md §10).
 
 ## Unreleased
 
+### Added — F2, a live R and Python console
+
+A long-lived interpreter in a pane, with a transcript, an environment list, a
+plot pane and a visible busy state. **Open the interpreter console**, plus
+**Send a code block from this note to the console** and an editor right-click
+item beside the existing Run one.
+
+**Nothing the console produces reaches the vault.** No run record, no ledger
+row, nothing written into a note — §5.12 keeps exploratory console lines out of
+the ledger, and a ledger nobody can read is not a ledger. The trade is stated in
+the pane itself: to keep a result, put the code in a block and run it (F1),
+which produces a record naming the interpreter, the script hash and the data
+version. Verified by running a session end to end and confirming `94 Runs/` was
+still empty and the ledger untouched.
+
+**Attribution is arranged, not inferred.** No prompt detection anywhere: the
+harness announces the end of every cell with a marker carrying a token generated
+for that session, on *both* streams. Ending a cell on stdout alone loses the
+race whenever a traceback is still in flight — the error would land in the next
+cell's output, which is worse than no attribution at all.
+
+**Cells are serialised, and that is load-bearing rather than tidy.** The next
+command reaches the pipe only once the previous cell has reported. An R cell can
+read the process's stdin, and with a command already sitting there it consumes
+it: driven that way in a test, `readLines(file("stdin"))` ate the following
+cell's command and the session ran on attributing every later result to the
+wrong code. Keeping the pipe empty while a cell runs leaves such a cell blocked
+instead — visibly, with Stop available. Python needs no such care because its
+`sys.stdin` is swapped out for the duration of a cell.
+
+**There is no interrupt on Windows.** `SIGINT` to a real Python session sleeping
+for 30 seconds terminated it. So the control is **Stop session**, named for what
+it does; a button labelled "Interrupt" would discard an environment while
+claiming not to. **Restart** is one click, because §7 F2 asks for it to be one
+click rather than a last resort.
+
+**Readiness is confirmed rather than assumed.** Starting sends one empty cell of
+the plugin's own and waits for its marker, so a broken interpreter fails at
+startup with its own message instead of on somebody's first real cell.
+
+Two harness defects found by running it, both R:
+
+- **Every cell reported a figure.** R's `png` device writes a complete, valid,
+  blank image the moment it is opened, so a file appearing proves nothing and
+  the plot pane filled with white rectangles. It now enables the display list
+  and asks `recordPlot()` what was actually drawn.
+- **The harness leaked a variable into the environment pane.** R's `for` and
+  `repeat` assign in the enclosing environment, so the loop's own counter landed
+  in `globalenv()` beside the person's data. Everything is now inside one
+  `local()`, which leaves nothing to filter.
+
+And one in the protocol, found by a test rather than by use: markers used to be
+written on their own line and the parser took the separator newline back off,
+which worked only while both arrived in the same chunk. When the boundary fell
+between them a blank line appeared before the result — intermittently, on OS
+chunking. Markers now carry no newlines at all, and a test pushes one through at
+every possible split.
+
+No new settings and no schema change: the console reads the same interpreter
+paths, isolation and output cap as F1, through one accessor so the two can never
+disagree about which Python is meant.
+
+### Fixed
+
+- A restart leaked its working directory. On Windows a just-killed process has
+  not necessarily let go of its current directory, so the first removal fails
+  with `EBUSY` and the failure was being swallowed by design. Removal is now
+  retried; verified by restarting twice and finding one directory, not three.
+- Reopening a pane that Obsidian had restored but not yet loaded made a *second*
+  one. Obsidian defers loading a restored pane, so `leaf.view` is a placeholder
+  and the `instanceof` check that looked for an existing pane skipped it — seen
+  in the app as two console tabs, which means two interpreters running and a
+  "send to the console" arriving in whichever one you are not looking at. The
+  pane is now revealed before the check. The vault-app pane had the same bug,
+  where a second pane means a second sandbox with its own grants, and is fixed
+  with it.
+
+
 ### Added — F1, running R and Python blocks with provenance
 
 Run an R or Python block from a note. Output, errors and plots come back under

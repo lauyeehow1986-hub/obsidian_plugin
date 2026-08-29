@@ -465,6 +465,67 @@ code — so "which code produced this figure" stays answerable after the note ha
 moved on. If you did not name a dataset and version, the record says so rather
 than implying the data is pinned when only the code is.
 
+## The interpreter console
+
+A live R or Python session in a pane, for the exploring you do *before* you know
+what is worth keeping. Open it with **Open the interpreter console**. Type into
+the box at the bottom and press **Run** (or Ctrl+Enter); Ctrl+Up and Ctrl+Down
+step back through what you ran before.
+
+Variables persist between cells, so you build up state the way you would in
+RStudio rather than re-running a whole block to change one number. The side
+column shows what is currently defined and the plots as they are drawn.
+
+### Nothing here is recorded, on purpose
+
+The console writes **no run record, no ledger entry and nothing into any note**.
+That is the rule from the vault contract: exploratory console lines stay out of
+the audit ledger, because a ledger with a thousand lines of somebody thinking
+out loud in it is a ledger nobody will read.
+
+The consequence is worth stating plainly, because it is a trade and not an
+oversight: **the console is not a way of getting results out.** When something
+is worth keeping, put the code in a block in a note and run it there — that
+costs one action and produces a record naming the interpreter, a hash of the
+code that actually ran, and the data version.
+
+**Send this Python block to the console** in the editor's right-click menu, and
+the **Send a code block from this note to the console** command, are the bridge
+in the other direction: try the block, then run it properly once it works.
+
+The honest limit: the interpreter is a process running as you, and it can write
+anywhere you can. What is guaranteed is that *this plugin* copies nothing out of
+a session. As everywhere else, the defence is that you read the code first.
+
+### One session, and how to end it
+
+One language at a time. Switching between R and Python ends the other session
+and says so — its variables are gone, though the transcript and the plots stay
+as history.
+
+**Restart** clears the environment and gives you a fresh interpreter; it is one
+click because sessions do wedge. **Stop session** ends it outright, and a cell
+that is still running stops with it.
+
+There is no *Interrupt*, and that is deliberate rather than missing. Windows has
+no way to interrupt a child process the way Ctrl+C does in a terminal — every
+signal available terminates it. A button labelled "Interrupt" would therefore
+throw away every variable in your environment while claiming not to, so the
+button says what it does.
+
+A cell can take as long as it likes; there is no timeout, because `Sys.sleep(600)`
+is a legitimate thing to type into a console. The toolbar shows the elapsed time
+while it runs, and Stop is always there.
+
+### Two things that will look like bugs
+
+- **A cell that asks for input.** Python raises a clear error and the session
+  carries on. R has no equivalent defence and such a cell simply blocks — the
+  console will sit at "Running" until you press Stop.
+- **Output and errors can appear out of order.** They arrive on two separate
+  pipes with no ordering guarantee between them, so a warning may print above
+  the line that came before it. Both are attributed to the right cell.
+
 ## Vault apps and the scratchpad
 
 A vault app is a note in `92 Apps/`: frontmatter saying what it may reach, and

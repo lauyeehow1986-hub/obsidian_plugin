@@ -6,9 +6,9 @@ import type { AppAssessment } from "./domain/apps/register.js";
 import { AppWriter, type NewApp } from "./services/appWriter.js";
 import { readTheme, type AppHostContext } from "./services/appHost.js";
 import { GrantAppModal, NewAppModal, ProposeWriteModal, WedgedAppModal } from "./ui/AppModals.js";
-import { findRunnableBlocks, type RunnableBlock } from "./domain/compute/block";
+import { describeBlock, findRunnableBlocks, type RunnableBlock } from "./domain/compute/block";
 import { isPythonIsolation } from "./domain/compute/harness";
-import { ComputeRunner, runNotice } from "./services/computeRunner";
+import { ComputeRunner, runNotice, type ComputeSettings } from "./services/computeRunner";
 import { BlockPicker } from "./ui/BlockPicker";
 import { RunBlockModal } from "./ui/RunBlockModal";
 import { registerRunButtons, registerRunMenu, activeMarkdownFile } from "./ui/runButtons";
@@ -142,6 +142,7 @@ import { ScdbSettingsTab } from "./settings/SettingsTab.js";
 import { COCKPIT_VIEW_TYPE, CockpitView, type CockpitTab } from "./ui/CockpitView.js";
 import { DIAGRAM_VIEW_TYPE, DiagramView } from "./ui/DiagramView.js";
 import { APP_VIEW_TYPE, AppView } from "./ui/AppView.js";
+import { CONSOLE_VIEW_TYPE, ConsoleView } from "./ui/ConsoleView.js";
 import { RequestPicker } from "./ui/RequestPicker.js";
 import { WorkflowPicker } from "./ui/WorkflowPicker.js";
 import { DiagramWriter } from "./services/diagramWriter.js";
@@ -430,15 +431,7 @@ export default class ScdbCockpitPlugin extends Plugin {
       audit: this.audit,
       actor: () => this.settings.actor,
       runsFolder: () => this.settings.folders.runs,
-      settings: () => ({
-        rPath: this.settings.compute.rPath,
-        pythonPath: this.settings.compute.pythonPath,
-        pythonIsolation: isPythonIsolation(this.settings.compute.pythonIsolation)
-          ? this.settings.compute.pythonIsolation
-          : "isolated",
-        timeoutSeconds: this.settings.compute.timeoutSeconds,
-        maxOutputKb: this.settings.compute.maxOutputKb,
-      }),
+      settings: () => this.computeSettings(),
       reindex: (file) => this.notes.update(file),
     });
 
@@ -552,12 +545,16 @@ export default class ScdbCockpitPlugin extends Plugin {
     this.registerView(COCKPIT_VIEW_TYPE, (leaf: WorkspaceLeaf) => new CockpitView(leaf, this));
     this.registerView(DIAGRAM_VIEW_TYPE, (leaf: WorkspaceLeaf) => new DiagramView(leaf, this));
     this.registerView(APP_VIEW_TYPE, (leaf: WorkspaceLeaf) => new AppView(leaf, this));
+    this.registerView(CONSOLE_VIEW_TYPE, (leaf: WorkspaceLeaf) => new ConsoleView(leaf, this));
     this.registerBasesViews();
     registerRunButtons(this, {
       enabled: () => this.settings.compute.showRunButtons,
       open: (file, block) => this.runBlock(file, block),
     });
-    registerRunMenu(this, { open: (file, block) => this.runBlock(file, block) });
+    registerRunMenu(this, {
+      open: (file, block) => this.runBlock(file, block),
+      console: (file, block) => void this.sendToConsole(block),
+    });
 
     this.addSettingTab(new ScdbSettingsTab(this.app, this));
     this.registerCommands();
@@ -1073,7 +1070,24 @@ export default class ScdbCockpitPlugin extends Plugin {
       checkCallback: (checking: boolean) => {
         const file = activeMarkdownFile(this);
         if (file === null) return false;
-        if (!checking) void this.pickBlock(file);
+        if (!checking) void this.pickBlock(file, (block) => this.runBlock(file, block));
+        return true;
+      },
+    });
+
+    this.addCommand({
+      id: "open-console",
+      name: "Open the interpreter console",
+      callback: () => void this.openConsole(),
+    });
+
+    this.addCommand({
+      id: "block-to-console",
+      name: "Send a code block from this note to the console",
+      checkCallback: (checking: boolean) => {
+        const file = activeMarkdownFile(this);
+        if (file === null) return false;
+        if (!checking) void this.pickBlock(file, (block) => void this.sendToConsole(block));
         return true;
       },
     });
@@ -2403,8 +2417,10 @@ export default class ScdbCockpitPlugin extends Plugin {
     const workspace = this.app.workspace;
 
     for (const leaf of workspace.getLeavesOfType(APP_VIEW_TYPE)) {
+      // Revealed before the check — see `openConsole` for what checking first
+      // did. The same mistake here means a second sandbox with its own grants.
+      await workspace.revealLeaf(leaf);
       if (leaf.view instanceof AppView) {
-        workspace.revealLeaf(leaf);
         setup(leaf.view);
         return;
       }
@@ -2430,6 +2446,26 @@ export default class ScdbCockpitPlugin extends Plugin {
     new AppPicker(this.app, register, onPick).open();
   }
 
+  /**
+   * Interpreter settings, read fresh every time.
+   *
+   * Shared by the one-shot runner (F1) and the console (F2) so the two can
+   * never disagree about which interpreter is meant — a console reporting a
+   * version from one Python while blocks ran under another would make every
+   * "it works in the console" a false lead.
+   */
+  computeSettings(): ComputeSettings {
+    return {
+      rPath: this.settings.compute.rPath,
+      pythonPath: this.settings.compute.pythonPath,
+      pythonIsolation: isPythonIsolation(this.settings.compute.pythonIsolation)
+        ? this.settings.compute.pythonIsolation
+        : "isolated",
+      timeoutSeconds: this.settings.compute.timeoutSeconds,
+      maxOutputKb: this.settings.compute.maxOutputKb,
+    };
+  }
+
   // --- running code blocks (§5.12, §7 F1) -----------------------------------
 
   /**
@@ -2438,7 +2474,7 @@ export default class ScdbCockpitPlugin extends Plugin {
    * Nothing is run here. The picker leads to the dialog, and the dialog is
    * where a person reads the code and decides (rule 12).
    */
-  private async pickBlock(file: TFile): Promise<void> {
+  private async pickBlock(file: TFile, onPick: (block: RunnableBlock) => void): Promise<void> {
     const text = await this.app.vault.read(file);
     const blocks = findRunnableBlocks(text);
     if (blocks.length === 0) {
@@ -2447,10 +2483,64 @@ export default class ScdbCockpitPlugin extends Plugin {
     }
     if (blocks.length === 1) {
       const only = blocks[0];
-      if (only !== undefined) this.runBlock(file, only);
+      if (only !== undefined) onPick(only);
       return;
     }
-    new BlockPicker(this.app, blocks, (block) => this.runBlock(file, block)).open();
+    new BlockPicker(this.app, blocks, onPick).open();
+  }
+
+  // --- the interpreter console (§7 F2) --------------------------------------
+
+  /**
+   * Open the console, reusing the pane if one is already open.
+   *
+   * Reusing means reusing the instance, so the session it owns is the session
+   * a second command acts on — the same argument as `openAppView`. Opening
+   * starts no interpreter; the first Run does.
+   */
+  private async openConsole(setup?: (view: ConsoleView) => void): Promise<void> {
+    const workspace = this.app.workspace;
+
+    for (const leaf of workspace.getLeavesOfType(CONSOLE_VIEW_TYPE)) {
+      // Revealed *before* the instance check, not after.
+      //
+      // Obsidian defers loading a restored pane until it is shown, so after a
+      // restart `leaf.view` is a placeholder and `instanceof` is false. Checking
+      // first therefore skipped the console that was already open and made a
+      // second one — seen in the app as two console tabs, which for this pane
+      // means two interpreters running and "send to the console" arriving in
+      // whichever one you are not looking at. Revealing materialises the view,
+      // and revealing a pane we are about to use is what we wanted anyway.
+      await workspace.revealLeaf(leaf);
+      if (leaf.view instanceof ConsoleView) {
+        setup?.(leaf.view);
+        return;
+      }
+    }
+
+    const leaf = workspace.getLeaf(true);
+    await leaf.setViewState({ type: CONSOLE_VIEW_TYPE, active: true });
+    workspace.revealLeaf(leaf);
+    const view = leaf.view;
+    if (view instanceof ConsoleView) setup?.(view);
+  }
+
+  /**
+   * Send a block to the console.
+   *
+   * Nothing is recorded: §5.12 keeps exploratory console lines out of the
+   * ledger, so this is the path for finding out what a block does *before* it
+   * is worth a run record. Running the same block through the dialog is the
+   * path that keeps something.
+   */
+  private async sendToConsole(block: RunnableBlock): Promise<void> {
+    await this.openConsole((view) => {
+      view.send(
+        block.language,
+        block.source,
+        `From ${describeBlock(block)} of the open note. Nothing here is recorded.`,
+      );
+    });
   }
 
   /**

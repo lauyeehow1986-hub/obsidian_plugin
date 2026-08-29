@@ -83,7 +83,9 @@ class Plugin extends Component {
     return fakeEl();
   }
   addSettingTab() {}
-  registerView() {}
+  registerView(type) {
+    registeredPanes.push(type);
+  }
   // §7 F1 draws a Run affordance under R and Python blocks in reading view.
   // Collected rather than ignored, so the check below can assert that drawing
   // a button is all it does — nothing is executed at registration time
@@ -166,6 +168,7 @@ const stub = {
  */
 const created = [];
 const registeredCommands = [];
+const registeredPanes = [];
 const registeredPostProcessors = [];
 
 function stubApp() {
@@ -309,6 +312,17 @@ const checks = [
   ],
   ["a block can be run from the palette", commands.includes("run-block")],
   ["the Run affordance is registered as a post-processor", registeredPostProcessors.length > 0],
+  // §7 F2. The console is a pane and two commands; opening it starts nothing,
+  // and nothing it produces reaches the vault (§5.12 keeps exploratory console
+  // lines out of the ledger).
+  ["the interpreter console is a registered view", registeredPanes.includes("scdb-console-view")],
+  ["the console is reachable from the palette", commands.includes("open-console")],
+  ["a block can be sent to the console", commands.includes("block-to-console")],
+  [
+    "the console and the block runner read one set of interpreter settings",
+    instance.computeSettings().pythonIsolation === "isolated" &&
+      instance.computeSettings().rPath === "",
+  ],
   ["the effort log is wired", typeof instance.effort?.months === "function"],
   ["the effort log reads no months on an empty vault", instance.effort.months().length === 0],
   [

@@ -88,7 +88,11 @@ export function registerRunButtons(
  */
 export function registerRunMenu(
   plugin: Plugin,
-  options: { open: (file: TFile, block: RunnableBlock) => void },
+  options: {
+    open: (file: TFile, block: RunnableBlock) => void;
+    /** §7 F2: the same block, into the console, where it keeps nothing. */
+    console: (file: TFile, block: RunnableBlock) => void;
+  },
 ): void {
   plugin.registerEvent(
     plugin.app.workspace.on("editor-menu", (menu, editor, view) => {
@@ -101,11 +105,21 @@ export function registerRunMenu(
       );
       if (block === undefined) return;
 
+      const language = LANGUAGE_LABELS[block.language];
       menu.addItem((item) =>
         item
-          .setTitle(`Run this ${LANGUAGE_LABELS[block.language]} block`)
+          .setTitle(`Run this ${language} block`)
           .setIcon("play")
           .onClick(() => options.open(file, block)),
+      );
+      // Second, and worded as the lesser thing it is. Running the block writes
+      // a run record; sending it to the console writes nothing and is for
+      // finding out what the code does before it is worth recording.
+      menu.addItem((item) =>
+        item
+          .setTitle(`Send this ${language} block to the console`)
+          .setIcon("terminal")
+          .onClick(() => options.console(file, block)),
       );
     }),
   );

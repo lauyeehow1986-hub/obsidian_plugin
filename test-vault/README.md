@@ -125,6 +125,27 @@ right-click menu, or from the palette, and each shows the code first.
 - **The `no-run` block calls `shutil.rmtree`.** It is there to be refused. If a
   Run button ever appears under it, the opt-out has stopped working.
 
+### The console is exercised from the same note, and keeps nothing
+
+The interpreter console (F2) has no fixture of its own, because it deliberately
+writes nothing to check afterwards. Exercise it from the workbench note with
+**Send a code block from this note to the console**, or by typing into it.
+
+What to look for, since none of it leaves a trace:
+
+- **The vault stays clean.** After a session, `94 Runs/` is still empty and the
+  audit ledger has no new rows. That is the point of the feature, not an
+  omission: exploratory console lines stay out of the ledger.
+- **Variables persist between cells, and an error does not end the session.**
+  A traceback should name the cell, not a file inside the harness.
+- **A cell that draws nothing must report no figure.** R writes a valid blank
+  PNG the moment its device opens, so "every cell produced a plot" is the
+  failure to watch for.
+- **The environment pane shows only your own variables.** A name you did not
+  create means the harness has started leaking into `globalenv()` again.
+- **Stop ends a long cell.** `Sys.sleep(120)` then Stop should leave the pane
+  saying it stopped, not waiting forever.
+
 ### The app fixtures run real code, and nothing runs on its own
 
 Rule 12: opening one of these notes runs nothing, and loading the vault runs
