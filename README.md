@@ -4,6 +4,13 @@ An Obsidian plugin for running a clinical data collection facility: data-request
 tracking with governance gates, effort measurement, publications, and the audit
 trail behind all of it. Offline-first, no telemetry, no network calls by default.
 
+**Documentation:** [the guide](docs/guide.md) covers every feature with
+screenshots, [the testing checklist](docs/testing-checklist.md) is what to verify
+on the target machine, and [the Outlook reader](docs/outlook-reader.md) is the page
+to hand to whoever asks why Obsidian started PowerShell. Together they form a
+GitHub Pages site — see `docs/_config.yml` for the one repository setting that
+turns it on.
+
 **Status: phase B3.** Track A is complete: request tracking end to end (A1),
 the query engine behind the Explore board (A2), core Bases layered on where it
 exists (A2b), the cockpit and its analytics (A3), and encrypted backup with

@@ -1,0 +1,21 @@
+# GitHub Pages configuration.
+#
+# Serving from this folder is a repository setting, not something the code can
+# switch on: Settings -> Pages -> Source "Deploy from a branch", branch "main",
+# folder "/docs". Nothing here is used until that is done, and the markdown
+# stays perfectly readable on GitHub in the meantime.
+#
+# jekyll-theme-cayman ships with GitHub Pages, so there is nothing to install
+# and no Gemfile to maintain.
+title: SCDB Cockpit
+description: An Obsidian plugin for research data governance, request tracking and effort measurement
+theme: jekyll-theme-cayman
+show_downloads: false
+
+# Serving from /docs means this folder IS the whole site — nothing above it is
+# published, which is the reason to serve from here rather than the repo root.
+# Keep it that way: anything added to docs/ is public the moment Pages is on.
+#
+# Links between pages are written as `guide.md` and work in both places:
+# GitHub renders them as markdown, and Pages rewrites them to .html through
+# jekyll-relative-links, which is enabled by default.
