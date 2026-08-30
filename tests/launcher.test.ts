@@ -305,3 +305,41 @@ describe("which targets a note is offered", () => {
     expect(targetsFor([EDATA, anywhere], "publication").map((t) => t.id)).toEqual(["any"]);
   });
 });
+
+describe("probing the roots for the diagnostics report", () => {
+  it("reports a mounted root as reachable and names where it really leads", async () => {
+    const h = harness({ real: { "C:\\SOPs": "D:\\shares\\SOPs" } });
+    const probes = await h.launcher.probeRoots([SOPS, SOP_FOLDER]);
+
+    // Both targets share a root, and one probe is what the report should show:
+    // "2 of 2 roots" for the same folder twice would overstate the coverage.
+    expect(probes).toEqual([{ root: "C:\\SOPs", reachable: true, resolved: "D:\\shares\\SOPs" }]);
+  });
+
+  it("reports an unmounted share as unreachable rather than throwing", async () => {
+    const h = harness({ real: {} });
+    const probes = await h.launcher.probeRoots([SOP_FOLDER]);
+    expect(probes).toEqual([{ root: "C:\\SOPs", reachable: false, resolved: null }]);
+  });
+
+  it("has no root to probe when every target is a URL", async () => {
+    const h = harness();
+    expect(await h.launcher.probeRoots([EDATA])).toEqual([]);
+  });
+
+  it("opens nothing and writes no ledger row — a self-test is not an action", async () => {
+    const h = harness({ real: { "C:\\SOPs": "C:\\SOPs" } });
+    await h.launcher.probeRoots([SOPS, SOP_FOLDER, EDATA]);
+    expect(h.opened).toEqual([]);
+    expect(h.externals).toEqual([]);
+    expect(h.rows).toEqual([]);
+  });
+
+  it("probes even when the launcher is switched off, because that is the question being asked", async () => {
+    // The report says "off" separately. Whether the share is there is worth
+    // knowing before switching it on, not after the first refusal.
+    const h = harness({ enabled: false, real: { "C:\\SOPs": "C:\\SOPs" } });
+    const probes = await h.launcher.probeRoots([SOP_FOLDER]);
+    expect(at(probes, 0).reachable).toBe(true);
+  });
+});

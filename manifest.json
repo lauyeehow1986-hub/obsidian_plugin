@@ -1,7 +1,7 @@
 {
   "id": "scdb-cockpit",
   "name": "SCDB Cockpit",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "minAppVersion": "1.6.0",
   "description": "Track data requests, effort, governance and publications in one vault. Offline-first, no telemetry.",
   "author": "lauyh",

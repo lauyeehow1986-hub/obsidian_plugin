@@ -3,6 +3,39 @@
 All notable changes to SCDB Cockpit. Governance-gate changes get their own
 clearly marked entry (CLAUDE.md §10).
 
+## [0.3.1] — 2026-08-30
+
+### Added — the launcher is probed rather than assumed
+
+B9 added a third way for this plugin to reach outside itself, and the
+diagnostics self-test never learned about it. §7 A4 asks for every risky
+integration to be *probed* — Mermaid renders a real diagram, the ledger chain is
+really walked — and the report already did that for the protocol handlers, the
+clipboard and the mailbox. The launcher was simply missing, which was the one
+place it mattered most: on the target machine the eData URL and the SOP share
+are the two things most likely to be configured wrong.
+
+The new **Opening things outside the vault** check separates the three failures
+that look identical from a note — the config names no target, a root is not
+mounted, a config entry was refused by the parser:
+
+- **Roots are probed with the same `realpath` call the open path uses**, so a
+  root that passes here cannot fail there for a reason this could have caught.
+  It reads and does no more; nothing is opened and no ledger row is written,
+  because a self-test is not an action.
+- **A URL is not probed.** Asking whether a portal answers would put an outbound
+  request inside a self-test, which rule 3 forbids and which would be a surprise
+  besides. The URL is checked when it is built and shown before it opens.
+- **A root that resolves somewhere else is reported, not flagged.** A junction or
+  a mapped drive is not a fault, but knowing which server a document actually
+  comes from beats wondering later.
+- **Refused config entries are named** whether the feature is on or off. They
+  were surfaced only in the settings pane, which is not where somebody looks
+  when a target they wrote is not on offer.
+- Probing works with the launcher switched **off**, because whether the share is
+  there is worth knowing before switching it on rather than after the first
+  refusal.
+
 ## [0.3.0] — 2026-08-30
 
 ### Added — projects, milestones and the portfolio (B8)

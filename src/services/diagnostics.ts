@@ -13,6 +13,7 @@
 
 import { MarkdownRenderer, apiVersion, type Component } from "obsidian";
 import { AuditLog } from "./auditLog";
+import { launchShellReachable } from "./launcher.js";
 import { backupAge, formatBytes } from "../domain/backup/snapshots";
 import {
   check,
@@ -31,6 +32,17 @@ import { describeAlerts, lapsed } from "../domain/events/schedule.js";
 
 /** How long the Mermaid probe waits for an SVG before giving up. */
 const MERMAID_TIMEOUT_MS = 2000;
+
+/**
+ * "1 target" / "3 targets", for a report that is read as plain text.
+ *
+ * Local rather than imported from `ui/`: a service reaching into the UI layer
+ * for a string is how the boundary starts to blur, and this is four lines.
+ */
+function count(n: number, noun: string): string {
+  const plural = noun.endsWith("y") ? `${noun.slice(0, -1)}ies` : `${noun}s`;
+  return `${n} ${n === 1 ? noun : plural}`;
+}
 
 export async function collectDiagnostics(plugin: ScdbCockpitPlugin): Promise<DiagnosticsReport> {
   const sections: ReportSection[] = [
@@ -525,6 +537,7 @@ async function integrations(plugin: ScdbCockpitPlugin): Promise<ReportSection> {
       await mermaidProbe(plugin),
       clipboardProbe(),
       protocolCheck(plugin),
+      await launcherCheck(plugin),
       emailImportCheck(plugin),
       outlookReaderCheck(plugin),
       check(
@@ -565,6 +578,102 @@ function protocolCheck(plugin: ScdbCockpitPlugin): Check {
     reachable
       ? 'Whether Outlook is the registered mailto: handler is a question only this machine can answer — "Test mailto:" in settings opens a throwaway draft so you can see.'
       : "Nothing is lost: the composer still copies. This is expected on anything that is not desktop Obsidian.",
+  );
+}
+
+/**
+ * Whether the things beside the vault can actually be reached (§5.16, §7 B9).
+ *
+ * The three ways this fails on the target machine are, in order of likelihood:
+ * the config names no target, a root is not mounted, and the config has an
+ * entry the parser refused. All three present identically from a note — the
+ * command offers nothing, or the target refuses at the moment you need the
+ * document — so the report has to separate them.
+ *
+ * **A root is probed; a URL is not.** `realpath` on a configured root reads the
+ * local filesystem and opens nothing. Asking whether a portal answers would
+ * mean an outbound request from a self-test, which rule 3 forbids and which
+ * would be a surprise besides: the URL is checked when it is built, and the
+ * dialog shows it before anything opens.
+ */
+async function launcherCheck(plugin: ScdbCockpitPlugin): Promise<Check> {
+  const label = "Opening things outside the vault";
+  const targets = plugin.launcherStore.all();
+  const problems = plugin.launcherStore.allProblems();
+  const where = plugin.launcherStore.path();
+
+  // Config problems are worth naming whether or not the feature is on: a
+  // refused entry is why a target somebody wrote is not on offer, and it is
+  // silent everywhere else except the settings pane they are not looking at.
+  const refused = problems.filter((p) => p.severity === "error").length;
+  const flagged = problems
+    .map((p) => `${p.at}: ${p.message}`)
+    .join("; ");
+
+  if (!plugin.settings.launchers.enabled) {
+    return check(
+      label,
+      "unavailable",
+      `Off. Nothing outside the vault can be opened${
+        targets.length === 0 ? "" : `, though ${where} names ${count(targets.length, "target")}`
+      }.`,
+      `Settings → ${label}. Even switched on it opens nothing until a target is configured.`,
+    );
+  }
+
+  if (!launchShellReachable()) {
+    return check(
+      label,
+      "problem",
+      "On, but Electron's shell is not reachable, so nothing can be opened at all.",
+      "Every launch will refuse and say so. This is expected on anything that is not desktop Obsidian.",
+    );
+  }
+
+  if (targets.length === 0) {
+    return check(
+      label,
+      "warn",
+      `On, but ${where} names no target${refused === 0 ? "" : ` (${count(refused, "entry")} refused)`}, so the command finds nothing to offer.`,
+      refused === 0
+        ? `Settings → ${label} writes a commented starter to adapt.`
+        : flagged,
+    );
+  }
+
+  const kinds = ["url", "file", "folder"]
+    .map((kind) => ({ kind, n: targets.filter((t) => t.kind === kind).length }))
+    .filter((entry) => entry.n > 0)
+    .map((entry) => `${entry.n} ${entry.kind}`)
+    .join(", ");
+
+  const probes = await plugin.launcher.probeRoots(targets);
+  const unreachable = probes.filter((p) => !p.reachable);
+  const moved = probes.filter((p) => p.reachable && p.resolved !== null && p.resolved !== p.root);
+
+  const roots =
+    probes.length === 0
+      ? "No root to check — every target is a URL."
+      : `${probes.length - unreachable.length} of ${count(probes.length, "root")} reachable.`;
+
+  const status = unreachable.length > 0 || refused > 0 ? "warn" : "ok";
+  const next = [
+    unreachable.length === 0
+      ? ""
+      : `Not reachable right now: ${unreachable.map((p) => p.root).join(", ")}. A target under one of those will refuse rather than open — check the share is mounted and the root is spelled as it is today.`,
+    moved.length === 0
+      ? ""
+      : `Resolves elsewhere: ${moved.map((p) => `${p.root} → ${p.resolved ?? ""}`).join(", ")}. Not a fault; worth knowing before wondering which server a document came from.`,
+    refused === 0 ? "" : flagged,
+  ]
+    .filter((line) => line !== "")
+    .join(" ");
+
+  return check(
+    label,
+    status,
+    `On. ${count(targets.length, "target")} from ${where} (${kinds}). ${roots}`,
+    next === "" ? undefined : next,
   );
 }
 

@@ -63,6 +63,33 @@ export type OpenOutcome =
   | { ok: true; destination: string }
   | { ok: false; why: string };
 
+/** One configured root, and whether it is there (see `Launcher.probeRoots`). */
+export interface RootProbe {
+  /** The root exactly as the config spells it. */
+  root: string;
+  reachable: boolean;
+  /**
+   * Where it actually leads, when it leads anywhere.
+   *
+   * Worth reporting when it differs from `root`: a junction or a mapped drive
+   * that resolves somewhere else is not a fault, but it is the kind of thing
+   * somebody wants to know before wondering why a document opened from a
+   * different server than the config appears to name.
+   */
+  resolved: string | null;
+}
+
+/**
+ * Whether the shell this module opens things through is reachable at all.
+ *
+ * Exported so the diagnostics report can probe the launcher without narrowing
+ * Electron a second time. Two functions deciding what "reachable" means is how
+ * a self-test ends up reporting on something other than the code it checks.
+ */
+export function launchShellReachable(): boolean {
+  return electronShell() !== null;
+}
+
 export interface LauncherDeps {
   audit: { append(entries: readonly AuditEntry[]): Promise<void> };
   actor: () => string;
@@ -176,6 +203,37 @@ export class Launcher {
 
     await this.log(target, subject, `opened: ${decision.destination}`);
     return decision;
+  }
+
+  /**
+   * Whether each configured root is reachable, opening nothing (§7 A4).
+   *
+   * A4's rule is probe-don't-assume, and on the target machine the launcher's
+   * likeliest failure is not in the code: it is a share that is not mounted, or
+   * a root spelled the way the folder was named two reorganisations ago.
+   * Neither is visible until the moment somebody needs the document, and from
+   * the note both look the same — the target simply refuses.
+   *
+   * Deliberately the **same call** the open path uses, so a root that passes
+   * here cannot fail there for a reason this could have caught. It reads and
+   * does no more: nothing is opened, nothing is written, and a root that is
+   * merely unreadable is reported as unreachable without guessing which of
+   * missing and forbidden it is — the same refusal to speculate `resolve`
+   * makes, and for the same reason.
+   */
+  async probeRoots(targets: readonly LaunchTarget[]): Promise<RootProbe[]> {
+    const realpath = this.deps.realpath ?? fsp.realpath;
+    const roots = [...new Set(targets.map((t) => t.root).filter((r): r is string => r !== null))];
+
+    const probes: RootProbe[] = [];
+    for (const root of roots) {
+      try {
+        probes.push({ root, reachable: true, resolved: await realpath(root) });
+      } catch {
+        probes.push({ root, reachable: false, resolved: null });
+      }
+    }
+    return probes;
   }
 
   /**
