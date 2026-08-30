@@ -1148,6 +1148,30 @@ step was skipped, say which and why.
 - **Backwards compatibility with existing vaults is mandatory.** A vault written by v1.2 keeps
   working under v1.3. Schema changes ship a migration with a dry-run preview.
 
+### The release checklist
+
+Eight steps. **`npm test` enforces steps 1–5** — `tests/release.test.ts` reads these files and
+fails when they disagree, because the prose ones drift silently and a checklist is worst
+exactly there: the step is small, it is last, and skipping it produces no symptom until
+someone downloads a release the documentation describes as a different version.
+
+1. Bump `version` in `manifest.json`. Never reuse a number the changelog has already dated.
+2. Add the matching entry to `versions.json`, with the `minAppVersion` actually required.
+3. Rename `## Unreleased` in `CHANGELOG.md` to `## [x.y.z] — YYYY-MM-DD`.
+4. Update the **status line and download line in `README.md`**.
+5. Update the **version in `docs/index.md`**.
+6. `npm run package` — **not `npm run build`**, which writes the three files but no zip. This
+   runs the typecheck, the production build and the smoke test before it packages, so a
+   failing gate stops the release rather than shipping.
+7. Commit, then `git tag -a vx.y.z`, then push both `main` and the tag.
+8. `gh release create vx.y.z` with the zip **and the three loose files**
+   (`main.js`, `manifest.json`, `styles.css`). The loose files are not redundant: the target is
+   a managed laptop, where a downloaded archive is often what gets quarantined, and three
+   saves need no unzip step.
+
+Delete the stale zip from `dist/` when the version changes. One sat there for a month looking
+current, and it was 8 KB against a real bundle of 860 KB.
+
 ---
 
 ## 11. Open questions — blocking the phases named
