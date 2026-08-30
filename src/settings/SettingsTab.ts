@@ -118,6 +118,7 @@ export class ScdbSettingsTab extends PluginSettingTab {
     this.appsSection(containerEl);
     this.computeSection(containerEl);
     this.sourcesSection(containerEl);
+    this.launchersSection(containerEl);
     this.backupSection(containerEl);
 
     // Surfacing migration notes here rather than only in the console: on the
@@ -1089,6 +1090,101 @@ export class ScdbSettingsTab extends PluginSettingTab {
    * button next to the field is the ten-second answer instead — the same
    * argument §11 makes for the protocol-handler link test.
    */
+  /**
+   * Opening the systems and documents beside the vault (§5.16, §7 B9).
+   *
+   * The two switches live here; **what** may be opened does not. That list is
+   * `_config/launchers.yaml` in the vault, where it is readable, diffable and
+   * survives uninstalling the plugin — an allowlist buried in a settings blob
+   * is one nobody reviews. What this section adds is the part settings is
+   * actually good at: saying whether the file was understood, and naming every
+   * line of it that was not.
+   */
+  private launchersSection(containerEl: HTMLElement): void {
+    const launchers = this.plugin.settings.launchers;
+    containerEl.createEl("h3", { text: "Opening things outside the vault" });
+
+    new Setting(containerEl)
+      .setName("Allow opening external systems and documents")
+      .setDesc(
+        "Adds \u201cOpen this note externally\u201d, which opens the record a note is about \u2014 " +
+          "the request in its portal, a document on a share, or the folder it lives in. " +
+          "Destinations come only from the config file, never from note text, and " +
+          "executables never open. Off until you switch it on.",
+      )
+      .addToggle((toggle) =>
+        toggle.setValue(launchers.enabled).onChange(async (value) => {
+          this.plugin.settings.launchers.enabled = value;
+          await this.plugin.saveSettings();
+          this.display();
+        }),
+      );
+
+    if (!launchers.enabled) return;
+
+    new Setting(containerEl)
+      .setName("Show the destination before opening")
+      .setDesc(
+        "Shows the resolved path or URL and waits for a press. Worth keeping on: a " +
+          "resolved path is often not the one written in the note, and that difference is " +
+          "exactly what is worth seeing. Either way the ledger records what happened.",
+      )
+      .addToggle((toggle) =>
+        toggle.setValue(launchers.confirmBeforeOpening).onChange(async (value) => {
+          this.plugin.settings.launchers.confirmBeforeOpening = value;
+          await this.plugin.saveSettings();
+        }),
+      );
+
+    const path = this.plugin.launcherStore.path();
+    const targets = this.plugin.launcherStore.all();
+    const problems = this.plugin.launcherStore.allProblems();
+
+    new Setting(containerEl)
+      .setName("Launch targets")
+      .setDesc(
+        targets.length === 0
+          ? `Nothing is configured. Targets live in ${path}.`
+          : `${String(targets.length)} target${targets.length === 1 ? "" : "s"} from ${path}: ` +
+            targets.map((t) => `${t.label} (${t.kind})`).join(", "),
+      )
+      .addButton((button) =>
+        button
+          .setButtonText(targets.length === 0 ? "Create a starter file" : "Reload")
+          .onClick(async () => {
+            if (targets.length === 0) await this.writeStarterLaunchers(path);
+            await this.plugin.launcherStore.reload();
+            this.display();
+          }),
+      );
+
+    // Problems are surfaced, never swallowed: a target that quietly stopped
+    // offering itself is a bug the user would otherwise diagnose by guessing.
+    for (const problem of problems) {
+      containerEl.createEl("p", {
+        cls: "setting-item-description scdb-settings__problem",
+        text: `${problem.severity === "error" ? "Error" : "Warning"} in ${problem.at}: ${problem.message}`,
+      });
+    }
+  }
+
+  /**
+   * Write a commented example, so the first target is an edit rather than a
+   * blank page. Never overwrites: rule 8, and this file is an allowlist.
+   */
+  private async writeStarterLaunchers(path: string): Promise<void> {
+    if (this.app.vault.getFileByPath(path) !== null) {
+      new Notice(`SCDB: ${path} already exists and was left alone.`, 6000);
+      return;
+    }
+    const folder = path.slice(0, path.lastIndexOf("/"));
+    if (this.app.vault.getFolderByPath(folder) === null) {
+      await this.app.vault.createFolder(folder);
+    }
+    await this.app.vault.create(path, STARTER_LAUNCHERS);
+    new Notice(`SCDB: wrote ${path}. Edit it to point at your own systems.`, 6000);
+  }
+
   private backupSection(containerEl: HTMLElement): void {
     const backup = this.plugin.settings.backup;
     containerEl.createEl("h3", { text: "Encrypted backup" });
@@ -1175,3 +1271,38 @@ export class ScdbSettingsTab extends PluginSettingTab {
     });
   }
 }
+
+/**
+ * The example written by "Create a starter file".
+ *
+ * Every entry is commented out. A launcher config that worked on first write
+ * would be one nobody read, and the whole safety argument here rests on a
+ * person having chosen each destination deliberately.
+ */
+const STARTER_LAUNCHERS = `# What this plugin may open outside the vault (CLAUDE.md 5.16).
+#
+# Nothing here is active until you uncomment it and put your own values in.
+# The destination always comes from this file. A note supplies at most one
+# field, and only if it matches the pattern you set.
+#
+# targets:
+#   - id: edata
+#     label: Open in eData
+#     kind: url
+#     applies_to: scdb-request
+#     template: "https://edata.example.org/request/{external_ref}"
+#     field: external_ref
+#     pattern: "^[A-Za-z0-9-]{3,40}$"
+#
+#   - id: sop-library
+#     label: Open SOP
+#     kind: file
+#     root: 'C:\\SOPs'
+#     field: artefact_path        # a path relative to root, from the note
+#     extensions: [pdf, docx]     # executables are refused whatever is listed
+#
+#   - id: sop-folder
+#     label: Reveal the SOP folder
+#     kind: folder                # opens the file manager; runs nothing
+#     root: 'C:\\SOPs'
+`;

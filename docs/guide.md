@@ -500,6 +500,56 @@ repairs; it never auto-deletes.
 
 ---
 
+## Opening things outside the vault
+
+**Command:** *Open this note externally*
+
+A note about a request is not the request. The record of truth lives in the
+institutional portal, the countersigned DUA lives on a share, and getting to
+either usually means retyping a search into a browser. This command opens the
+thing the note is *about*, in one press.
+
+It is off until you switch it on, under **Opening things outside the vault** in
+settings, and it does nothing until `_config/launchers.yaml` names a target.
+Settings will write a commented starter for you to adapt.
+
+Three kinds of target:
+
+| Kind | What it does |
+|---|---|
+| `url` | Substitutes one note field into an `https:` template — the request in eData, the instrument in REDCap |
+| `file` | Opens a document under a configured root, resolved and checked first |
+| `folder` | Reveals a location in the file manager and stops there |
+
+The `folder` kind is the dullest and the most useful. Opening a file manager
+executes nothing, and "show me where this lives" is most of what file management
+from a notes app actually means.
+
+### What it will not do
+
+The destination always comes from the config file. A note supplies at most one
+field, and only if it matches the pattern you set for it — this is the same rule
+that governs email addresses in a composed message, and for the same reason: a
+note may have been pasted out of an email.
+
+Paths are **resolved before they are checked**. A file called `report.pdf` that
+turns out to be `report.pdf.exe` is refused, and so is a shortcut inside an
+allowed folder that points somewhere else — neither of which any check on the
+text in the note could find.
+
+Executables never open. `.exe`, `.lnk`, `.hta`, `.bat`, `.ps1`, `.msi` and the
+rest are refused whatever the config lists, and the config is told so by name
+rather than having the line quietly ignored. Running a program deliberately is a
+separate feature that is not built yet, and it will have its own dialog.
+
+Unless you turn the confirmation off, you see the **resolved** destination — the
+real path or the built URL — before anything happens.
+
+Every launch is recorded in the audit ledger as `external-open`, and so is every
+refusal. A launch is the only thing this plugin does that leaves no other trace,
+so without that row there would be no way to answer "when did this vault send me
+to that record".
+
 ## Where everything is written
 
 Everything is markdown. If the plugin were uninstalled tomorrow the vault would still read.

@@ -9,7 +9,7 @@ import type { AttachmentPolicy } from "../comms/emlThread";
 import type { OutlookFolder } from "../comms/outlook";
 import type { TimerState } from "../effort/timer";
 
-export const CURRENT_SETTINGS_VERSION = 13;
+export const CURRENT_SETTINGS_VERSION = 14;
 
 /** The three hats. Mode is the organising metaphor, not a cosmetic filter (§7 A3). */
 export const MODES = ["biostat", "hod", "research-core"] as const;
@@ -66,6 +66,7 @@ export interface ScdbSettings {
   compute: ComputeConfig;
   sources: SourcesConfig;
   outlook: OutlookConfig;
+  launchers: LaunchersConfig;
   /** Unrecognised keys are preserved verbatim — see rule 8, never destroy data. */
   [extra: string]: unknown;
 }
@@ -486,6 +487,40 @@ export interface OutlookConfig {
   lastSynced: string;
 }
 
+/**
+ * Opening the systems and documents beside the vault (§5.16, §7 B9).
+ *
+ * There is deliberately very little here. *What* may be opened lives in
+ * `_config/launchers.yaml`, in the vault, where it is readable and diffable
+ * and survives the plugin being uninstalled — a settings blob would put the
+ * allowlist somewhere a human cannot review. These two switches are the only
+ * decisions that are not about a particular target.
+ */
+export interface LaunchersConfig {
+  /**
+   * Off until asked for, like everything else that reaches outside the vault.
+   *
+   * An absent config file already offers nothing, so this exists for the other
+   * case: a config that is written and working, switched off for a while
+   * without deleting it.
+   */
+  enabled: boolean;
+  /**
+   * Show the resolved destination and wait for a press before opening.
+   *
+   * On by default and separately settable, because §5.16 rule 7 is about
+   * *seeing* what will open, and someone who opens the same SOP forty times a
+   * day will otherwise learn to dismiss the dialog without reading it — which
+   * is worse than not having it. Turning it off is a real choice, and the
+   * ledger row is written either way.
+   */
+  confirmBeforeOpening: boolean;
+}
+
+export function defaultLaunchers(): LaunchersConfig {
+  return { enabled: false, confirmBeforeOpening: true };
+}
+
 export function defaultOutlook(): OutlookConfig {
   return {
     enabled: false,
@@ -515,6 +550,7 @@ export function defaultSettings(): ScdbSettings {
     compute: defaultCompute(),
     sources: defaultSources(),
     outlook: defaultOutlook(),
+    launchers: defaultLaunchers(),
   };
 }
 

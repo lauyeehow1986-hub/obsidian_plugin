@@ -1,0 +1,40 @@
+# Launch targets for the synthetic test vault (CLAUDE.md §5.16, §7 B9).
+#
+# Everything here is invented. The host does not exist and the folder is a
+# placeholder — this file is here so the feature can be exercised, not because
+# any of it is real.
+#
+# The rules the plugin enforces on this file:
+#   * the destination comes from here, never from note text;
+#   * a note supplies at most one field, and only if it matches `pattern`;
+#   * a file path is resolved before it is checked, and must stay under `root`;
+#   * an executable extension is refused whatever this file says.
+
+targets:
+  # A note field substituted into a template. `pattern` is what the field is
+  # allowed to contain; anything else refuses rather than being escaped.
+  - id: edata
+    label: Open in eData
+    kind: url
+    applies_to: scdb-request
+    template: "https://edata.example.org/request/{external_ref}"
+    field: external_ref
+    pattern: "^[A-Za-z0-9-]{3,40}$"
+
+  # A document on a share. The note gives a path relative to `root`; the
+  # resolved path must still be under it, and must end in one of these.
+  - id: sop-library
+    label: Open the SOP document
+    kind: file
+    applies_to: policy
+    root: 'C:\SOPs'
+    field: artefact_path
+    extensions: [pdf, docx]
+
+  # The dullest kind, and the useful one: reveal the folder and stop there.
+  # Opening a file manager executes nothing, which is why it needs no
+  # extension list and no field.
+  - id: sop-folder
+    label: Reveal the SOP folder
+    kind: folder
+    root: 'C:\SOPs'

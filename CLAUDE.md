@@ -842,6 +842,10 @@ targets:
     kind: file
     root: '\\fileserver\SOPs'                # resolved paths must stay under this
     extensions: [pdf, docx]
+  - id: sop-folder
+    label: Reveal in Explorer
+    kind: folder                               # url | file | folder
+    root: '\\fileserver\SOPs'
 ```
 
 The rules the module enforces, each because the failure it prevents is real:
@@ -855,17 +859,21 @@ The rules the module enforces, each because the failure it prevents is real:
    real absolute path; confirm *that* path is still under `root`; confirm the extension of
    *that* path is allowed. A file called `report.pdf` that is really `report.pdf.exe` is the
    case this catches, and checking the string in the note instead would miss it.
-4. **The extension allowlist is documents, never executables.** `.lnk`, `.url`, `.scr`,
+4. **A `folder` target takes the root check and skips the extension check**, because
+   opening a file manager at a location executes nothing. It is the honest answer to half of
+   what a file-management launcher is wanted for: show me where this lives, and let me do the
+   rest with the tool built for it.
+5. **The extension allowlist is documents, never executables.** `.lnk`, `.url`, `.scr`,
    `.hta`, `.bat`, `.cmd`, `.ps1`, `.js`, `.jar`, `.msi` are refused whatever the config says,
    because handing any of them to the shell is code execution wearing a document's name.
    Running something deliberately is §7 F4, and it goes through a different door.
-5. **Files go through `shell.openPath`, never `openExternal` with a `file:` URL.** They are
+6. **Files go through `shell.openPath`, never `openExternal` with a `file:` URL.** They are
    not equivalent: a `file:` URL goes through the protocol handler table, which is the surface
    §5.11 rule 4 exists to keep closed. URL targets go through the existing allowlist check,
    restricted here to `https:`.
-6. **The resolved destination is shown before launching**, in full — not the label, not the
+7. **The resolved destination is shown before launching**, in full — not the label, not the
    template. What is shown is what is opened.
-7. **External browser, never an embedded one.** No `webview`, no `<iframe>` aimed at an
+8. **External browser, never an embedded one.** No `webview`, no `<iframe>` aimed at an
    institutional system. Embedding one would put a live SSO session inside the process that
    holds vault access, and every corporate policy objecting to that is right to.
 
@@ -1094,10 +1102,15 @@ this extends one module rather than adding a second place where a mistake become
 program. The genuinely new surface is path resolution, and that is where the care goes
 (§5.16 rule 3).
 
+Three target kinds, and the third is deliberately the dullest: `url`, `file`, and `folder` —
+reveal the location in Explorer and stop there. A file manager opened at the right place
+executes nothing and answers most of what "file management from Obsidian" actually means in a
+day's work.
+
 *Done when:* a request opens in the browser at its `external_ref` with the URL shown first, a
-document on a share opens by resolved path with that path shown first, a path escaping its
-root is refused naming the root, an executable extension is refused whatever the config says,
-and every launch **and refusal** is in the ledger.
+document on a share opens by resolved path with that path shown first, a folder target reveals
+in Explorer, a path escaping its root is refused naming the root, an executable extension is
+refused whatever the config says, and every launch **and refusal** is in the ledger.
 
 ### Track C — Governance
 
@@ -1219,14 +1232,37 @@ Obsidian's UI thread, and a wedged interpreter must be killable without restarti
 All three run in the same sandboxed-iframe-plus-broker model. Capabilities are declared per
 app and enforced by the broker, not by convention.
 
-**F4 · Batch and shell scripts, on the F1 harness.** Run a `.bat`, `.cmd` or `.ps1` from a
-note the way F1 runs R and Python: explicit action, contents shown, out of process, timeout,
-killable, run record (§5.12), `code-run` in the ledger.
+**F4 · Launching applications and running scripts.** B9 opens documents; this starts
+*programs*. Asked for as one thing — "open default apps and docs, launch executables, run
+scripts, copy or move files, open Explorer paths" — it is four things with four different risk
+profiles, and they are recorded separately because collapsing them is how the dangerous one
+gets built by accident.
 
-**Architecturally this is small, and that is not the hard part.** The spawn discipline already
-exists in `services/interpreter` — `shell: false`, array arguments, a controlled working
-directory outside the vault, a kill path. Adding a third language is a day's work. What is
-different is why it is late in the queue rather than early:
+- **Open documents, and reveal folders in Explorer** — that is B9, already scoped, no process
+  spawned.
+- **Launch a named application** — *yes, with the name in config.* An entry in
+  `_config/launchers.yaml` declares `kind: app` with an absolute `exec` path; the note supplies
+  nothing, or one argument shape-checked exactly as §5.16 rule 1 checks a URL field. The
+  distinction is the whole of it: **the config is the allowlist**. A launcher that starts
+  whatever executable a note points at is unbounded code execution driven by note content,
+  which is the delivery mechanism rule 12 exists to prevent. A launcher that starts the three
+  tools you named in settings is a shortcut. Spawned with `shell: false` and array arguments,
+  never a concatenated string; the resolved `exec` path is shown before it starts; logged.
+- **Run a script** — `.bat`, `.cmd`, `.ps1` on the F1 harness: explicit action, contents shown,
+  out of process, timeout, killable, run record (§5.12), `code-run` in the ledger.
+- **Copy or move files** — **`move` is not built, and `copy` only under the constraints
+  below.** Rule 8 is *never destroy data you did not write*; a move destroys the source outside
+  the vault, where nothing records what was there, and a wrong root turns one mis-click into a
+  document nobody can name afterwards. `copy` is defensible: between two configured roots,
+  both resolved paths shown, **refusing rather than overwriting** an existing destination, and
+  an `external-open` row naming both ends. The cheaper answer that bends nothing is the
+  `folder` target — open Explorer at the source and the destination and drag it yourself — and
+  it should be tried first, because a file manager is better at this than we will be.
+
+**Architecturally the script part is small, and that is not the hard part.** The spawn
+discipline already exists in `services/interpreter` — `shell: false`, array arguments, a
+controlled working directory outside the vault, a kill path. Adding a third language is a
+day's work. What is different is why this whole phase is late in the queue rather than early:
 
 - **There is no `--vanilla` for a batch file.** `Rscript --vanilla` and `python -I` each
   neuter a specific ambient-code trap. A `.bat` is arbitrary OS command execution with the
@@ -1248,9 +1284,11 @@ different is why it is late in the queue rather than early:
   not a constant, and the honest page for F4 says something weaker: here is the hash of what
   ran, here is where it lives, here is the ledger row.
 
-*Done when:* a script under the scripts root runs from a dialog showing its contents, one
-outside it is refused by path rather than by warning, the run record names the hash of the
-bytes that were executed, and the ledger carries the row.
+*Done when:* a named application starts from a config entry with its resolved path shown
+first and an application not in the config cannot be started at all; a script under the
+scripts root runs from a dialog showing its contents, one outside it is refused by path rather
+than by warning, the run record names the hash of the bytes that were executed, and the ledger
+carries the row.
 
 ### Backlog — suggested, considered, not scheduled
 
@@ -1406,13 +1444,18 @@ current, and it was 8 KB against a real bundle of 860 KB.
   called. The engine does not care what they are, but a project spec invented here would be
   the same placeholder mistake §5.2 warns about. Also: does any project stage need a
   *governance gate*, or are gates a request-only concern?
-- **B9 (blocking, and answerable in one minute each):** does the eData portal have a per-record
-  URL you can paste — open one request and look at the address bar? Does REDCap? And is the
-  SOP library reachable by a file path from the laptop, or only through a browser?
-- **F4 (blocking, and possibly answering itself):** what would you actually run? If the answer
-  is the R or Python pipeline, F1 already covers it and F4 should not be built. F4 earns its
-  place only for something that is genuinely a shell script. Also whether the machine permits
-  `cmd.exe` at all — the same question as §11's PowerShell one, and likely the same answer.
+- **B9 (needed to *configure*, not to build):** does the eData portal have a per-record URL
+  you can paste — open one request and look at the address bar? Does REDCap? And is the SOP
+  library reachable by a file path from the laptop, or only through a browser? The engine is
+  generic, so these fill in `_config/launchers.yaml` on the day rather than blocking the code.
+- **F4 (needed before the application launcher is built):** which specific applications, and
+  their absolute install paths? The whole safety argument rests on the config naming them, so
+  a phase built without real names would be built against a guess. Also whether the machine
+  permits `cmd.exe` at all — the same question as the PowerShell one above, and likely the
+  same answer.
+- **F4 (needed before `copy` is built, and it may not be):** is there one real copy you do by
+  hand often enough to be worth the risk — which two folders? If the honest answer is "not
+  really", the `folder` target from B9 is the whole feature and `copy` should stay unbuilt.
 - **Team rollout:** when coordinators join, shared vault or read-only export? That decision
   changes ID allocation and the conflict story.
 

@@ -2866,3 +2866,32 @@
   vertical-align: top;
   overflow-wrap: anywhere;
 }
+
+/* Launch targets (CLAUDE.md 5.16, B9). One column so a long label wraps
+   rather than truncating: the label is how a person tells two targets apart. */
+.scdb-launch__list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 8px 0 16px;
+}
+
+.scdb-root .scdb-launch__list button,
+.modal .scdb-launch__list button {
+  justify-content: flex-start;
+  text-align: left;
+  width: 100%;
+}
+
+/* The kind, never colour alone (6): it says "file" or "folder" in words. */
+.scdb-launch__kind {
+  margin-left: 8px;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.scdb-settings__problem {
+  border-left: 2px solid var(--scdb-blocked);
+  padding-left: 8px;
+}
+

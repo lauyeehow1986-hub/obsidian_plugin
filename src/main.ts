@@ -24,6 +24,10 @@ import { buildVocabulary } from "./data/vocabulary.js";
 import { chipsToQuery, parseQueryText, type ParsedText } from "./domain/query/language.js";
 import { SavedViewStore } from "./data/savedViewStore.js";
 import { WorkflowStore } from "./data/workflowStore.js";
+import { LauncherStore } from "./data/launcherStore.js";
+import { Launcher, targetsFor } from "./services/launcher.js";
+import { LaunchModal } from "./ui/LaunchModal.js";
+import type { LaunchTarget } from "./domain/launch/target.js";
 import { requestMetrics } from "./domain/request/dwell.js";
 import { isStranded } from "./domain/request/migration.js";
 import type { RequestNote } from "./domain/request/request.js";
@@ -265,6 +269,14 @@ export default class ScdbCockpitPlugin extends Plugin {
   extract!: ExtractWriter;
   /** Report templates: the five built in, plus anything in `_config/reports/` (§7 B7). */
   reportTemplates!: ReportTemplateStore;
+  /** What may be opened outside the vault, from `_config/launchers.yaml` (§5.16, §7 B9). */
+  launcherStore!: LauncherStore;
+  /**
+   * Opening it. Constructed always, enabled never by default — the same
+   * shape as the http gateway: every call checks settings for itself, so
+   * there is no second path that could skip the check.
+   */
+  launcher!: Launcher;
 
   /**
    * The one gateway (rule 3). Constructed always, enabled never by default:
@@ -361,9 +373,17 @@ export default class ScdbCockpitPlugin extends Plugin {
     await this.loadSettings();
 
     this.workflows = new WorkflowStore(this.app, () => this.settings.folders.config);
+    this.launcherStore = new LauncherStore(this.app, () => this.settings.folders.config);
     this.notes = new NoteIndex(this.app);
     this.index = new RequestIndex(this.app, this.notes, this.workflows);
     this.audit = new AuditLog(this.app, () => this.settings.folders.audit);
+    this.launcher = new Launcher({
+      audit: this.audit,
+      actor: () => this.settings.actor,
+      enabled: () => this.settings.launchers.enabled,
+      now: () => toVaultMinute(Date.now()),
+      notify: (message) => new Notice(`SCDB: ${message}`, 8000),
+    });
     this.writer = new RequestWriter({
       app: this.app,
       index: this.index,
@@ -883,6 +903,19 @@ export default class ScdbCockpitPlugin extends Plugin {
     });
 
     this.addCommand({
+      id: "open-externally",
+      name: "Open this note externally",
+      checkCallback: (checking) => {
+        const file = this.app.workspace.getActiveFile();
+        if (file === null || !this.settings.launchers.enabled) return false;
+        const type = this.notes.byPath(file.path)?.type ?? null;
+        if (targetsFor(this.launcherStore.all(), type).length === 0) return false;
+        if (!checking) this.openExternally();
+        return true;
+      },
+    });
+
+    this.addCommand({
       id: "thread-answered",
       name: "Mark this correspondence thread answered",
       checkCallback: (checking) => {
@@ -1295,6 +1328,7 @@ export default class ScdbCockpitPlugin extends Plugin {
         const touched = this.notes.remove(file.path);
         if (this.index.remove(file.path) || touched) refresh();
         if (this.workflows.isSpecPath(file.path)) void this.reloadWorkflows();
+        if (this.launcherStore.isConfigPath(file.path)) void this.launcherStore.reload();
         if (this.reportTemplates.isTemplatePath(file.path)) void this.reportTemplates.reload();
       }),
     );
@@ -1319,6 +1353,7 @@ export default class ScdbCockpitPlugin extends Plugin {
     this.registerEvent(
       this.app.vault.on("modify", (file) => {
         if (this.workflows.isSpecPath(file.path)) void this.reloadWorkflows();
+        if (this.launcherStore.isConfigPath(file.path)) void this.launcherStore.reload();
         if (this.reportTemplates.isTemplatePath(file.path)) void this.reportTemplates.reload();
         this.effortFileChanged(file.path, refresh);
       }),
@@ -1326,6 +1361,7 @@ export default class ScdbCockpitPlugin extends Plugin {
     this.registerEvent(
       this.app.vault.on("create", (file) => {
         if (this.workflows.isSpecPath(file.path)) void this.reloadWorkflows();
+        if (this.launcherStore.isConfigPath(file.path)) void this.launcherStore.reload();
         if (this.reportTemplates.isTemplatePath(file.path)) void this.reportTemplates.reload();
         this.effortFileChanged(file.path, refresh);
       }),
@@ -1351,6 +1387,7 @@ export default class ScdbCockpitPlugin extends Plugin {
 
   private async reloadWorkflows(): Promise<void> {
     await this.workflows.reload();
+    await this.launcherStore.reload();
     this.refreshViews();
   }
 
@@ -1358,6 +1395,7 @@ export default class ScdbCockpitPlugin extends Plugin {
   async reindex(announce = false): Promise<void> {
     const started = performance.now();
     await this.workflows.reload();
+    await this.launcherStore.reload();
     await this.reportTemplates.reload();
     this.notes.rebuild();
     this.index.rebuild();
@@ -3134,6 +3172,39 @@ export default class ScdbCockpitPlugin extends Plugin {
   }
 
   /** Close the loop on a thread — one click, per §5.10. */
+  /**
+   * Offer the targets that apply to the active note (§7 B9).
+   *
+   * The value each target needs comes from the note's frontmatter through the
+   * metadata cache, never by parsing the file (§8), and it is passed *as data*
+   * to a launcher that shape-checks it. Nothing here decides whether a launch
+   * is allowed; that is the domain's job, and keeping the decision in one
+   * place is why this method is as short as it is.
+   */
+  private openExternally(): void {
+    const file = this.app.workspace.getActiveFile();
+    if (file === null) return;
+
+    const note = this.notes.byPath(file.path);
+    const frontmatter = this.app.metadataCache.getFileCache(file)?.frontmatter ?? {};
+
+    new LaunchModal(this.app, this.launcher, {
+      targets: targetsFor(this.launcherStore.all(), note?.type ?? null),
+      valueFor: (target: LaunchTarget) => {
+        if (target.field === null) return "";
+        const raw = (frontmatter as Record<string, unknown>)[target.field];
+        return typeof raw === "string" ? raw : "";
+      },
+      // The human id when there is one, so a ledger row reads as the work it
+      // was part of rather than as a file path.
+      subject:
+        typeof (frontmatter as Record<string, unknown>)["id"] === "string"
+          ? String((frontmatter as Record<string, unknown>)["id"])
+          : file.path,
+      confirm: this.settings.launchers.confirmBeforeOpening,
+    }).open();
+  }
+
   async markThreadAnswered(file: TFile): Promise<void> {
     try {
       await this.rhythm.applyThreadPatch(file, markAnswered({ now: Date.now() }));

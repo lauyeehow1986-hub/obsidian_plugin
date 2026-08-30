@@ -22,6 +22,7 @@
  */
 
 import { load } from "js-yaml";
+import { parseLaunchTargets } from "../src/domain/launch/target";
 import { agedOutreach, CORRESPONDENCE_TYPE, parseThread } from "../src/domain/comms/thread";
 import { parseEml } from "../src/domain/comms/eml";
 import {
@@ -213,6 +214,26 @@ describe("workflow specs", () => {
     const errors = parsed.problems.filter((problem) => problem.severity === "error");
     expect(errors.map((problem) => `${problem.at}: ${problem.message}`)).toEqual([]);
     expect(parsed.spec).not.toBeNull();
+  });
+});
+
+describe("launch targets", () => {
+  // The committed file is documentation as much as fixture: it is the worked
+  // example of what a launcher config looks like, and an example that does not
+  // parse teaches the wrong shape. Checking the *problems* rather than just
+  // "it loaded" is the point — a target with an error is dropped silently by
+  // design, so a broken example would otherwise show up as an empty list.
+  const yamls = files.filter((file) => /^_config\/launchers\.ya?ml$/.test(file.rel));
+
+  it("ships one", () => {
+    expect(yamls.map((file) => file.rel)).toEqual(["_config/launchers.yaml"]);
+  });
+
+  it.each(yamls.map((file) => file.rel))("%s parses with no problems at all", (rel) => {
+    const file = yamls.find((entry) => entry.rel === rel);
+    const parsed = parseLaunchTargets(load(file!.text));
+    expect(parsed.problems.map((problem) => `${problem.at}: ${problem.message}`)).toEqual([]);
+    expect(parsed.targets.map((target) => target.kind)).toEqual(["url", "file", "folder"]);
   });
 });
 

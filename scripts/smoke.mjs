@@ -295,6 +295,12 @@ function stubApp() {
       getFiles: () => [],
       getMarkdownFiles: () => [],
       getAbstractFileByPath: () => null,
+      // Added in Obsidian 1.5.3, so safe against our 1.6.0 minAppVersion. The
+      // launcher store and the starter-config writer both ask by path rather
+      // than filtering getFiles(), because they want one known file.
+      getFileByPath: () => null,
+      getFolderByPath: () => null,
+      cachedRead: () => Promise.resolve(""),
       create: (path, data) => {
         created.push({ path, data });
         return Promise.resolve({ path });
@@ -379,7 +385,7 @@ const checks = [
   // Pinned deliberately: this line failing means the schema moved, which is
   // the moment to check a migration step went with it (§10 — an upgrade must
   // never lose settings). Bump it only after writing that step.
-  ["settings carry a schema version", instance.settings.schemaVersion === 13],
+  ["settings carry a schema version", instance.settings.schemaVersion === 14],
   ["the hat filter defaults to the mode you are wearing", instance.settings.hatFilter === "mode"],
   // §7 B2. No timer on a fresh install, and every timer action reachable from
   // the keyboard — the status-bar segment is a shortcut, not the only door.
@@ -861,6 +867,16 @@ const checks = [
   ["note index reports no types on an empty vault", instance.notes?.types().length === 0],
   ["saved view store is wired", Array.isArray(instance.views?.all())],
   ["exporter is wired", typeof instance.exporter?.write === "function"],
+  // §7 B9. Constructed always, enabled never: the same shape as the http
+  // gateway, so there is no second path that could skip the settings check.
+  ["launcher is wired", typeof instance.launcher?.open === "function"],
+  ["launch targets load from _config", Array.isArray(instance.launcherStore?.all())],
+  ["nothing is openable on a fresh install", instance.settings.launchers.enabled === false],
+  [
+    "the destination is shown before opening, by default",
+    instance.settings.launchers.confirmBeforeOpening === true,
+  ],
+  ["opening externally is reachable from the palette", commands.includes("open-externally")],
   ["bases file writer is wired", typeof instance.basesFiles?.plan === "function"],
   [
     "loads against an Obsidian that has Bases",

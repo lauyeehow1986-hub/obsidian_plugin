@@ -11,6 +11,7 @@
 import {
   CITATION_FORMAT_SETTINGS,
   CURRENT_SETTINGS_VERSION,
+  type LaunchersConfig,
   DEFAULT_FOLDERS,
   defaultBackup,
   defaultBriefing,
@@ -20,6 +21,7 @@ import {
   defaultApps,
   defaultCompute,
   defaultSources,
+  defaultLaunchers,
   defaultOutlook,
   defaultPublications,
   defaultSettings,
@@ -197,6 +199,7 @@ export function migrateSettings(raw: unknown): MigrationResult {
   merged.compute = repairCompute(merged.compute, notes);
   merged.sources = repairSources(merged.sources, notes);
   merged.outlook = repairOutlook(merged.outlook, notes);
+  merged.launchers = repairLaunchers(merged.launchers, notes);
 
   // Folders: fill gaps, keep customised values, drop nothing.
   const folders: Record<string, unknown> = isRecord(merged.folders) ? { ...merged.folders } : {};
@@ -601,6 +604,23 @@ function repairOutlook(value: unknown, notes: string[]): OutlookConfig {
   const last = value["lastSynced"];
   if (typeof last === "string") base.lastSynced = last.trim();
 
+  return base;
+}
+
+function repairLaunchers(value: unknown, notes: string[]): LaunchersConfig {
+  const base = defaultLaunchers();
+  if (!isRecord(value)) {
+    if (value !== undefined) {
+      notes.push("Launcher settings were not readable; launching was left off.");
+    }
+    return base;
+  }
+  // `=== true` rather than truthiness, for the same reason the source switches
+  // use it: a hand-edited data.json carrying "yes" or 1 is not consent.
+  base.enabled = value["enabled"] === true;
+  // The confirm dialog is the one that defaults *on*, so only an explicit
+  // `false` turns it off. Anything unreadable leaves it on.
+  base.confirmBeforeOpening = value["confirmBeforeOpening"] !== false;
   return base;
 }
 

@@ -98,6 +98,21 @@ export const AUDIT_ACTIONS = [
   // machine here, so it is not `source-fetch` either: the row says the vault
   // read something local, not that it sent anything.
   "mailbox-read",
+  // Opening something outside the vault: an institutional record, a document
+  // on a share, a folder in the file manager (§5.16, §7 B9).
+  //
+  // Its own action, and the argument is sharper here than anywhere else on
+  // this list: a launch is the only consequential thing the plugin does that
+  // leaves **no artefact at all**. An export writes a file, a run writes a
+  // record, a composed message opens a draft — all of them can be found again
+  // afterwards. A launch writes nothing anywhere, so without this row there is
+  // simply no trace that this vault sent someone to that record on that day.
+  //
+  // Not `source-fetch`: nothing crossed a network, and a row implying it had
+  // would be as misleading as one claiming a send. Not `export`: nothing left
+  // the vault either. Written for a **refused** launch as well as a successful
+  // one, because a path that tried to escape its root is the row worth having.
+  "external-open",
   "correction",
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];

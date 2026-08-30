@@ -319,6 +319,32 @@ It contains note names from your vault, so **read it before pasting it anywhere*
 
 ---
 
+## 17. Opening things outside the vault (B9)
+
+*Unverified here — the destinations are all synthetic on this machine.*
+
+Nothing works until you switch it on in settings **and** write
+`_config/launchers.yaml`. Settings writes a commented starter.
+
+- [ ] **Does the eData portal have a per-record URL?** Open one request in the
+      portal and look at the address bar. If the id appears in it, that is your
+      `template`; if the portal is a single page with no addressable record,
+      a `url` target cannot help and this is worth knowing early.
+- [ ] Same question for REDCap.
+- [ ] **Is the SOP library reachable by a file path**, or only through a
+      browser? A UNC path like `\\server\share\SOPs` is what a `file` or
+      `folder` target needs.
+- [ ] With a target configured, *Open this note externally* appears in the
+      palette on a matching note and not on others.
+- [ ] The confirmation shows the **resolved** path, not the one in the note.
+- [ ] Point a target's `root` at a folder, then try a note whose path field is
+      `../something`. It must refuse and name the root.
+- [ ] Put a `.lnk` or `.exe` in an allowed folder and try to open it. It must
+      refuse whatever the config says.
+- [ ] Every one of the above — opened *and* refused — appears in that month's
+      file in `82 Audit/` as `external-open`.
+- [ ] Turn the whole thing off in settings; the command disappears.
+
 ## Summary of what is blocked on you
 
 | # | Needed | Unblocks |

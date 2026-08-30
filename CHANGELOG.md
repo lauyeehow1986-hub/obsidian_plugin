@@ -3,6 +3,60 @@
 All notable changes to SCDB Cockpit. Governance-gate changes get their own
 clearly marked entry (CLAUDE.md §10).
 
+## Unreleased
+
+### Added — opening the systems and documents beside the vault (B9)
+
+A new command, **Open this note externally**, opens the record a note is about:
+the request in its portal, a document on a share, or the folder it lives in.
+Off until switched on in settings, and it does nothing at all until
+`_config/launchers.yaml` names a target — settings will write a commented
+starter.
+
+Three target kinds. `url` substitutes one note field into an `https:` template.
+`file` opens a document under a configured root. `folder` reveals a location in
+the file manager and stops there, which is the dullest of the three and answers
+most of what "file management from Obsidian" means in a day.
+
+**Governance — a new ledger action, `external-open`.** It is added rather than
+borrowed because a launch is the only consequential thing the plugin does that
+leaves no artefact at all: an export writes a file, a run writes a record, a
+composed message opens a draft, but a launch writes nothing anywhere. Without a
+row there is no trace that this vault sent someone to that record on that day.
+It is **not** `source-fetch` (nothing crossed a network) and **not** `export`
+(nothing left the vault). Written for a refused launch as well as a successful
+one, because a path that tried to escape its root is the row worth having.
+
+The rules the launcher enforces, each because the failure it prevents is real:
+
+- **The destination is config; the note supplies one shape-checked field.** A
+  value failing its `pattern` refuses rather than being escaped — the same rule
+  §5.11 already applies to an address, for the same reason.
+- **Paths resolve before they are checked.** `realpath` runs first, then
+  containment, then the extension — so a file called `report.pdf` that resolves
+  to `report.pdf.exe` is refused, and a junction inside an allowed root that
+  points outside it is caught where no string check could find it.
+- **Containment tests the separator too**, so root `C:\SOPs` does not quietly
+  contain `C:\SOPs-archive-public`.
+- **Executables never open** — `.exe`, `.lnk`, `.hta`, `.bat`, `.ps1`, `.msi`
+  and the rest are refused whatever the config lists, and the config is told so
+  by name rather than having the entry silently dropped.
+- **Files go through `shell.openPath`, never a `file:` URL**, which would reopen
+  the protocol-handler surface §5.11 rule 4 exists to keep closed.
+- **The resolved destination is shown before opening**, from the same call that
+  does the opening, so the dialog cannot describe something else.
+- **External browser only.** No embedded webview beside vault access.
+
+Settings gains a section with the two switches, the target list, and every
+problem found in the config file named rather than swallowed.
+
+### Changed
+
+- Settings schema is now v14; the migration adds the launcher block and turns
+  it off. Existing settings are untouched.
+- `CLAUDE.md` gains §5.15 (projects), §5.16 (launch targets), tracks B8, B9 and
+  a rewritten F4, and extends rule 12 to cover opening things outside the vault.
+
 ## [0.2.0] — 2026-08-30
 
 ### Changed — the Outlook reader on a monitored machine
