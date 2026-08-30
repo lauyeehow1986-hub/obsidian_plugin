@@ -3,7 +3,7 @@
 All notable changes to SCDB Cockpit. Governance-gate changes get their own
 clearly marked entry (CLAUDE.md §10).
 
-## Unreleased
+## [0.2.0] — 2026-08-30
 
 ### Changed — the Outlook reader on a monitored machine
 
