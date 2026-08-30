@@ -13,8 +13,7 @@
  *    `history` is appended to, never replaced.
  */
 
-import { Notice, TFile, type App } from "obsidian";
-import { correctionEntry, type AuditEntry } from "../domain/audit/ledger";
+import { TFile, type App } from "obsidian";
 import {
   newRequest,
   newRequestBody,
@@ -22,17 +21,19 @@ import {
   type NewRequestInput,
 } from "../domain/request/create";
 import { applyMigration, type MigrationItem } from "../domain/request/migration";
-import type { RequestNote } from "../domain/request/request";
+import type { WorkflowNote } from "../domain/request/request";
 import {
   applyTransition,
   type FrontmatterPatch,
   type TransitionEffect,
 } from "../domain/request/transition";
 import type { WorkflowSpec } from "../domain/request/workflow";
-import { toVaultMinute } from "../domain/time/dates";
 import { ensureFolder } from "../data/vaultPaths";
 import type { RequestIndex } from "../data/requestIndex";
 import type { AuditLog } from "./auditLog";
+import { LedgerWriter } from "./ledgerWriter";
+
+export { reportError } from "./ledgerWriter";
 
 export interface WriterContext {
   app: App;
@@ -44,7 +45,7 @@ export interface WriterContext {
 
 export interface MigrateRequestInput {
   file: TFile;
-  request: RequestNote;
+  request: WorkflowNote;
   spec: WorkflowSpec;
   /** The live stage id the note will carry afterwards. */
   toStage: string;
@@ -54,7 +55,7 @@ export interface MigrateRequestInput {
 }
 
 export interface MigrationOutcome {
-  request: RequestNote;
+  request: WorkflowNote;
   ok: boolean;
   /** Present when `ok` is false. Plain language, already user-facing. */
   error?: string;
@@ -65,7 +66,11 @@ export interface MigrationOutcome {
 
 export interface TransitionRequestInput {
   file: TFile;
-  request: RequestNote;
+  /**
+   * `WorkflowNote`, not `RequestNote`: a project is one too (§5.15), and moving
+   * one through its spec goes through this method rather than a second engine.
+   */
+  request: WorkflowNote;
   spec: WorkflowSpec;
   to: string;
   now?: number;
@@ -73,40 +78,9 @@ export interface TransitionRequestInput {
   override?: { reason: string };
 }
 
-export class RequestWriter {
-  constructor(private readonly ctx: WriterContext) {}
-
-  private actorOrThrow(): string {
-    const actor = this.ctx.actor().trim();
-    if (actor === "") {
-      throw new Error(
-        "Set your initials as the actor in SCDB Cockpit settings first — every logged action needs to name who did it.",
-      );
-    }
-    return actor;
-  }
-
-  /**
-   * Run `act` with the ledger written first. On failure the ledger gets a
-   * correction rather than being left claiming something that did not happen.
-   */
-  private async logThen(entries: AuditEntry[], subject: string, act: () => Promise<void>): Promise<void> {
-    await this.ctx.audit.append(entries);
-    try {
-      await act();
-    } catch (error) {
-      const reason = error instanceof Error ? error.message : String(error);
-      await this.ctx.audit.append([
-        correctionEntry({
-          ts: toVaultMinute(Date.now()),
-          actor: entries[0]?.actor ?? "unknown",
-          subject,
-          correctsChain: "the entry above",
-          reason: `the change did not complete: ${reason}`,
-        }),
-      ]);
-      throw error;
-    }
+export class RequestWriter extends LedgerWriter {
+  constructor(private readonly ctx: WriterContext) {
+    super(ctx);
   }
 
   /** Create a request note and open the ledger on it. */
@@ -211,34 +185,4 @@ export class RequestWriter {
 
     return outcomes;
   }
-
-  /**
-   * Merge a patch into frontmatter without disturbing anything else in it.
-   *
-   * Verified against a real vault on Obsidian 1.12.7: bare dates survive
-   * untouched — `received: 2026-07-20` does *not* come back as
-   * `2026-07-20T00:00:00.000Z`, which had been the worry. What
-   * `processFrontMatter` does do is re-serialise the whole block, so a
-   * `history` written in flow style (`- { at: …, to: … }`) comes back in block
-   * style. No data is lost and the note stays hand-readable; the cost is that
-   * the first write to a note produces a whole-array diff. Preserving flow
-   * style would mean hand-serialising YAML ourselves, which is the worse trade.
-   */
-  private async applyPatch(file: TFile, patch: FrontmatterPatch): Promise<void> {
-    await this.ctx.app.fileManager.processFrontMatter(file, (frontmatter) => {
-      Object.assign(frontmatter, patch.set);
-      for (const key of patch.unset) delete frontmatter[key];
-
-      if (patch.appendHistory !== undefined) {
-        const history: unknown = frontmatter["history"];
-        frontmatter["history"] = [...(Array.isArray(history) ? history : []), patch.appendHistory];
-      }
-    });
-  }
-}
-
-/** Show an error the way §8 requires: plain language plus what to do next. */
-export function reportError(error: unknown, whatFailed: string): void {
-  const message = error instanceof Error ? error.message : String(error);
-  new Notice(`SCDB: ${whatFailed}\n${message}`, 10000);
 }

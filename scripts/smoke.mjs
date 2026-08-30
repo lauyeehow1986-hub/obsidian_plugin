@@ -385,7 +385,7 @@ const checks = [
   // Pinned deliberately: this line failing means the schema moved, which is
   // the moment to check a migration step went with it (§10 — an upgrade must
   // never lose settings). Bump it only after writing that step.
-  ["settings carry a schema version", instance.settings.schemaVersion === 14],
+  ["settings carry a schema version", instance.settings.schemaVersion === 15],
   ["the hat filter defaults to the mode you are wearing", instance.settings.hatFilter === "mode"],
   // §7 B2. No timer on a fresh install, and every timer action reachable from
   // the keyboard — the status-bar segment is a shortcut, not the only door.
@@ -877,6 +877,21 @@ const checks = [
     instance.settings.launchers.confirmBeforeOpening === true,
   ],
   ["opening externally is reachable from the palette", commands.includes("open-externally")],
+  // §5.15, §7 B8. The check that matters is not that projects exist — it is
+  // that they went through the engine that already existed. If a second
+  // transition path, a second time log or a second reminder system ever
+  // appears, one of these three is the line that notices.
+  ["the project projection is wired", typeof instance.projectIndex?.rebuild === "function"],
+  ["projects have a folder of their own", instance.settings.folders.projects === "15 Projects"],
+  [
+    "a project can be made, moved and seen from the palette",
+    ["new-project", "move-project", "portfolio"].every((id) => commands.includes(id)),
+  ],
+  [
+    "a project moves through the request writer, not a second one",
+    typeof instance.projectWriter?.create === "function" &&
+      instance.projectWriter.transition === undefined,
+  ],
   ["bases file writer is wired", typeof instance.basesFiles?.plan === "function"],
   [
     "loads against an Obsidian that has Bases",

@@ -14,6 +14,7 @@
  */
 
 import type { ImpactVerdict } from "../policy/impact";
+import type { MilestoneState } from "../project/milestones";
 import type { ReviewState } from "../policy/register";
 import type { SlaState } from "../request/dwell";
 import { formatDuration } from "../time/dates";
@@ -68,6 +69,26 @@ const REVIEWS: Record<ReviewState, StatePresentation> = {
 
 export function presentReview(state: ReviewState): StatePresentation {
   return REVIEWS[state];
+}
+
+/**
+ * Milestone states (§5.15), on the same palette as everything else.
+ *
+ * `blocked` reuses the class the request boards already use for "a person has
+ * to do something before this can move" — which is exactly what a milestone
+ * waiting on a predecessor means. §6 asks for one semantic palette; a sixth
+ * colour for a sixth concept is how a palette stops meaning anything.
+ */
+const MILESTONES: Record<MilestoneState, StatePresentation> = {
+  overdue: { label: "Overdue", glyph: "!", className: "scdb-state--overdue" },
+  "due-soon": { label: "Due soon", glyph: "~", className: "scdb-state--at-risk" },
+  blocked: { label: "Blocked", glyph: "⋯", className: "scdb-state--blocked" },
+  open: { label: "Open", glyph: "·", className: "scdb-state--none" },
+  done: { label: "Landed", glyph: "✓", className: "scdb-state--on-track" },
+};
+
+export function presentMilestone(state: MilestoneState): StatePresentation {
+  return MILESTONES[state];
 }
 
 /** "23 days", or an em dash when there is nothing to show. */

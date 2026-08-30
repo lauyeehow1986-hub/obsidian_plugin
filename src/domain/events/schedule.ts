@@ -233,6 +233,11 @@ export function materialisePlan(notes: readonly EventNote[]): MaterialisePlan[] 
   const plans: MaterialisePlan[] = [];
 
   for (const note of notes) {
+    // A derived occurrence has no file of its own; materialising one would
+    // write a computed date into the note it lives inside. It has no
+    // recurrence either, so the next line already excludes it — this is the
+    // line that says why, and keeps saying it if recurrence ever changes.
+    if (note.derivedFrom !== undefined) continue;
     if (note.recurrence === null) continue;
     const { date, source } = occurrenceDate(note);
     if (date === "" || source !== "computed") continue;

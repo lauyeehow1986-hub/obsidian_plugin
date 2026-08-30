@@ -32,7 +32,7 @@
 
 import type { AuditEntry } from "../audit/ledger";
 import { toVaultDate, toVaultMinute } from "../time/dates";
-import type { RequestNote } from "./request";
+import type { WorkflowNote } from "./request";
 import type { FrontmatterPatch } from "./transition";
 import { resolveStage, type StageSpec, type WorkflowSpec } from "./workflow";
 
@@ -53,8 +53,8 @@ export type ProposalSource =
   /** The spec does not say. The user must choose, with a reason. */
   | "none";
 
-export interface MigrationItem {
-  request: RequestNote;
+export interface MigrationItem<T extends WorkflowNote = WorkflowNote> {
+  request: T;
   fromVersion: number | null;
   toVersion: number;
   fromStage: string;
@@ -68,16 +68,16 @@ export interface MigrationItem {
   requiresReason: boolean;
 }
 
-export interface MigrationPlan {
+export interface MigrationPlan<T extends WorkflowNote = WorkflowNote> {
   spec: WorkflowSpec;
   /** Stranded notes, worst first: no proposal, then remapped, then version-only. */
-  items: MigrationItem[];
+  items: MigrationItem<T>[];
   /** Notes recording a version *newer* than the spec. Listed, never rewritten. */
-  ahead: RequestNote[];
+  ahead: T[];
 }
 
 /** True when the note and the spec disagree enough to block stage actions. */
-export function isStranded(request: RequestNote, spec: WorkflowSpec): boolean {
+export function isStranded(request: WorkflowNote, spec: WorkflowSpec): boolean {
   if (request.workflowVersion !== spec.version) return true;
   return !spec.stages.some((stage) => stage.id === request.stage);
 }
@@ -92,7 +92,10 @@ function stageLabel(spec: WorkflowSpec, stageId: string): string {
 }
 
 /** Describe one stranded note: what is wrong, and what we propose about it. */
-export function describeMigration(request: RequestNote, spec: WorkflowSpec): MigrationItem {
+export function describeMigration<T extends WorkflowNote>(
+  request: T,
+  spec: WorkflowSpec,
+): MigrationItem<T> {
   const reasons: MigrationReason[] = [];
   const from = request.stage;
 
@@ -169,12 +172,12 @@ function itemOrder(item: MigrationItem): number {
  * this spec governs; a note naming a workflow we do not have is a different
  * problem and is not this function's to report.
  */
-export function planMigration(
-  requests: readonly RequestNote[],
+export function planMigration<T extends WorkflowNote>(
+  requests: readonly T[],
   spec: WorkflowSpec,
-): MigrationPlan {
-  const items: MigrationItem[] = [];
-  const ahead: RequestNote[] = [];
+): MigrationPlan<T> {
+  const items: MigrationItem<T>[] = [];
+  const ahead: T[] = [];
 
   for (const request of requests) {
     if (!isStranded(request, spec)) continue;
@@ -194,7 +197,7 @@ export function planMigration(
 
 export interface MigrationCommand {
   spec: WorkflowSpec;
-  request: RequestNote;
+  request: WorkflowNote;
   /** The stage the note will carry afterwards. Must be a live stage id. */
   toStage: string;
   actor: string;

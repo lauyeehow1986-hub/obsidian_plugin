@@ -66,15 +66,25 @@ export interface HistoryEntry {
   from: string | null;
 }
 
-export interface RequestNote {
+/**
+ * What the workflow engine needs, and nothing more.
+ *
+ * §5.15 says a project "is not a new engine": it is a note with stages, an
+ * owner, a due date and a `history`, which is exactly what the transition,
+ * dwell, gate and migration modules already consume. This interface is that
+ * claim written down. Those four modules are typed against **this**, so a
+ * project drives them verbatim — no second engine, and no chance of one
+ * drifting from the other, because there is only one.
+ *
+ * Keep it to fields the engine actually reads. Anything a request has and a
+ * project does not belongs on `RequestNote` below.
+ */
+export interface WorkflowNote {
   /** Immutable machine identity (§5.1). Machine references point here, never at `id`. */
   uid: string;
-  /** Human label, `REQ-YYYY-NNN`. May be renumbered. */
+  /** Human label, `REQ-YYYY-NNN` or `PRJ-YYYY-NNN`. May be renumbered. */
   id: string;
   title: string;
-  /** The institutional eData system's ID — the record of truth (§5.1). */
-  externalRef: string;
-  lastReconciled: number | null;
 
   workflow: string;
   /** Which spec version this note was last valid under. */
@@ -84,16 +94,11 @@ export interface RequestNote {
   blockedOn: string | null;
   blockedSince: number | null;
 
-  requester: string;
-  study: string;
   hat: string;
-  assignee: string;
-  priority: string;
 
   received: number | null;
   due: number | null;
   slaDays: number | null;
-  effortEstimateHours: number | null;
 
   evidence: EvidenceRecord[];
   /** Chronological, earliest first. */
@@ -101,6 +106,26 @@ export interface RequestNote {
 
   /** The frontmatter as read, so gates can address fields this model does not name. */
   raw: Record<string, unknown>;
+
+  /**
+   * The institutional system's ID (§5.1). Optional because a project has no
+   * upstream record of truth to reconcile against — giving one an empty string
+   * would read as "unreconciled", which is a different and untrue claim.
+   */
+  externalRef?: string;
+  lastReconciled?: number | null;
+}
+
+export interface RequestNote extends WorkflowNote {
+  /** The institutional eData system's ID — the record of truth (§5.1). */
+  externalRef: string;
+  lastReconciled: number | null;
+
+  requester: string;
+  study: string;
+  assignee: string;
+  priority: string;
+  effortEstimateHours: number | null;
 }
 
 export interface ParsedRequest {
@@ -109,13 +134,14 @@ export interface ParsedRequest {
   problems: string[];
 }
 
-function str(value: unknown): string {
+/** Read a scalar as trimmed text. Shared with the project parser (§5.15). */
+export function str(value: unknown): string {
   if (typeof value === "string") return value.trim();
   if (typeof value === "number" || typeof value === "boolean") return String(value);
   return "";
 }
 
-function num(value: unknown): number | null {
+export function num(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
   if (typeof value === "string" && value.trim() !== "") {
     const n = Number(value);
@@ -124,11 +150,11 @@ function num(value: unknown): number | null {
   return null;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
+export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function parseEvidence(raw: unknown, problems: string[]): EvidenceRecord[] {
+export function parseEvidence(raw: unknown, problems: string[]): EvidenceRecord[] {
   if (raw === undefined || raw === null) return [];
   if (!Array.isArray(raw)) {
     problems.push("`evidence` is not a list, so no evidence records were read.");
@@ -166,7 +192,7 @@ function parseEvidence(raw: unknown, problems: string[]): EvidenceRecord[] {
   return records;
 }
 
-function parseHistory(raw: unknown, problems: string[]): HistoryEntry[] {
+export function parseHistory(raw: unknown, problems: string[]): HistoryEntry[] {
   if (raw === undefined || raw === null) return [];
   if (!Array.isArray(raw)) {
     problems.push("`history` is not a list, so dwell time cannot be computed.");
@@ -281,7 +307,7 @@ export function parseRequest(frontmatter: unknown): ParsedRequest {
 }
 
 /** Evidence records for a claim, matched case-insensitively on `for`. */
-export function evidenceFor(request: RequestNote, claim: string): EvidenceRecord[] {
+export function evidenceFor(request: WorkflowNote, claim: string): EvidenceRecord[] {
   const wanted = claim.trim().toLowerCase();
   return request.evidence.filter((e) => e.claim.toLowerCase() === wanted);
 }

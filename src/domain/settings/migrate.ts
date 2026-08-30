@@ -313,6 +313,21 @@ export function migrateSettings(raw: unknown): MigrationResult {
     );
   }
 
+  if (storedVersion > 0 && storedVersion < 14) {
+    notes.push(
+      "Migrated v13 -> v14: added opening documents and portals outside the vault. " +
+        "It is off, and nothing can be opened until you name a target in " +
+        "_config/launchers.yaml.",
+    );
+  }
+
+  if (storedVersion > 0 && storedVersion < 15) {
+    notes.push(
+      "Migrated v14 -> v15: added the projects folder. Nothing was moved and no " +
+        "note was changed — the folder is only where a new project is filed.",
+    );
+  }
+
   merged.schemaVersion = CURRENT_SETTINGS_VERSION;
 
   const changed = JSON.stringify(raw) !== JSON.stringify(merged);

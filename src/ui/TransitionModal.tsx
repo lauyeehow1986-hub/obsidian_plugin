@@ -1,6 +1,6 @@
 import type { App, TFile } from "obsidian";
 import { useMemo, useState } from "preact/hooks";
-import type { RequestNote } from "../domain/request/request";
+import type { WorkflowNote } from "../domain/request/request";
 import { evaluateTransition } from "../domain/request/transition";
 import { allowedTargets, resolveStage, type WorkflowSpec } from "../domain/request/workflow";
 import { PreactModal } from "./PreactModal";
@@ -15,7 +15,7 @@ export interface TransitionSubmission {
 
 interface PanelProps {
   spec: WorkflowSpec;
-  request: RequestNote;
+  request: WorkflowNote;
   onSubmit: (submission: TransitionSubmission) => void;
   onCancel: () => void;
 }
@@ -26,7 +26,7 @@ function GateReport({
   to,
 }: {
   spec: WorkflowSpec;
-  request: RequestNote;
+  request: WorkflowNote;
   to: string;
 }) {
   const decision = useMemo(
@@ -188,7 +188,7 @@ export class TransitionModal extends PreactModal {
     app: App,
     private readonly options: {
       spec: WorkflowSpec;
-      request: RequestNote;
+      request: WorkflowNote;
       file: TFile;
       onSubmit: (submission: TransitionSubmission) => Promise<void>;
     },

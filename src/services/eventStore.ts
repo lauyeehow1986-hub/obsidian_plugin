@@ -51,6 +51,26 @@ export interface EventStoreDeps {
   leadDays: () => readonly number[];
   horizonDays: () => number;
   actor: () => string;
+  /**
+   * Dated project milestones, as virtual event notes (§5.15).
+   *
+   * Injected rather than imported so this store keeps knowing nothing about
+   * projects, and so the *read* path can include them while `all()` — which
+   * every write path goes through — cannot. A milestone has no file behind it;
+   * mixing it into `all()` would put a note the plugin can write to one refactor
+   * away from a computed date landing in a project's frontmatter.
+   */
+  milestones?: () => EventNote[];
+  /**
+   * Marks a derived occurrence complete in whatever note owns it.
+   *
+   * Injected for the same reason `milestones` is: this store knows nothing
+   * about projects. Without it, `complete()` refuses a derived occurrence
+   * rather than guessing — which is the correct failure, because guessing
+   * means writing `last_completed` into the host note and never touching the
+   * milestone at all.
+   */
+  completeDerived?: (note: EventNote, on: string) => Promise<void>;
 }
 
 export interface ImportOutcome {
@@ -70,8 +90,16 @@ export class EventStore {
     );
   }
 
+  /**
+   * Everything dated, real notes and project milestones together.
+   *
+   * One schedule, deliberately: §5.15 refuses a second reminder system on the
+   * grounds that two would mean two places to look for what is late. The
+   * deadline board, the daily briefing and the ICS feed all read this.
+   */
   schedule(now = Date.now()): Occurrence[] {
-    return buildSchedule(this.all(), {
+    const milestones = this.deps.milestones?.() ?? [];
+    return buildSchedule([...this.all(), ...milestones], {
       today: toVaultDate(now),
       horizonDays: this.deps.horizonDays(),
       defaultLeadDays: this.deps.leadDays(),
@@ -140,6 +168,20 @@ export class EventStore {
    * date for something that happens once would leave a ghost on the board.
    */
   async complete(note: EventNote, on: string): Promise<{ next: string }> {
+    // A derived occurrence's `path` points at the note it lives *inside*, so
+    // resolving a file from it and writing would stamp `last_completed` onto
+    // that host note and leave the item itself untouched (§5.15).
+    if (note.derivedFrom !== undefined) {
+      const handler = this.deps.completeDerived;
+      if (handler === undefined) {
+        throw new Error(
+          `${note.id} is part of another note, and nothing here knows how to complete it.`,
+        );
+      }
+      await handler(note, on);
+      return { next: "" };
+    }
+
     const file = this.fileFor(note);
     if (file === null) {
       throw new Error(`${note.id} is no longer in the vault, so it could not be completed.`);

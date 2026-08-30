@@ -55,6 +55,10 @@ import {
   toDictionaryCsv,
 } from "../src/domain/redcap/dictionary";
 import { STUDY_TYPE, parseStudy } from "../src/domain/study/study";
+import { PROJECT_TYPE } from "../src/domain/project/create";
+import { parseProject } from "../src/domain/project/project";
+import { buildPortfolio } from "../src/domain/project/portfolio";
+import { milestoneEvents } from "../src/domain/project/schedule";
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { readdirSync, readFileSync, statSync } from "node:fs";
@@ -214,6 +218,81 @@ describe("workflow specs", () => {
     const errors = parsed.problems.filter((problem) => problem.severity === "error");
     expect(errors.map((problem) => `${problem.at}: ${problem.message}`)).toEqual([]);
     expect(parsed.spec).not.toBeNull();
+  });
+});
+
+describe("projects", () => {
+  // §5.15's note type, run through the real parser. The fixtures are also the
+  // worked example of what a project note looks like, so a `blocked_by` typo
+  // or a milestone with no id has to fail here rather than teach the wrong
+  // shape to whoever copies one.
+  const parsed = typed(PROJECT_TYPE).map((note) => ({
+    rel: note.rel,
+    ...parseProject(note.front),
+  }));
+
+  it("ships some, so the portfolio board has something to show", () => {
+    expect(parsed.length).toBeGreaterThan(0);
+  });
+
+  it("reads every one with no problems at all", () => {
+    for (const entry of parsed) {
+      expect({ rel: entry.rel, problems: entry.problems }).toEqual({
+        rel: entry.rel,
+        problems: [],
+      });
+    }
+  });
+
+  it("puts every project in a stage its own workflow spec declares", () => {
+    const specs = files
+      .filter((file) => /^_config\/workflows\/.+\.ya?ml$/.test(file.rel))
+      .map((file) => parseWorkflowSpec(load(file.text)).spec)
+      .filter((spec): spec is NonNullable<typeof spec> => spec !== null);
+
+    for (const entry of parsed) {
+      const spec = specs.find((candidate) => candidate.id === entry.project.workflow);
+      expect({ rel: entry.rel, spec: spec?.id ?? null }).toEqual({
+        rel: entry.rel,
+        spec: entry.project.workflow,
+      });
+      expect({
+        rel: entry.rel,
+        known: spec!.stages.some((stage) => stage.id === entry.project.stage),
+      }).toEqual({ rel: entry.rel, known: true });
+    }
+  });
+
+  it("covers both halves of the board: something overdue and something quiet", () => {
+    // A fixture set where nothing is late exercises none of the colour, the
+    // ordering or the totals. One of each is the minimum that proves the board.
+    const spec = files
+      .filter((file) => /^_config\/workflows\/project\.ya?ml$/.test(file.rel))
+      .map((file) => parseWorkflowSpec(load(file.text)).spec)[0];
+    const board = buildPortfolio(
+      parsed.map((entry) => entry.project),
+      spec ?? null,
+      [],
+      { now: Date.parse("2026-08-30T12:00:00Z") },
+    );
+    expect(board.stranded).toEqual([]);
+    expect(board.totals.overdueMilestones).toBeGreaterThan(0);
+    expect(board.totals.blockedMilestones).toBeGreaterThan(0);
+  });
+
+  it("puts its dated milestones on the one schedule", () => {
+    // §5.15: milestones reach the deadline board through the event engine.
+    // If this ever returns nothing, the projection has been disconnected.
+    const events = milestoneEvents(
+      parsed.map((entry) => ({ project: entry.project, path: entry.rel })),
+    );
+    expect(events.length).toBeGreaterThan(0);
+    const schedule = buildSchedule(events, {
+      today: "2026-08-30",
+      horizonDays: 365,
+      defaultLeadDays: [30, 7, 1],
+    });
+    expect(schedule.some((occurrence) => occurrence.date !== "")).toBe(true);
   });
 });
 

@@ -500,6 +500,62 @@ repairs; it never auto-deletes.
 
 ---
 
+## Projects and the portfolio
+
+**Commands:** *New project* · *Move this project to another stage* · *Show the
+project portfolio*
+
+A request has a customer and an SLA. A project is the other shape: months long,
+several deliverables, no single requester — the governance rollout, the
+catalogue build, the grant submission.
+
+It is the same machinery. A project note carries stages, an owner, a due date
+and a `history`, which is exactly what the workflow engine already reads, so
+moving a project through its stages gives you the same refusals, the same typed
+reason when a gate is overridden, and the same rows in the audit ledger.
+
+The stages live in `_config/workflows/project.yaml`. **The ones shipped are
+placeholders** — replace them with the stages your projects actually pass
+through, bump `version`, and use the migration view to bring the in-flight notes
+across. The engine does not care what they are called.
+
+### Milestones
+
+A milestone is a dated step inside the project:
+
+```yaml
+milestones:
+  - { id: M1, title: Baseline audit complete, due: 2026-06-30, done: 2026-06-27 }
+  - { id: M2, title: SOP approved, due: 2026-09-30, blocked_by: [M1] }
+```
+
+`done` is a date, not a tick. There is no percent-complete anywhere in this
+plugin, because it is a number nobody can defend six months later.
+
+`blocked_by` names a *predecessor*, which is the one thing the model did not
+have — `blocked_on` on a request names a person. A milestone waiting on one that
+has not landed reads as **blocked**, not as **overdue**, even when its own date
+has passed: the predecessor is the real holdup, and chasing the wrong one is the
+mistake this is here to prevent. A cycle is refused when the note is read, with
+the loop named.
+
+A milestone with a date appears on the deadline board and in the daily briefing
+like any other date. There is no second reminder system, deliberately — two
+places to look for what is late is the failure this whole plugin exists to
+avoid.
+
+### Effort
+
+Log time against the `PRJ-` id in the `ref` column of `80 Time/`, exactly as you
+would against a `REQ-` id. There is no separate project time log, and there
+never will be. Estimate-versus-actual, cost-centre chargeback and the per-person
+roll-up are the existing reports with a different key.
+
+### What is not here
+
+No Gantt chart, no resource levelling, no burndown. They imply a precision
+knowledge work does not have, and the roadmap declines them on purpose.
+
 ## Opening things outside the vault
 
 **Command:** *Open this note externally*

@@ -40,6 +40,20 @@ export interface EventNote {
   /** `UID` of the calendar entry this came from, for dedupe on re-import. */
   icsUid: string;
   problems: string[];
+
+  /**
+   * Set on an occurrence that has **no note of its own** — today, a project
+   * milestone (§5.15). `parseEventNote` never sets it, so its presence is the
+   * reliable test for "this came from somewhere else".
+   *
+   * It exists because `path` on a derived occurrence points at the note the
+   * item lives *inside*, which is a real file. Without this marker, anything
+   * that resolves a file from `path` and writes to it — completing, or
+   * materialising a computed date — would silently write into that host note.
+   * That is not hypothetical: the Done button on the deadline board did
+   * exactly that before this field existed.
+   */
+  derivedFrom?: { kind: "milestone"; noteUid: string; itemId: string };
 }
 
 function str(value: unknown): string {

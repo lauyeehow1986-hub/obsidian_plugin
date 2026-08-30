@@ -9,7 +9,7 @@ import type { AttachmentPolicy } from "../comms/emlThread";
 import type { OutlookFolder } from "../comms/outlook";
 import type { TimerState } from "../effort/timer";
 
-export const CURRENT_SETTINGS_VERSION = 14;
+export const CURRENT_SETTINGS_VERSION = 15;
 
 /** The three hats. Mode is the organising metaphor, not a cosmetic filter (§7 A3). */
 export const MODES = ["biostat", "hod", "research-core"] as const;
@@ -18,6 +18,7 @@ export type Mode = (typeof MODES)[number];
 export const FOLDER_KEYS = [
   "inbox",
   "requests",
+  "projects",
   "studies",
   "people",
   "policies",
@@ -272,6 +273,7 @@ export function defaultBackup(): BackupConfig {
 export const DEFAULT_FOLDERS: Record<FolderKey, string> = {
   inbox: "00 Inbox",
   requests: "10 Requests",
+  projects: "15 Projects",
   studies: "20 Studies",
   people: "30 People",
   policies: "40 Policies",

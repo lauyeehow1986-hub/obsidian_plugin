@@ -19,7 +19,7 @@
  */
 
 import { parseTimestamp, toVaultDate } from "../time/dates";
-import { evidenceFor, type RequestNote } from "./request";
+import { evidenceFor, type WorkflowNote } from "./request";
 import type { GateSpec, WorkflowSpec } from "./workflow";
 
 export type GateValue = string | number | boolean | null;
@@ -85,7 +85,7 @@ function flatten(value: unknown, prefix: string, out: GateContext, depth: number
  *  - `evidence.<claim>`     — a non-verbal evidence record exists.
  *  - `evidence.<claim>.any` — any record exists, verbal included.
  */
-export function buildGateContext(request: RequestNote, now: number): GateContext {
+export function buildGateContext(request: WorkflowNote, now: number): GateContext {
   const ctx: GateContext = new Map();
   flatten(request.raw, "", ctx, 0);
 
@@ -292,7 +292,7 @@ export function evaluateGate(gate: GateSpec, ctx: GateContext): GateResult {
 /** Every gate guarding entry into `to`, evaluated against this request. */
 export function evaluateGatesFor(
   spec: WorkflowSpec,
-  request: RequestNote,
+  request: WorkflowNote,
   to: string,
   now: number,
 ): GateResult[] {

@@ -345,6 +345,30 @@ Nothing works until you switch it on in settings **and** write
       file in `82 Audit/` as `external-open`.
 - [ ] Turn the whole thing off in settings; the command disappears.
 
+## 18. Projects and the portfolio (B8)
+
+*Verified in the test vault; the stages are placeholders and yours are not.*
+
+- [ ] **Name three real projects and the stages they pass through.** That is the
+      one thing blocking `_config/workflows/project.yaml` from being real rather
+      than a worked example. The engine does not care what the stages are — but
+      a spec invented here would be a guess wearing the costume of a decision.
+- [ ] Does any project stage need a **governance gate**, or are gates a
+      request-only concern? The shipped spec declares none.
+- [ ] Create a project, move it a stage, and check the row in `82 Audit/`. It
+      should be a `stage-change` and look identical to a request's.
+- [ ] Try a move the spec does not allow. It must refuse and name the stage.
+- [ ] Give a milestone a `blocked_by` pointing at one that has not landed. It
+      must read as blocked, not overdue, even with its own date passed.
+- [ ] Make a `blocked_by` loop on purpose. Opening the note must report the
+      cycle by name rather than hanging or showing nothing.
+- [ ] Put a milestone's `due` in the next few days and check it reaches the
+      **deadline board and the daily briefing** — not a project-only reminder.
+- [ ] Log time against the `PRJ-` id in `80 Time/` and check it appears on the
+      project card and in the effort roll-up beside `REQ-` work.
+- [ ] Rename a stage in the spec, bump `version`, and check the project appears
+      on the migration board next to any stranded requests.
+
 ## Summary of what is blocked on you
 
 | # | Needed | Unblocks |
@@ -356,3 +380,5 @@ Nothing works until you switch it on in settings **and** write
 | 7 | Which of the four hosts the firewall permits | E1 |
 | 12 | One real example of the CV format required | The CV template |
 | 14 | Whether eData exposes an ID and any export | Reconciliation |
+| 17 | Per-record URLs for eData and REDCap; whether the SOP share has a file path | Configuring the launchers |
+| 18 | Three real projects and the stages they pass through | The project spec being true rather than plausible |

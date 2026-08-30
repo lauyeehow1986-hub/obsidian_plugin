@@ -16,27 +16,40 @@ import {
   type MigrationItem,
   type MigrationPlan,
 } from "../domain/request/migration";
-import type { RequestNote } from "../domain/request/request";
+import type { WorkflowNote } from "../domain/request/request";
 import type { WorkflowSpec } from "../domain/request/workflow";
 import type ScdbCockpitPlugin from "../main.js";
 import { count } from "./format";
 
 /** Group the indexed requests by the spec that governs them. */
+/**
+ * Every note the workflow engine governs, requests and projects alike.
+ *
+ * A project strands exactly as a request does — its spec's stages get renamed
+ * and its `workflow_version` falls behind — so it belongs on this board rather
+ * than in a second migration view. `planMigration` is generic over the note
+ * type for this reason (§5.15).
+ */
 function buildPlans(plugin: ScdbCockpitPlugin): {
-  plans: MigrationPlan[];
-  orphans: RequestNote[];
+  plans: MigrationPlan<WorkflowNote>[];
+  orphans: WorkflowNote[];
 } {
-  const bySpec = new Map<string, { spec: WorkflowSpec; requests: RequestNote[] }>();
-  const orphans: RequestNote[] = [];
+  const bySpec = new Map<string, { spec: WorkflowSpec; requests: WorkflowNote[] }>();
+  const orphans: WorkflowNote[] = [];
 
-  for (const entry of plugin.index.all()) {
-    const spec = plugin.workflows.forRequest(entry.request.workflow);
+  const governed: WorkflowNote[] = [
+    ...plugin.index.all().map((entry) => entry.request),
+    ...plugin.projects().map((entry) => entry.project),
+  ];
+
+  for (const note of governed) {
+    const spec = plugin.workflows.forRequest(note.workflow);
     if (spec === null) {
-      orphans.push(entry.request);
+      orphans.push(note);
       continue;
     }
     const group = bySpec.get(spec.id) ?? { spec, requests: [] };
-    group.requests.push(entry.request);
+    group.requests.push(note);
     bySpec.set(spec.id, group);
   }
 
@@ -52,7 +65,7 @@ export function strandedCount(plugin: ScdbCockpitPlugin): number {
   return buildPlans(plugin).plans.reduce((total, plan) => total + plan.items.length, 0);
 }
 
-function PlanTable({ plan, plugin }: { plan: MigrationPlan; plugin: ScdbCockpitPlugin }) {
+function PlanTable({ plan, plugin }: { plan: MigrationPlan<WorkflowNote>; plugin: ScdbCockpitPlugin }) {
   const { spec, items } = plan;
 
   // Deselection rather than selection, so a note that appears while the board
@@ -62,7 +75,7 @@ function PlanTable({ plan, plugin }: { plan: MigrationPlan; plugin: ScdbCockpitP
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
 
-  const targetFor = (item: MigrationItem): string =>
+  const targetFor = (item: MigrationItem<WorkflowNote>): string =>
     chosen[item.request.uid] ?? item.proposedStage;
 
   const selected = items.filter((item) => !skipped.has(item.request.uid));
@@ -111,7 +124,7 @@ function PlanTable({ plan, plugin }: { plan: MigrationPlan; plugin: ScdbCockpitP
     <section class="scdb-group scdb-migration">
       <h3 class="scdb-group__title">
         {spec.label} v{spec.version}
-        <span class="scdb-group__sub">{count(items.length, "request")} stranded</span>
+        <span class="scdb-group__sub">{count(items.length, "note")} stranded</span>
       </h3>
       <p class="scdb-migration__lede">
         These requests were last valid under an earlier version of this workflow, so the plugin
@@ -123,7 +136,7 @@ function PlanTable({ plan, plugin }: { plan: MigrationPlan; plugin: ScdbCockpitP
         <thead>
           <tr>
             <th class="scdb-migration__pick">Migrate</th>
-            <th>Request</th>
+            <th>Note</th>
             <th>Now in</th>
             <th>Move to</th>
             <th>Why</th>
@@ -149,7 +162,7 @@ function PlanTable({ plan, plugin }: { plan: MigrationPlan; plugin: ScdbCockpitP
                   <button
                     type="button"
                     class="scdb-link"
-                    onClick={() => plugin.showRequest(item.request)}
+                    onClick={() => plugin.showWorkflowNote(item.request)}
                   >
                     {item.request.id || uid.slice(0, 8)}
                   </button>
@@ -221,14 +234,14 @@ function PlanTable({ plan, plugin }: { plan: MigrationPlan; plugin: ScdbCockpitP
           {skipped.size === items.length ? "Select all" : "Select none"}
         </button>
         <button type="button" class="mod-cta" disabled={blocked} onClick={() => void apply()}>
-          {busy ? "Migrating…" : `Migrate ${count(selected.length, "request")}`}
+          {busy ? "Migrating…" : `Migrate ${count(selected.length, "note")}`}
         </button>
       </div>
     </section>
   );
 }
 
-function AheadNotice({ plan }: { plan: MigrationPlan }) {
+function AheadNotice({ plan }: { plan: MigrationPlan<WorkflowNote> }) {
   if (plan.ahead.length === 0) return null;
   return (
     <section class="scdb-group">
@@ -255,10 +268,10 @@ export function MigrationBoard({ plugin }: { plugin: ScdbCockpitPlugin }) {
   if (plans.length === 0 && orphans.length === 0) {
     return (
       <p class="scdb-empty">
-        Nothing to migrate. Every request matches the version of the workflow it follows. When a
-        stage is renamed or removed in{" "}
-        <code>{plugin.settings.folders.config}/workflows/</code>, the requests stranded by the
-        change are listed here.
+        Nothing to migrate. Every request and project matches the version of the workflow it
+        follows. When a stage is renamed or removed in{" "}
+        <code>{plugin.settings.folders.config}/workflows/</code>, the notes stranded by the change
+        are listed here.
       </p>
     );
   }
@@ -284,7 +297,7 @@ export function MigrationBoard({ plugin }: { plugin: ScdbCockpitPlugin }) {
           <ul class="scdb-list scdb-list--problems">
             {orphans.map((request) => (
               <li key={request.uid}>
-                <button type="button" class="scdb-link" onClick={() => plugin.showRequest(request)}>
+                <button type="button" class="scdb-link" onClick={() => plugin.showWorkflowNote(request)}>
                   {request.id || request.uid}
                 </button>{" "}
                 — names <code>{request.workflow || "(nothing)"}</code>

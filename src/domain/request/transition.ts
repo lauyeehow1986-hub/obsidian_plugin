@@ -22,7 +22,7 @@ import type { AuditEntry } from "../audit/ledger";
 import { gateOverrideEntry } from "../audit/ledger";
 import { toVaultDate, toVaultMinute } from "../time/dates";
 import { evaluateGatesFor, type GateResult } from "./gates";
-import type { RequestNote } from "./request";
+import type { WorkflowNote } from "./request";
 import { isTransitionDeclared, resolveStage, type WorkflowSpec } from "./workflow";
 
 export type RefusalKind =
@@ -59,7 +59,7 @@ export interface TransitionDecision {
 
 export interface TransitionQuery {
   spec: WorkflowSpec;
-  request: RequestNote;
+  request: WorkflowNote;
   to: string;
   now: number;
 }
@@ -140,9 +140,13 @@ export function evaluateTransition(query: TransitionQuery): TransitionDecision {
       );
     }
   }
-  if (request.externalRef !== "" && request.lastReconciled === null) {
+  // A project carries no `external_ref`: there is no upstream system holding
+  // the record of truth for it, so there is nothing to reconcile against and
+  // no warning to give (§5.15). Absent is read as absent, not as overdue.
+  const externalRef = request.externalRef ?? "";
+  if (externalRef !== "" && (request.lastReconciled ?? null) === null) {
     warnings.push(
-      `This request has never been reconciled against ${request.externalRef} in the eData system.`,
+      `This request has never been reconciled against ${externalRef} in the eData system.`,
     );
   }
 

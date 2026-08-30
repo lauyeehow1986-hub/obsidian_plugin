@@ -14,7 +14,7 @@
 
 import { median } from "../stats/summary";
 import { DAY_MS } from "../time/dates";
-import type { HistoryEntry, RequestNote } from "./request";
+import type { HistoryEntry, WorkflowNote } from "./request";
 import { isBackwardMove, resolveStage, type WorkflowSpec } from "./workflow";
 
 export type SlaState = "no-target" | "on-track" | "at-risk" | "breached";
@@ -84,7 +84,7 @@ export interface RequestMetrics {
  * note may be created in the vault days after the request actually arrived,
  * and age should measure the requester's wait, not ours.
  */
-function startedAt(request: RequestNote): number | null {
+function startedAt(request: WorkflowNote): number | null {
   if (request.received !== null) return request.received;
   return request.history[0]?.at ?? null;
 }
@@ -118,7 +118,7 @@ export function effectiveHistory(history: readonly HistoryEntry[]): HistoryEntry
 
 /** Split the history into stage occupancies. */
 export function stageSegments(
-  request: RequestNote,
+  request: WorkflowNote,
   spec: WorkflowSpec | null,
   now: number,
 ): StageSegment[] {
@@ -170,7 +170,7 @@ function assessDue(due: number | null, now: number, riskDays: number): SlaAssess
 
 /** Everything the boards need about one request, computed fresh. */
 export function requestMetrics(
-  request: RequestNote,
+  request: WorkflowNote,
   spec: WorkflowSpec | null,
   options: MetricsOptions,
 ): RequestMetrics {
@@ -293,7 +293,7 @@ export interface StageDwellStats {
  * takes.
  */
 export function stageDwellStats(
-  requests: readonly { request: RequestNote; metrics: RequestMetrics }[],
+  requests: readonly { request: WorkflowNote; metrics: RequestMetrics }[],
   spec: WorkflowSpec | null,
 ): StageDwellStats[] {
   const closed = new Map<string, number[]>();

@@ -5,6 +5,65 @@ clearly marked entry (CLAUDE.md §10).
 
 ## Unreleased
 
+### Added — projects, milestones and the portfolio (B8)
+
+The other shape of work: the governance rollout, the catalogue build, the grant
+submission. Months long, several deliverables, no single requester — and until
+now nothing in the vault held it.
+
+**It is not a new engine, and the code says so.** The transition, dwell, gate
+and migration modules are now typed against a `WorkflowNote` — the fields they
+actually read — and a project is one. So a project moves through its stages
+using the same modal, the same gate evaluation, the same typed-reason rule and
+the same `stage-change` ledger rows a request gets, because it is literally the
+same method. §5.15 warns that if a project feature needs a second engine the
+design is wrong; the place that would have happened is
+`services/projectWriter.ts`, and it has no `transition` at all.
+
+A second workflow spec lives in `_config/workflows/project.yaml`. **Its stages
+are placeholders**, on exactly the same footing as the eData ones, and marked as
+such in the file. Replace them with the stages your real projects pass through.
+It declares no gates: whether a project stage needs one is an open question, and
+inventing one to fill the space would be the placeholder mistake §5.2 warns
+about.
+
+**`blocked_by` is the one genuinely new concept.** A request's `blocked_on`
+names a *person*; nothing anywhere named a *predecessor*. That edge is what lets
+the board say "M2 cannot move until M1 lands" rather than merely "M2 is late",
+and it is why a blocked milestone outranks an overdue one — telling somebody to
+hurry up on M2 when M1 is the holdup is the misdirection this plugin exists to
+stop. A cycle is refused at parse time with the loop named, and the edges are
+dropped so nothing downstream can walk it.
+
+**Two things deliberately did not get built, because they already exist:**
+
+- **No second reminder path.** A milestone with a date is projected into the
+  event shape the scheduler already consumes, so it reaches the deadline board,
+  the daily briefing and the ICS feed through the one engine that handles dates.
+  The projection is read-only and kept out of `EventStore.all()`, so a computed
+  date can never land in a project's frontmatter.
+- **No second time log.** §5.3's table already carries `ref`, and `ref` takes a
+  `PRJ-` id as readily as a `REQ-` one. Per-project effort and estimate-versus-
+  actual are the existing roll-ups with a different key — a test pins that a
+  single roll-up returns both kinds without knowing either prefix exists.
+
+The portfolio board is a new cockpit tab: every project by stage, what each is
+waiting on, which milestones are late, and effort to date against estimate.
+Stranded projects are listed rather than hidden, and they migrate on the
+existing migration board alongside stranded requests.
+
+**Explicitly not built** (§5.15): Gantt charts, resource levelling,
+percent-complete and burndown. A milestone landed on a day or it has not.
+
+**Found by pressing the button, not by reading the code.** A milestone on the
+deadline board shows a *Done* action like every other dated thing. Its `path`
+points at the project note it lives inside, so the completion path resolved that
+file and would have written `last_completed` into the project's frontmatter
+while leaving the milestone open. An occurrence with no note of its own now says
+so — `EventNote.derivedFrom` — and completing one is routed to whatever owns it,
+so *Done* marks the milestone. Anything that resolves a file from an
+occurrence's path checks that field first.
+
 ### Added — opening the systems and documents beside the vault (B9)
 
 A new command, **Open this note externally**, opens the record a note is about:
@@ -52,8 +111,16 @@ problem found in the config file named rather than swallowed.
 
 ### Changed
 
-- Settings schema is now v14; the migration adds the launcher block and turns
-  it off. Existing settings are untouched.
+- Settings schema is now v15. v14 added the launcher block, turned off; v15 adds
+  the projects folder. Existing settings are untouched, no note is moved and
+  nothing is rewritten — and the v13 → v14 note the launcher change never got is
+  added at the same time.
+- The workflow engine is typed against a `WorkflowNote` — the fields it actually
+  reads — rather than against `RequestNote`. A type-level change with no
+  behaviour change, and it is what lets a project use the engine verbatim.
+- `RequestWriter` and the new `ProjectWriter` both extend a `LedgerWriter` base,
+  so "ledger first, then the note, and a correction if the note write fails" has
+  exactly one definition rather than two that could drift.
 - `CLAUDE.md` gains §5.15 (projects), §5.16 (launch targets), tracks B8, B9 and
   a rewritten F4, and extends rule 12 to cover opening things outside the vault.
 

@@ -25,12 +25,16 @@ import { chipsToQuery, parseQueryText, type ParsedText } from "./domain/query/la
 import { SavedViewStore } from "./data/savedViewStore.js";
 import { WorkflowStore } from "./data/workflowStore.js";
 import { LauncherStore } from "./data/launcherStore.js";
+import { ProjectIndex, type ProjectEntry } from "./data/projectIndex.js";
+import { ProjectWriter } from "./services/projectWriter.js";
+import type { ProjectNote } from "./domain/project/project.js";
+import { milestoneEvents } from "./domain/project/schedule.js";
 import { Launcher, targetsFor } from "./services/launcher.js";
 import { LaunchModal } from "./ui/LaunchModal.js";
 import type { LaunchTarget } from "./domain/launch/target.js";
 import { requestMetrics } from "./domain/request/dwell.js";
 import { isStranded } from "./domain/request/migration.js";
-import type { RequestNote } from "./domain/request/request.js";
+import type { RequestNote, WorkflowNote } from "./domain/request/request.js";
 import type { RequestView } from "./domain/request/holdup.js";
 import { TransitionRefused } from "./domain/request/transition.js";
 import type { WorkflowSpec } from "./domain/request/workflow.js";
@@ -123,7 +127,7 @@ import {
   type BoardId,
 } from "./domain/report/boards.js";
 import { renderDocument } from "./domain/report/document.js";
-import { toVaultDate, toVaultMinute } from "./domain/time/dates.js";
+import { parseTimestamp, toVaultDate, toVaultMinute } from "./domain/time/dates.js";
 import { backupAge, formatBytes } from "./domain/backup/snapshots.js";
 import { describeRestore } from "./domain/backup/restore.js";
 import { MODES, defaultSettings, type Mode, type ScdbSettings } from "./domain/settings/schema.js";
@@ -238,7 +242,8 @@ import { askBinding, askEntry, askIdle, askRecovery } from "./ui/TimerModals.js"
 
 /** One row of a bulk migration, as the migration board hands it over. */
 export interface MigrationRun {
-  request: RequestNote;
+  /** A request or a project — both strand the same way (§5.15). */
+  request: WorkflowNote;
   spec: WorkflowSpec;
   toStage: string;
   reason?: string;
@@ -255,8 +260,11 @@ export default class ScdbCockpitPlugin extends Plugin {
   /** Every typed note. The query engine reads this; A1's boards read `index`. */
   notes!: NoteIndex;
   index!: RequestIndex;
+  /** The `type: project` notes (§5.15). A projection, like `index`, not a second cache. */
+  projectIndex!: ProjectIndex;
   audit!: AuditLog;
   writer!: RequestWriter;
+  projectWriter!: ProjectWriter;
   publicationWriter!: PublicationWriter;
   policyWriter!: PolicyWriter;
   views!: SavedViewStore;
@@ -376,6 +384,7 @@ export default class ScdbCockpitPlugin extends Plugin {
     this.launcherStore = new LauncherStore(this.app, () => this.settings.folders.config);
     this.notes = new NoteIndex(this.app);
     this.index = new RequestIndex(this.app, this.notes, this.workflows);
+    this.projectIndex = new ProjectIndex(this.app, this.notes);
     this.audit = new AuditLog(this.app, () => this.settings.folders.audit);
     this.launcher = new Launcher({
       audit: this.audit,
@@ -389,6 +398,13 @@ export default class ScdbCockpitPlugin extends Plugin {
       index: this.index,
       audit: this.audit,
       requestsFolder: () => this.settings.folders.requests,
+      actor: () => this.settings.actor,
+    });
+    this.projectWriter = new ProjectWriter({
+      app: this.app,
+      index: this.projectIndex,
+      audit: this.audit,
+      projectsFolder: () => this.settings.folders.projects,
       actor: () => this.settings.actor,
     });
     this.publicationWriter = new PublicationWriter({
@@ -547,6 +563,23 @@ export default class ScdbCockpitPlugin extends Plugin {
       leadDays: () => this.settings.events.leadDays,
       horizonDays: () => this.settings.briefing.horizonDays,
       actor: () => this.settings.actor,
+      // A milestone with a date is an event (§5.15). It reaches the deadline
+      // board and the daily briefing through the engine that already handles
+      // dates, not through a second one.
+      milestones: () => milestoneEvents(this.projectIndex.located()),
+      // "Done" on a milestone marks the milestone, not the project note it
+      // lives in. Without this the deadline board would write `last_completed`
+      // into the project's frontmatter and leave the milestone open.
+      completeDerived: async (note, on) => {
+        const uid = note.derivedFrom?.noteUid ?? "";
+        const entry = this.projectIndex.byUid(uid);
+        if (entry === null) {
+          throw new Error(`The project this belongs to is no longer in the vault.`);
+        }
+        const at = parseTimestamp(on);
+        if (at === null) throw new Error(`"${on}" is not a date the calendar has.`);
+        await this.projectWriter.setMilestoneDone(entry.file, note.derivedFrom?.itemId ?? "", at);
+      },
     });
 
     this.rhythm = new RhythmWriter({
@@ -781,6 +814,32 @@ export default class ScdbCockpitPlugin extends Plugin {
         const entry = this.currentRequest();
         if (checking) return entry !== null;
         if (entry) this.moveRequest(entry.request);
+        return true;
+      },
+    });
+
+    this.addCommand({
+      id: "new-project",
+      name: "New project",
+      callback: () => void this.createProject(),
+    });
+
+    this.addCommand({
+      id: "portfolio",
+      name: "Show the project portfolio",
+      callback: () => void this.activateCockpit("portfolio"),
+    });
+
+    this.addCommand({
+      id: "move-project",
+      name: "Move this project to another stage",
+      checkCallback: (checking) => {
+        const file = this.app.workspace.getActiveFile();
+        if (file === null) return false;
+        const entry = this.projectIndex.byPath(file.path);
+        if (entry === null) return false;
+        if (checking) return true;
+        this.moveProject(entry.project);
         return true;
       },
     });
@@ -1320,13 +1379,15 @@ export default class ScdbCockpitPlugin extends Plugin {
     this.registerEvent(
       this.app.metadataCache.on("changed", (file) => {
         const touched = this.notes.update(file);
-        if (this.index.update(file) || touched) refresh();
+        const project = this.projectIndex.update(file);
+        if (this.index.update(file) || project || touched) refresh();
       }),
     );
     this.registerEvent(
       this.app.vault.on("delete", (file) => {
         const touched = this.notes.remove(file.path);
-        if (this.index.remove(file.path) || touched) refresh();
+        const project = this.projectIndex.remove(file.path);
+        if (this.index.remove(file.path) || project || touched) refresh();
         if (this.workflows.isSpecPath(file.path)) void this.reloadWorkflows();
         if (this.launcherStore.isConfigPath(file.path)) void this.launcherStore.reload();
         if (this.reportTemplates.isTemplatePath(file.path)) void this.reportTemplates.reload();
@@ -1337,6 +1398,7 @@ export default class ScdbCockpitPlugin extends Plugin {
         if (file instanceof TFile) {
           this.notes.rename(oldPath, file);
           this.index.rename(oldPath, file);
+          this.projectIndex.rename(oldPath, file);
         }
         if (this.workflows.isSpecPath(file.path) || this.workflows.isSpecPath(oldPath)) {
           void this.reloadWorkflows();
@@ -1399,11 +1461,13 @@ export default class ScdbCockpitPlugin extends Plugin {
     await this.reportTemplates.reload();
     this.notes.rebuild();
     this.index.rebuild();
+    this.projectIndex.rebuild();
     this.refreshViews();
     if (announce) {
       const ms = Math.round(performance.now() - started);
+      const projects = this.projectIndex.size === 0 ? "" : `, ${this.projectIndex.size} projects`;
       new Notice(
-        `SCDB: indexed ${this.notes.size} notes (${this.index.size} requests) in ${ms} ms.`,
+        `SCDB: indexed ${this.notes.size} notes (${this.index.size} requests${projects}) in ${ms} ms.`,
       );
     }
   }
@@ -1649,34 +1713,79 @@ export default class ScdbCockpitPlugin extends Plugin {
       );
       return;
     }
+    this.moveWorkflowNote(request, entry.file, spec, () => this.index.update(entry.file));
+  }
 
+  /**
+   * The one stage-change flow, for anything the workflow engine governs.
+   *
+   * A request and a project go through this identically — the same modal, the
+   * same gate evaluation, the same typed-reason rule and the same ledger rows.
+   * §5.15 says a project "is not a new engine"; keeping this in one method is
+   * how that stays true after the next change to either.
+   *
+   * `reindex` is passed in because the two note kinds live in different
+   * projections, and this method has no business knowing which.
+   */
+  private moveWorkflowNote(
+    note: WorkflowNote,
+    file: TFile,
+    spec: WorkflowSpec,
+    reindex: () => void,
+  ): void {
     new TransitionModal(this.app, {
       spec,
-      request,
-      file: entry.file,
+      request: note,
+      file,
       onSubmit: async (submission) => {
         try {
           const effect = await this.writer.transition({
-            file: entry.file,
-            request,
+            file,
+            request: note,
             spec,
             to: submission.to,
             ...(submission.blockedOn !== undefined ? { blockedOn: submission.blockedOn } : {}),
             ...(submission.override ? { override: submission.override } : {}),
           });
+          reindex();
           this.refreshViews();
           new Notice(
-            `SCDB: ${request.id} → ${submission.to}${effect.decision.allowed ? "" : " (gate overridden, logged)"}.`,
+            `SCDB: ${note.id} → ${submission.to}${effect.decision.allowed ? "" : " (gate overridden, logged)"}.`,
           );
         } catch (error) {
           if (error instanceof TransitionRefused) {
             new Notice(`SCDB: move refused. ${error.message}`, 10000);
           } else {
-            reportError(error, "could not move the request.");
+            reportError(error, "could not move this note.");
           }
         }
       },
     }).open();
+  }
+
+  /** The file behind a request or a project, whichever projection holds it. */
+  fileForWorkflowNote(note: WorkflowNote): TFile | null {
+    return (
+      this.index.byUid(note.uid)?.file ?? this.projectIndex.byUid(note.uid)?.file ?? null
+    );
+  }
+
+  /**
+   * Open whichever note this is.
+   *
+   * A request gets its detail modal; a project opens the note, because it has
+   * no detail modal and inventing one to keep the two symmetrical would be a
+   * screen nobody asked for. Boards that hold both kinds — the migration board
+   * — call this rather than deciding for themselves.
+   */
+  showWorkflowNote(note: WorkflowNote): void {
+    const request = this.index.byUid(note.uid);
+    if (request !== null) {
+      this.showRequest(request.request);
+      return;
+    }
+    const project = this.projectIndex.byUid(note.uid);
+    if (project !== null) void this.app.workspace.getLeaf(false).openFile(project.file);
   }
 
   showRequest(request: RequestNote): void {
@@ -1711,13 +1820,13 @@ export default class ScdbCockpitPlugin extends Plugin {
     const missing: string[] = [];
 
     for (const run of runs) {
-      const entry = this.index.byUid(run.request.uid);
-      if (entry === null) {
+      const file = this.fileForWorkflowNote(run.request);
+      if (file === null) {
         missing.push(run.request.id || run.request.uid);
         continue;
       }
       inputs.push({
-        file: entry.file,
+        file,
         request: run.request,
         spec: run.spec,
         toStage: run.toStage,
@@ -1734,6 +1843,10 @@ export default class ScdbCockpitPlugin extends Plugin {
       return;
     }
 
+    // The writer knows one projection; a migrated project lives in the other.
+    // The metadata-cache watcher would catch up on its own, but a board that
+    // repaints before it does would show the stage the note no longer has.
+    for (const input of inputs) this.projectIndex.update(input.file);
     this.refreshViews();
 
     const migrated = outcomes.filter((o) => o.ok);
@@ -1808,6 +1921,86 @@ export default class ScdbCockpitPlugin extends Plugin {
   }
 
   // --- policies and revisions (§5.14, §7 C1) --------------------------------
+
+  // --- projects and the portfolio (§5.15, §7 B8) --------------------------------
+
+  /** Every project note, parsed. The board computes; nothing is cached (§5.1). */
+  projects(): ProjectEntry[] {
+    return this.projectIndex.all();
+  }
+
+  /**
+   * Every effort entry across every month.
+   *
+   * The portfolio needs the whole log because a project runs for months, and
+   * the §5.3 table is one file per month. This is the same reader the effort
+   * board uses — **there is no second time log** (§5.15), and a project's
+   * hours are found the same way a request's are: by `ref`.
+   */
+  async allEffortEntries(): Promise<TimeEntry[]> {
+    return this.effort.allEntries();
+  }
+
+  /** Open a project note. */
+  showProject(project: ProjectNote): void {
+    const entry = this.projectIndex.byUid(project.uid);
+    if (entry) void this.app.workspace.getLeaf(false).openFile(entry.file);
+  }
+
+  /**
+   * Move a project to another stage.
+   *
+   * The same modal, the same engine, the same writer and the same ledger rows a
+   * request gets. That this method is six lines of lookup around
+   * `this.moveWorkflowNote` is the whole argument of §5.15 holding up.
+   */
+  moveProject(project: ProjectNote): void {
+    const entry = this.projectIndex.byUid(project.uid);
+    const spec = this.workflows.forRequest(project.workflow);
+    if (!entry || !spec) {
+      new Notice(
+        `SCDB: no workflow specification for "${project.workflow || "(unset)"}", so this project cannot be moved. Add one to ${this.settings.folders.config}/workflows/.`,
+        8000,
+      );
+      return;
+    }
+    this.moveWorkflowNote(project, entry.file, spec, () => this.projectIndex.update(entry.file));
+  }
+
+  /** Create a project note and open it. */
+  async createProject(): Promise<void> {
+    const spec = this.workflows.forRequest("project");
+    if (spec === null) {
+      new Notice(
+        `SCDB: no project workflow found. Add "project.yaml" to ${this.settings.folders.config}/workflows/ — settings has a starter, and the stages are yours to name.`,
+        10000,
+      );
+      return;
+    }
+
+    const title = await askText(this.app, {
+      title: "New project",
+      lede: `A months-long piece of work with milestones rather than a requester and an SLA. It opens in "${spec.stages[0]?.label ?? "the first stage"}".`,
+      label: "Title",
+      initial: "",
+      submitLabel: "Create",
+      validate: (value) => (value.trim() === "" ? "A project needs a title." : ""),
+    });
+    if (title === null || title.trim() === "") return;
+
+    try {
+      const file = await this.projectWriter.create({
+        spec,
+        title,
+        hat: this.settings.mode,
+        owner: this.settings.actor,
+      });
+      this.refreshViews();
+      await this.app.workspace.getLeaf(false).openFile(file);
+    } catch (error) {
+      reportError(error, "could not create the project.");
+    }
+  }
 
   /**
    * Every policy note in the vault.

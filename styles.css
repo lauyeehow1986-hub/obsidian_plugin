@@ -2895,3 +2895,67 @@
   padding-left: 8px;
 }
 
+
+/* ------------------------------------------- projects and milestones (5.15) -- */
+
+/*
+ * A project card carries its outstanding milestones inline, because "which
+ * milestone is late" is the question the portfolio board exists to answer and
+ * making it a second click would defeat the point.
+ *
+ * Landed milestones are not rendered at all (see PortfolioBoard), so this list
+ * is always the work still to do.
+ */
+.scdb-milestones {
+  margin: var(--scdb-1) 0 0;
+  padding: 0 0 0 var(--scdb-1);
+  border-left: 2px solid var(--background-modifier-border);
+  list-style: none;
+}
+
+.scdb-milestone {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: baseline;
+  padding: 2px 0;
+  font-size: var(--font-ui-smaller);
+}
+
+.scdb-milestone__id {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.scdb-milestone__title {
+  color: var(--text-normal);
+  /* A long milestone wraps inside the card rather than widening it. */
+  overflow-wrap: anywhere;
+}
+
+/* Why the project is where it is — the line under the title on a card. */
+.scdb-card__note {
+  margin-top: 2px;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+/*
+ * One stage column inside the portfolio. Nested rather than a sibling so the
+ * board reflows to a single column at sidebar width with no media query --
+ * the stages stack, which is the readable shape at 300px.
+ */
+.scdb-group--nested {
+  margin-top: var(--scdb-2);
+  padding-top: 0;
+  border: 0;
+}
+
+.scdb-group--nested .scdb-group__title {
+  font-size: var(--font-ui-smaller);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}

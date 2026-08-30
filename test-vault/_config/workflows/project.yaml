@@ -1,0 +1,39 @@
+# A second workflow spec, for `type: project` notes (CLAUDE.md §5.15, §7 B8).
+#
+# THESE STAGES ARE PLACEHOLDERS, on exactly the same footing as the eData ones
+# in `edata-request.yaml`. They are here so the engine has something to drive
+# and so the portfolio board can be built and tested; they are not a claim about
+# how any real project runs.
+#
+# Replace them with the stages your real projects actually pass through, then
+# bump `version` and use the migration view to move the in-flight notes across.
+# The engine does not care what the stages are called — that is the entire point
+# of this file being config rather than code.
+#
+# Note what is *not* here: no gates. A governance gate is a request concern —
+# it guards the release of data. Whether a project needs one at all is an open
+# question in CLAUDE.md §11, and inventing one to fill the space would be the
+# placeholder mistake §5.2 warns about.
+
+id: project
+version: 1
+label: Project
+
+stages:
+  - { id: scoping,   label: Scoping,        owner: owner,   sla_days: 30 }
+  - { id: approval,  label: Sponsor sign-off, owner: sponsor, sla_days: 21 }
+  - { id: delivery,  label: Delivery,       owner: owner,   sla_days: 180 }
+  - { id: embedding, label: Embedding,      owner: owner,   sla_days: 60 }
+  - { id: closed,    label: Closed,         owner: owner,   terminal: true }
+  - { id: paused,    label: Paused,         owner: owner }
+  - { id: abandoned, label: Abandoned,      owner: owner,   terminal: true }
+
+transitions:
+  - { from: [scoping],   to: [approval, paused, abandoned] }
+  - { from: [approval],  to: [delivery, scoping, paused, abandoned] }
+  - { from: [delivery],  to: [embedding, paused, abandoned] }
+  - { from: [embedding], to: [closed, delivery, paused] }
+  - { from: [paused],    to: [scoping, approval, delivery, embedding, abandoned] }
+
+gates: []
+retired: {}

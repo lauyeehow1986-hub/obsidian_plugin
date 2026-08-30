@@ -23,6 +23,7 @@ import { EffortBoard } from "./EffortBoard";
 import { PublicationsBoard } from "./PublicationsBoard";
 import { PolicyBoard } from "./PolicyBoard";
 import { CatalogueBoard } from "./CatalogueBoard";
+import { PortfolioBoard } from "./PortfolioBoard";
 import { ScriptBoard } from "./ScriptBoard";
 import { FormsBoard } from "./FormsBoard";
 import { AppsBoard } from "./AppsBoard";
@@ -41,6 +42,7 @@ export type CockpitTab =
   | "analytics"
   | "explore"
   | "effort"
+  | "portfolio"
   | "publications"
   | "policies"
   | "catalogue"
@@ -59,6 +61,7 @@ const TABS: { id: CockpitTab; label: string }[] = [
   { id: "analytics", label: "Analytics" },
   { id: "explore", label: "Explore" },
   { id: "effort", label: "Effort" },
+  { id: "portfolio", label: "Portfolio" },
   { id: "publications", label: "Publications" },
   { id: "policies", label: "Policies" },
   { id: "catalogue", label: "Catalogue" },
@@ -584,6 +587,7 @@ export function CockpitPanel({
           />
         )}
         {tab === "effort" && <EffortBoard plugin={plugin} />}
+        {tab === "portfolio" && <PortfolioBoard plugin={plugin} />}
         {tab === "publications" && <PublicationsBoard plugin={plugin} />}
         {tab === "policies" && <PolicyBoard plugin={plugin} />}
         {tab === "catalogue" && <CatalogueBoard plugin={plugin} />}

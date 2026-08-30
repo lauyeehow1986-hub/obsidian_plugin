@@ -1091,6 +1091,29 @@ the same ledger entries a request gets, a milestone reaches the daily briefing w
 second reminder path, a `blocked_by` cycle is refused at parse time naming the cycle, and
 effort logged against a `PRJ-` id rolls up beside effort logged against a `REQ-` id.
 
+*As built.* The "no third engine" check held, and the thing that made it hold is worth
+recording: the transition, dwell, gate and migration modules are now typed against a
+**`WorkflowNote`** — the fields they actually read — rather than against `RequestNote`, which
+is a type-level change with no behaviour change. A project satisfies it, so it drives those
+four modules verbatim; `services/projectWriter.ts` has no `transition` method at all, which is
+the check anyone can run in one grep. Three further decisions the build settled:
+
+- **A project has no `external_ref`, and the field is optional rather than empty.** An empty
+  string reads as "never reconciled", which is a different and untrue claim — there is no
+  upstream system holding the record of truth for a project.
+- **Milestones are projected into the event shape on the read path only.** `EventStore.all()`
+  stays the real notes, and the projection is mixed in by `schedule()`. `materialisePlan`
+  already skips anything with no recurrence rule, so a milestone could not become a write
+  target today; keeping it out of `all()` is what stops that being one refactor away from a
+  computed date landing in a project's frontmatter.
+- **A blocked milestone outranks an overdue one.** Telling somebody to hurry up on M2 when M1
+  is the holdup is the misdirection the whole plugin exists to stop.
+
+The project spec in `_config/workflows/project.yaml` is a **placeholder** on exactly the same
+footing as the eData one, and says so in the file. It declares no gates: §11 asks whether a
+project stage needs one at all, and inventing one to fill the space would be the mistake §5.2
+warns about.
+
 **B9 · Launchers — the systems and documents beside the vault.** One action on a note that
 opens the thing the note is *about*: the request in the eData portal, the instrument in
 REDCap, the countersigned DUA on the SOP share. Targets are declared in
