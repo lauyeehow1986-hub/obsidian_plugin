@@ -17,7 +17,7 @@ notes, and one command opens the record a note is *about* in the system that own
 
 ## Get it
 
-**[Download the latest release](https://github.com/lauyeehow1986-hub/obsidian_plugin/releases/latest)** — version 0.2.0. Save `main.js`,
+**[Download the latest release](https://github.com/lauyeehow1986-hub/obsidian_plugin/releases/latest)** — version 0.3.0. Save `main.js`,
 `manifest.json` and `styles.css` into `<vault>/.obsidian/plugins/scdb-cockpit/`,
 then enable it under Settings → Community plugins. There is a zip of the same
 three files if you prefer one download; the loose files are there because a

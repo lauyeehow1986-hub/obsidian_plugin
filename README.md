@@ -12,7 +12,7 @@ to hand to whoever asks why Obsidian started PowerShell. Together they form a
 GitHub Pages site — see `docs/_config.yml` for the one repository setting that
 turns it on.
 
-**Status: 0.2.0, released.**
+**Status: 0.3.0, released.**
 [Download it](https://github.com/lauyeehow1986-hub/obsidian_plugin/releases/latest)
 — no build step needed. Implemented: requests and governance gates, the query
 engine and boards, the daily rhythm, time and effort, publications, events and

@@ -3,7 +3,7 @@
 All notable changes to SCDB Cockpit. Governance-gate changes get their own
 clearly marked entry (CLAUDE.md §10).
 
-## Unreleased
+## [0.3.0] — 2026-08-30
 
 ### Added — projects, milestones and the portfolio (B8)
 
