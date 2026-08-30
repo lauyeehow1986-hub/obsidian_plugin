@@ -65,6 +65,11 @@ stop and say so.
     capability-limited broker. A note is untrusted input; a note that can silently execute
     code is a delivery mechanism.
 
+    The same holds for anything **outside** the vault. Opening a document, a portal or a
+    script is an explicit action that shows the **resolved destination** first — never a
+    side effect of rendering a note, never a link in note body text that launches on click
+    (§5.16, §7 F4).
+
 Why this is strict: the production vault lives on a **locked-down institutional work laptop**
 and may hold indirectly identifiable material (case IDs in query logs, clinician names in
 follow-up lists). Treat the vault as institutional data at all times, even when developing
@@ -124,6 +129,7 @@ src/
   main.ts              lifecycle, command + view registration only
   domain/              PURE TypeScript. MUST NOT import 'obsidian'.
     request/           workflow engine, dwell/holdup maths, governance gates
+    project/           milestones, dependency edges, portfolio roll-up
     query/             query model, evaluation, text + NL parsing
     audit/             append-only ledger entries, evidence records
     comms/             message composition, URI building, outreach ageing
@@ -142,7 +148,8 @@ src/
     report/            template + query → report document model (also CV, profile)
   data/                vault adapter: frontmatter I/O, the index, file watching
   services/            scheduler, notifier, exporter (HTML/PDF/CSV), protocol launcher,
-                       interpreter host (R/Python), app sandbox, http gateway,
+                       external launcher (URLs + local files), interpreter host
+                       (R/Python/shell), app sandbox, http gateway,
                        optional local LLM client
   ui/                  views, components, charts, cockpit, mode HUD, styles
   settings/            settings schema, migrations, settings tab
@@ -165,6 +172,7 @@ the product**; the UI is replaceable. It must be maintainable by hand.
 ```
 00 Inbox/             quick capture lands here, awaiting triage
 10 Requests/          one note per eData / data request
+15 Projects/          one note per multi-month project, with milestones
 20 Studies/           one note per study or registry
 30 People/            clinicians, coordinators, requesters, approvers
 40 Policies/          current policies and SOPs
@@ -185,7 +193,8 @@ the product**; the UI is replaceable. It must be maintainable by hand.
 92 Apps/              vault mini-apps (JS), each with a manifest
 94 Runs/              execution provenance records
 95 Exports/           generated HTML, PDF and CSV artefacts
-_config/              workflow definitions, vocabularies, report and CV templates
+_config/              workflow definitions, vocabularies, report and CV templates,
+                      launch targets
 _templates/           note templates
 ```
 
@@ -432,7 +441,7 @@ Logged actions: `stage-change`, `gate-override`, `identifier-scope`, `evidence-a
 where the setting is governance-relevant, `correction`, and — added by later tracks, each
 for the reason below — `message-composed` (§5.11), `code-run` and `run-recorded` (§5.12),
 `policy-revision` (§7 C1), `variable-revision` (§5.8), `app-granted` and `app-write`
-(§5.13), `source-fetch` (§7 E1), and `mailbox-read` (§7 E2).
+(§5.13), `source-fetch` (§7 E1), `mailbox-read` (§7 E2), and `external-open` (§5.16).
 
 **Each of those is its own action rather than a borrowed one**, on the same argument that
 earns `export` its place: an auditor asks *when did this happen and who did it*, and has to
@@ -449,6 +458,15 @@ either: nothing left the machine, and a row implying otherwise would be as misle
 claiming a send. It records that this vault read local mail, with counts and folder names and
 nothing else — the question "when did this plugin last look at my email" has to be answerable
 by action.
+
+`external-open` is the fifth, and it is the only logged action that leaves **no artefact
+at all**. An export writes a file; a run writes a record; a launch writes nothing anywhere —
+so without a row there is simply no trace that this vault sent you to that record on that
+day. It is not `source-fetch`: nothing crossed a network, and a row implying otherwise would
+be as misleading as one claiming a send. It is not `export`: nothing left the vault either.
+It carries the target id and the **resolved** destination, and it is written for a **refused**
+launch as well as a successful one — a path that tried to escape its root is the row worth
+having.
 
 **A gate override always requires a typed reason.** Refusing to give one cancels the override.
 That single rule is most of the audit value.
@@ -716,6 +734,8 @@ styling stays in `styles.css` under an `scdb-` prefix.
 
 ### 5.14 Other note types
 
+- `type: project` in `15 Projects/` — a multi-month piece of work with milestones and
+  deliverables, governed by a workflow spec exactly as a request is (§5.15).
 - `type: scdb-view` in `90 Dashboards/` — a saved query, stored as markdown frontmatter.
 - `type: capture` in `00 Inbox/` — raw quick-capture, awaiting triage.
 - `type: redcap-form` in `88 Forms/` — see §7.
@@ -736,6 +756,118 @@ styling stays in `styles.css` under an `scdb-` prefix.
 - `type: source-briefing` in `90 Dashboards/Briefings/` — what was kept from one external
   search (§7 E1), carrying the query, the host, the literal URL, the time, how many matched
   and how many were kept. A snapshot of one search on one day, and it says so on its face.
+
+### 5.15 Projects — `15 Projects/`
+
+A request is a unit of work with a customer and an SLA. A **project** is the other shape: the
+governance rollout, the catalogue build, the grant submission — months long, several
+deliverables, no single requester, and worn mostly under the `research-core` hat, which is
+today the least served of the three.
+
+**It is not a new engine.** A project is a note with stages, an owner, a due date and a
+`history`, which is exactly what the workflow engine already consumes. `_config/workflows/`
+gains a second spec; the transition engine, dwell maths, gates, the migration view and the
+audit trail all apply unchanged. If a proposed project feature cannot be expressed as a
+workflow spec plus a query, that is the signal to stop and ask — not to fork the engine.
+
+```yaml
+---
+type: project
+uid: 01J9…                       # same identity rules as §5.2: uid is machine, id is human
+id: PRJ-2026-004
+title: Research data governance rollout
+workflow: project                # a second spec, not a special case
+workflow_version: 1
+stage: delivery
+hat: research-core
+owner: "[[Owner]]"
+sponsor: "[[Prof C Lim]]"        # who has to keep wanting this for it to survive
+started: 2026-05-01
+due: 2026-12-31
+studies: ["[[EuroHeart]]"]
+requests: ["[[REQ-2026-014]]"]   # work done inside the project, for the effort roll-up
+milestones:
+  - { id: M1, title: Baseline audit complete, due: 2026-06-30, done: 2026-06-27 }
+  - { id: M2, title: SOP approved by committee, due: 2026-09-30,
+      blocked_by: [M1], event: "[[Governance committee Sep]]" }
+deliverables:
+  - { title: Departmental data flow map, kind: diagram, note: "[[DIA-dataflow]]" }
+history:
+  - { at: 2026-05-01, to: scoping, by: yh }
+---
+```
+
+Three things earn their place, and nothing else does:
+
+- **Milestones roll up through the engines that exist.** A milestone with a `due` is an event
+  (§5.7): it appears in the daily briefing and on the deadline board like any other date. It
+  is not a second reminder system, and building one would mean two places to look for what is
+  late — which is the failure this whole plugin exists to avoid.
+- **`blocked_by` is the one primitive the model genuinely lacks.** A request's `blocked_on`
+  names a *person*; nothing anywhere names a *predecessor*. That edge is what lets a portfolio
+  view say "M2 cannot move because M1 has not landed", and it is the only new concept here.
+  Cycles are refused at parse time with the cycle named, the same way a bad workflow spec is.
+- **Effort attributes through `ref`, not through a new log.** §5.3's table already carries
+  `ref` and `cost_centre`, and `ref` takes a `PRJ-` id as readily as a `REQ-` one. Per-project
+  effort, estimate-versus-actual and chargeback are then the existing roll-ups with a
+  different key. **No second time log, ever.**
+
+**Explicitly not built:** Gantt charts (the backlog declines them and the reason holds — they
+imply a precision knowledge work does not have), resource levelling, percent-complete, and
+burndown. A milestone is done or it is not; a deliverable exists or it does not. Anything that
+asks "how complete is this, roughly" is a number nobody can defend six months later, which is
+the standard everything else here is held to.
+
+### 5.16 Launch targets — `_config/launchers.yaml`
+
+The vault sits beside systems it does not own: the eData portal, REDCap, the intranet SOP
+library, a share of scanned approvals. Retyping a search into a browser to reach the record a
+note is already about is daily friction, and closing it is the whole of §7 B9.
+
+**The launcher never takes a destination from note content.** §5.11 rule 4 already forbids
+opening a URL from a note; this extends the identical rule to files. A target is declared in
+config and the note supplies only a *value* substituted into it:
+
+```yaml
+targets:
+  - id: edata
+    label: Open in eData
+    kind: url                                  # url | file
+    template: "https://edata.example.org/request/{external_ref}"
+    applies_to: scdb-request
+    field: external_ref                        # the only note-derived part
+    pattern: "^[A-Za-z0-9-]{3,40}$"            # what that field is allowed to contain
+  - id: sop-library
+    label: Open SOP
+    kind: file
+    root: '\\fileserver\SOPs'                # resolved paths must stay under this
+    extensions: [pdf, docx]
+```
+
+The rules the module enforces, each because the failure it prevents is real:
+
+1. **The template is config; the substitution is one field, shape-checked before use.** A
+   value failing `pattern` refuses outright. That is what stops `external_ref: ../../admin`
+   and a value carrying `?redirect=` alike.
+2. **Percent-encode the substituted value, always**, and only ever into a path or query
+   segment — never into the scheme or the host.
+3. **Files resolve first and are checked second.** Resolve symlinks, junctions and `..` to a
+   real absolute path; confirm *that* path is still under `root`; confirm the extension of
+   *that* path is allowed. A file called `report.pdf` that is really `report.pdf.exe` is the
+   case this catches, and checking the string in the note instead would miss it.
+4. **The extension allowlist is documents, never executables.** `.lnk`, `.url`, `.scr`,
+   `.hta`, `.bat`, `.cmd`, `.ps1`, `.js`, `.jar`, `.msi` are refused whatever the config says,
+   because handing any of them to the shell is code execution wearing a document's name.
+   Running something deliberately is §7 F4, and it goes through a different door.
+5. **Files go through `shell.openPath`, never `openExternal` with a `file:` URL.** They are
+   not equivalent: a `file:` URL goes through the protocol handler table, which is the surface
+   §5.11 rule 4 exists to keep closed. URL targets go through the existing allowlist check,
+   restricted here to `https:`.
+6. **The resolved destination is shown before launching**, in full — not the label, not the
+   template. What is shown is what is opened.
+7. **External browser, never an embedded one.** No `webview`, no `<iframe>` aimed at an
+   institutional system. Embedding one would put a live SSO session inside the process that
+   holds vault access, and every corporate policy objecting to that is right to.
 
 ---
 
@@ -936,6 +1068,37 @@ Templates to ship:
 Design rule: the CV templates own *layout only*. No CV-specific data lives outside
 `84 Profile/` and `85 Publications/`, so adding a section never means re-entering data.
 
+**B8 · Projects, milestones and the portfolio view.** The `type: project` note (§5.15) driven
+by a second workflow spec; milestones surfacing through the existing event and briefing
+engines; `blocked_by` edges between milestones; and one portfolio board — every project by
+stage, what each is waiting on, which milestones are late, and effort to date against
+estimate.
+
+It sits after B7 because the portfolio report is a report *template*, not a new renderer, and
+after B3 because a milestone is an event. **If it needs a third engine, the design is wrong**
+— that is the check to apply to every feature request that lands on this phase.
+
+*Done when:* a project can be driven through its spec from the UI with the same refusals and
+the same ledger entries a request gets, a milestone reaches the daily briefing without a
+second reminder path, a `blocked_by` cycle is refused at parse time naming the cycle, and
+effort logged against a `PRJ-` id rolls up beside effort logged against a `REQ-` id.
+
+**B9 · Launchers — the systems and documents beside the vault.** One action on a note that
+opens the thing the note is *about*: the request in the eData portal, the instrument in
+REDCap, the countersigned DUA on the SOP share. Targets are declared in
+`_config/launchers.yaml` (§5.16) and the note supplies one shape-checked field, nothing more.
+
+Deliberately small, and the cheapest useful thing left in Track B: the scheme allowlist, the
+Electron shell wrapper and the clipboard fallback all exist in `services/protocol` from B1, so
+this extends one module rather than adding a second place where a mistake becomes an executed
+program. The genuinely new surface is path resolution, and that is where the care goes
+(§5.16 rule 3).
+
+*Done when:* a request opens in the browser at its `external_ref` with the URL shown first, a
+document on a share opens by resolved path with that path shown first, a path escaping its
+root is refused naming the root, an executable extension is refused whatever the config says,
+and every launch **and refusal** is in the ledger.
+
 ### Track C — Governance
 
 **C1 · Policy register and revision tracking.** Drop in a policy or SOP; the plugin freezes the
@@ -1055,6 +1218,39 @@ Obsidian's UI thread, and a wedged interpreter must be killable without restarti
 
 All three run in the same sandboxed-iframe-plus-broker model. Capabilities are declared per
 app and enforced by the broker, not by convention.
+
+**F4 · Batch and shell scripts, on the F1 harness.** Run a `.bat`, `.cmd` or `.ps1` from a
+note the way F1 runs R and Python: explicit action, contents shown, out of process, timeout,
+killable, run record (§5.12), `code-run` in the ledger.
+
+**Architecturally this is small, and that is not the hard part.** The spawn discipline already
+exists in `services/interpreter` — `shell: false`, array arguments, a controlled working
+directory outside the vault, a kill path. Adding a third language is a day's work. What is
+different is why it is late in the queue rather than early:
+
+- **There is no `--vanilla` for a batch file.** `Rscript --vanilla` and `python -I` each
+  neuter a specific ambient-code trap. A `.bat` is arbitrary OS command execution with the
+  full privileges of whoever is logged in, and no flag hardens it. The mitigation is not a
+  flag, it is scope: the file lives under the configured scripts root, its contents are shown
+  before it runs, and its hash goes into the run record.
+- **It changes what a note can do.** Today the worst a hostile note achieves is persuading a
+  human to click something. A general script runner turns a dropped folder — an imported zip,
+  a colleague's "SOP pack" — into a delivery mechanism, which is precisely what rule 12
+  exists to prevent. Therefore: no run-on-open, no run-from-a-link-in-the-body, no run without
+  the dialog, and a **hard refusal** for any file outside the scripts root rather than a
+  warning that can be clicked through.
+- **Hash at launch, not at display.** §5.12's `script_hash` already means "what actually ran";
+  here it also closes the gap between the confirm dialog and the spawn. Read the bytes once:
+  show those bytes, hash those bytes, run those bytes.
+- **On a monitored machine this is louder than the Outlook reader, and cannot be made as
+  legible.** `docs/outlook-reader.md` works because that script is a constant compiled into
+  the bundle, so the disclosure matches what runs character for character. A file on disk is
+  not a constant, and the honest page for F4 says something weaker: here is the hash of what
+  ran, here is where it lives, here is the ledger row.
+
+*Done when:* a script under the scripts root runs from a dialog showing its contents, one
+outside it is refused by path rather than by warning, the run record names the hash of the
+bytes that were executed, and the ledger carries the row.
 
 ### Backlog — suggested, considered, not scheduled
 
@@ -1206,6 +1402,17 @@ current, and it was 8 KB against a real bundle of 860 KB.
   activation on a locked-down machine is where this usually breaks).
 - **B7:** which CV format does the institution actually require — a local template, an NMRC
   or grant biosketch layout, or free-form? Supply one real example to build the template from.
+- **B8 (blocking the workflow spec):** name three real projects and what their stages are
+  called. The engine does not care what they are, but a project spec invented here would be
+  the same placeholder mistake §5.2 warns about. Also: does any project stage need a
+  *governance gate*, or are gates a request-only concern?
+- **B9 (blocking, and answerable in one minute each):** does the eData portal have a per-record
+  URL you can paste — open one request and look at the address bar? Does REDCap? And is the
+  SOP library reachable by a file path from the laptop, or only through a browser?
+- **F4 (blocking, and possibly answering itself):** what would you actually run? If the answer
+  is the R or Python pipeline, F1 already covers it and F4 should not be built. F4 earns its
+  place only for something that is genuinely a shell script. Also whether the machine permits
+  `cmd.exe` at all — the same question as §11's PowerShell one, and likely the same answer.
 - **Team rollout:** when coordinators join, shared vault or read-only export? That decision
   changes ID allocation and the conflict story.
 
