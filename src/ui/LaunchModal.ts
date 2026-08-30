@@ -87,6 +87,12 @@ export class LaunchModal extends Modal {
       // A refusal is shown, never swallowed: a launcher that quietly declines
       // is indistinguishable from one that is broken (§8, errors reach the
       // user as plain language plus a next action).
+      //
+      // And it is logged here rather than left to `open`, which a refusal never
+      // reaches while this dialog is on. Without this the ledger row §5.6
+      // promises for a refused launch would exist only for people who had
+      // turned the dialog off.
+      void this.launcher.logRefusal(target, this.request.subject, decision.why);
       this.contentEl.createEl("p", { cls: "scdb-modal__lede", text: decision.why });
       this.actions(null, target, value);
       return;

@@ -178,6 +178,23 @@ export class Launcher {
     return decision;
   }
 
+  /**
+   * Record a refusal the confirm dialog caught, so the guarantee does not
+   * depend on a setting.
+   *
+   * `resolve` writes nothing — previewing is not an action. But with the
+   * confirm dialog on (the default) a refused target never reaches `open`,
+   * which would mean the row §5.6 promises for a refusal only ever appeared
+   * for people who had switched confirmation *off*. A guarantee that holds in
+   * one configuration and not the other is not a guarantee. The dialog calls
+   * this instead, at the point the person actually asked for the launch, and
+   * there is no double entry because a refusal offers no way through to
+   * `open`.
+   */
+  async logRefusal(target: LaunchTarget, subject: string, why: string): Promise<void> {
+    await this.log(target, subject, `refused: ${why}`);
+  }
+
   private async log(target: LaunchTarget, subject: string, detail: string): Promise<void> {
     try {
       await this.deps.audit.append([

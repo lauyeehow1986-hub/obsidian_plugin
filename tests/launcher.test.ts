@@ -274,6 +274,19 @@ describe("resolve and open agree on the destination", () => {
     expect(h.opened).toEqual(["C:\\SOPs\\real\\a.pdf"]);
   });
 
+  it("records a refusal the dialog caught, so the row does not depend on a setting", async () => {
+    // With the confirm dialog on — the default — a refused target never
+    // reaches `open`. Without this path the ledger row §5.6 promises for a
+    // refusal would exist only for people who had turned the dialog off.
+    const h = harness({ real: {} });
+    const preview = await h.launcher.resolve(SOPS, "gone.pdf");
+    expect(preview.ok).toBe(false);
+    expect(h.rows).toEqual([]);
+    if (!preview.ok) await h.launcher.logRefusal(SOPS, "REQ-2026-014", preview.why);
+    expect(only(h.rows, "ledger row").action).toBe("external-open");
+    expect(only(h.rows, "ledger row").detail).toContain("refused");
+  });
+
   it("previewing does not open anything or write a row", async () => {
     const h = harness({ real: { "C:\\SOPs\\a.pdf": "C:\\SOPs\\a.pdf" } });
     await h.launcher.resolve(SOPS, "a.pdf");
