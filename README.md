@@ -1,8 +1,9 @@
 # SCDB Cockpit
 
 An Obsidian plugin for running a clinical data collection facility: data-request
-tracking with governance gates, effort measurement, publications, and the audit
-trail behind all of it. Offline-first, no telemetry, no network calls by default.
+and project tracking with governance gates, effort measurement, publications, and
+the audit trail behind all of it. Offline-first, no telemetry, no network calls by
+default.
 
 **Documentation:** [the guide](docs/guide.md) covers every feature with
 screenshots, [the testing checklist](docs/testing-checklist.md) is what to verify
@@ -13,17 +14,21 @@ turns it on.
 
 **Status: 0.2.0, released.**
 [Download it](https://github.com/lauyeehow1986-hub/obsidian_plugin/releases/latest)
-— no build step needed. Every build track in the plan is now implemented:
-requests and governance gates, the query engine and boards, the daily rhythm,
-time and effort, publications, events and obligations, the policy register, the
-variable catalogue, script provenance, reports and the CV, flowcharts, REDCap
-forms, R and Python execution, vault apps, external sources, and reading Outlook.
+— no build step needed. Implemented: requests and governance gates, the query
+engine and boards, the daily rhythm, time and effort, publications, events and
+obligations, projects and the portfolio, the policy register, the variable
+catalogue, script provenance, reports and the CV, flowcharts, REDCap forms, R and
+Python execution, vault apps, external sources, reading Outlook, and opening the
+systems and documents that sit beside the vault.
 
-Three things are deliberately **not** done, and each is waiting on something only
-the target machine can supply: REDCap **project ODM XML** export needs one real
-project XML as a reference, the Outlook read path has **never been run against a
-live mailbox**, and the workflow stages in `_config/workflows/` are
-**placeholders** to be swapped for the real eData ones. See
+Four things are deliberately **not** done, and each waits on something only the
+target machine or its owner can supply: REDCap **project ODM XML** export needs
+one real project XML as a reference; the Outlook read path has **never been run
+against a live mailbox**; the workflow stages in `_config/workflows/` — for
+requests and for projects alike — are **placeholders** to be swapped for the real
+ones; and **launching applications and running scripts** is planned but unbuilt,
+because the whole safety argument rests on a config file naming the actual
+executables, and a config written here would be a guess. See
 [what to test](docs/testing-checklist.md) for the full list and what unblocks each.
 
 The design lives in [CLAUDE.md](CLAUDE.md) — architecture, the vault contract,
@@ -339,6 +344,52 @@ Reminders themselves are in-app only: the status-bar badge, the Deadlines board
 and an Obsidian notice. No OS notification and no email — a work laptop cannot be
 relied on for either, and a reminder that silently fails to arrive is worse than
 one that never promised to.
+
+## Projects and the portfolio
+
+A request has a customer and an SLA. A project is the other shape — months long,
+several deliverables, no single requester: the governance rollout, the catalogue
+build, the grant submission. **New project** creates one, and **Show the project
+portfolio** puts them all on one board by stage, with what each is waiting on and
+the time spent against the estimate.
+
+It is not a second engine, and that is the point. A project note carries stages,
+an owner, a due date and a `history`, which is exactly what the workflow engine
+already reads — so moving one through its stages gives you the same refusals, the
+same typed reason when a gate is overridden, and the same rows in the audit
+ledger a request gets. The stages live in `_config/workflows/project.yaml` and,
+like the eData ones, **are placeholders**: replace them with the stages your
+projects actually pass through, bump `version`, and bring the in-flight notes
+across in the migration view.
+
+Milestones are dated steps inside the note:
+
+```yaml
+milestones:
+  - { id: M1, title: Baseline audit complete, due: 2026-06-30, done: 2026-06-27 }
+  - { id: M2, title: SOP approved, due: 2026-09-30, blocked_by: [M1] }
+```
+
+Three things follow, each deliberate:
+
+- **`blocked_by` names a predecessor** — the one thing the model did not have,
+  since `blocked_on` on a request names a *person*. A milestone waiting on one
+  that has not landed reads as **blocked**, not overdue, even once its own date
+  has passed: the predecessor is the real holdup, and chasing the wrong one is
+  the mistake this exists to prevent. A cycle is refused when the note is read,
+  with the loop named.
+- **A dated milestone reaches the deadline board and the briefing** through the
+  engine that already handles dates. There is no second reminder path, because
+  two places to look for what is late is the failure this whole plugin exists to
+  avoid.
+- **Effort goes in the same time log**, against the `PRJ-` id in the `ref`
+  column of `80 Time/`. There is no separate project log and never will be;
+  estimate-versus-actual, the per-person roll-up and cost-centre chargeback are
+  the existing reports with a different key.
+
+`done` is a date, not a tick. There is no percent-complete, no burndown and no
+Gantt chart anywhere in this plugin — they imply a precision knowledge work does
+not have, and a number nobody can defend six months later is worse than none.
 
 ## Reports, the CV and the research profile
 
@@ -788,6 +839,42 @@ To restore into a fresh vault:
 exactly as it is and reported as skipped, so running it against a live vault
 fills gaps and can never overwrite work done since the snapshot. To roll a note
 back to a snapshot version, move the current one aside first.
+
+## Opening things outside the vault
+
+A note about a request is not the request. The record of truth lives in the
+institutional portal, the countersigned DUA lives on a share, and reaching either
+usually means retyping a search into a browser. **Open this note externally** does
+it in one press.
+
+It is off until you switch it on, and does nothing until
+`_config/launchers.yaml` names a target — settings writes a commented starter for
+you to adapt. Targets come in three kinds: `url` substitutes one note field into
+an `https:` template, `file` opens a document under a configured root, and
+`folder` reveals a location in the file manager and stops there. The last is the
+dullest and the most useful — opening a file manager executes nothing, and "show
+me where this lives" is most of what file management from a notes app actually
+means.
+
+What it will not do, each refusal naming itself:
+
+- **Take a destination from a note.** The template is config; the note supplies
+  at most one field, and only if it matches the pattern you set for it. Same rule
+  as an address in a composed message, and for the same reason — notes get pasted
+  out of email.
+- **Trust a path before resolving it.** A `report.pdf` that is really
+  `report.pdf.exe`, or a shortcut inside an allowed folder pointing somewhere
+  else, is refused. Neither is something a check on the text in the note could
+  have caught.
+- **Open an executable.** `.exe`, `.lnk`, `.hta`, `.bat`, `.ps1`, `.msi` and the
+  rest are refused whatever the config lists, and the config is told so by name
+  rather than having the line quietly ignored.
+
+Unless you turn the confirmation off you see the **resolved** destination — the
+real path, the built URL — before anything happens. Every launch is logged as
+`external-open`, and so is every refusal: a launch is the only thing this plugin
+does that leaves no other trace, so without that row there would be no way to
+answer "when did this vault send me to that record".
 
 ## When something looks wrong
 

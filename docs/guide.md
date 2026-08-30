@@ -614,6 +614,7 @@ Everything is markdown. If the plugin were uninstalled tomorrow the vault would 
 |---|---|
 | `00 Inbox/` | Quick capture, awaiting triage |
 | `10 Requests/` | One note per data request |
+| `15 Projects/` | One note per multi-month project, with its milestones |
 | `20 Studies/` | Studies and registries |
 | `30 People/` | Requesters, approvers, coordinators |
 | `40 Policies/` | Current policies; frozen prior versions under `_revisions/` |
@@ -632,7 +633,7 @@ Everything is markdown. If the plugin were uninstalled tomorrow the vault would 
 | `92 Apps/` | Vault mini-apps |
 | `94 Runs/` | Execution provenance records |
 | `95 Exports/` | Generated HTML, PDF and CSV |
-| `_config/` | Workflow specs, vocabularies, report and message templates |
+| `_config/` | Workflow specs, vocabularies, report and message templates, launch targets |
 
 Frontmatter edits **merge** — keys the plugin does not know about survive untouched. Every
 write goes through Obsidian's own vault APIs, never the filesystem, never outside the vault.
