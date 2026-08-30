@@ -12,6 +12,7 @@ import {
 import { buildMailto, buildTeamsChat, MIN_URI_CEILING } from "../domain/comms/uri.js";
 import { probeHandler, reportLaunch } from "../services/protocol.js";
 import { probeOutlook } from "../services/outlookBridge.js";
+import { OutlookScriptModal } from "../ui/OutlookScriptModal.js";
 import { LANGUAGE_LABELS, type RunLanguage } from "../domain/compute/block.js";
 import {
   DECLINED_NOTE,
@@ -392,6 +393,19 @@ export class ScdbSettingsTab extends PluginSettingTab {
             button.setDisabled(false);
             button.setButtonText("Check Outlook");
           }
+        }),
+      );
+
+    new Setting(containerEl)
+      .setName("Show what runs")
+      .setDesc(
+        "The exact PowerShell this plugin would start, in full, with nothing hidden. Reads no " +
+          "mail. If your machine flags Obsidian for starting PowerShell, this is the answer to " +
+          "the question — copy it and hand it over.",
+      )
+      .addButton((button) =>
+        button.setButtonText("Show what runs").onClick(() => {
+          new OutlookScriptModal(this.app).open();
         }),
       );
 

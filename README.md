@@ -195,6 +195,15 @@ import instead. Settings has a **Check Outlook** button that answers this in one
 press: it asks Outlook its version and nothing else, opening no folder and
 reading no message.
 
+**If your machine is monitored, this will be noticed — and that is answerable.**
+Starting PowerShell from Obsidian with a base64 argument is a shape endpoint
+monitoring is built to look at. Settings has **Show what runs**: both scripts in
+full, the command line and every parameter, copyable, and reachable whether or
+not the reader is switched on. The scripts are constants, so the plaintext
+matches the encoded argument in the alert character for character — decode it and
+compare. [docs/outlook-reader.md](docs/outlook-reader.md) is the covering page to
+hand to whoever asks.
+
 A message read this way and the same message dragged in as a `.msg` land in
 **one** thread, not two. They derive identity the same way, on purpose, because
 two implementations of a thread key would be two threads.

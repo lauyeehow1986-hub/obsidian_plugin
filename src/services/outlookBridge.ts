@@ -32,6 +32,23 @@
  *    interpolated into PowerShell source. `-EncodedCommand` carries the script
  *    as one base64 argument, so there is no temp file to write (rule 8 keeps us
  *    out of `fs`) and no quoting for anything to escape from.
+ *
+ * ## Why not feed the script on stdin — tested, not assumed
+ *
+ * A base64 argument is a shape endpoint monitoring keys on, and on a managed
+ * laptop a legible command line would be worth having, so `-Command -` was
+ * measured rather than reasoned about. **It does not work.** When stdin is a
+ * pipe — which is what `spawn` gives it — Windows PowerShell 5.1 exits 0 having
+ * executed nothing: no output, no error, empty stderr, reproducibly. A file
+ * redirect fares slightly better and is not available to us without writing a
+ * script to disk, which rule 8 forbids and which would drag execution policy
+ * back into scope.
+ *
+ * A silent empty result is the worst failure this module could have — it is
+ * indistinguishable from a quiet mailbox, and it would have been discovered as
+ * "the sync finds nothing" months later. So the base64 stays, and the answer to
+ * the monitoring problem is `disclosure()`: the exact plaintext, one click away
+ * in settings, matching the encoded argument character for character.
  *  - **The reply comes back base64-encoded.** PowerShell 5.1 writes stdout in
  *    the console codepage, and the whole point of a mailbox reader is text full
  *    of smart quotes, £ signs and accented names — the exact bytes the `.eml`
@@ -299,6 +316,27 @@ export function encodeCommand(script: string): string {
   return Buffer.from(bytes).toString("base64");
 }
 
+/**
+ * The switches, in one place because they are a security claim.
+ *
+ * **`-ExecutionPolicy Bypass` is deliberately absent.** Execution policy
+ * governs script *files*; `-EncodedCommand` carries a command, and commands are
+ * not subject to it — verified on a machine whose LocalMachine policy is
+ * `AllSigned`, where the reader runs unchanged without the switch. So the flag
+ * bought nothing, and it is one of the two shapes endpoint monitoring keys on
+ * hardest. Dropping an argument we never needed is not evasion; carrying one we
+ * cannot justify is what would be hard to defend.
+ *
+ * `-NonInteractive` stays: it is the difference between a child that fails and
+ * one that sits waiting for input nobody can see.
+ */
+const SWITCHES = ["-NoProfile", "-NonInteractive", "-NoLogo"] as const;
+
+/** The full argument list, so the two spawns cannot drift apart. */
+export function commandLine(script: string): string[] {
+  return [...SWITCHES, "-EncodedCommand", encodeCommand(script)];
+}
+
 /** `yyyy-MM-dd HH:mm`, the one format the script parses, invariant culture. */
 export function sinceArgument(date: Date): string {
   const pad = (n: number) => String(n).padStart(2, "0");
@@ -344,6 +382,57 @@ try {
 }
 `;
 
+/**
+ * Everything this plugin would run, as text a person can hand to whoever asks.
+ *
+ * On a monitored machine the reader shows up as Obsidian starting
+ * `powershell.exe` with a base64 argument, which is — legitimately — a shape
+ * endpoint monitoring is built to notice. The encoding is a transport
+ * requirement, not concealment: `-EncodedCommand` is the only route that works
+ * (see the note on stdin above), and the plaintext is right here.
+ *
+ * So the answer to an alert is not an argument, it is a comparison. Decode the
+ * base64 from the process-creation event, compare it to this, and the two match
+ * character for character — the scripts are constants, assembled from nothing.
+ * That is the whole reason this is built from the same values the spawn uses
+ * rather than written out separately in a document that could drift.
+ */
+export function disclosure(): string {
+  return [
+    "SCDB Cockpit — what the Outlook reader runs",
+    "",
+    "Started only by an explicit action: the 'Read new mail from Outlook' command,",
+    "or the 'Check this machine' button in settings. There is no scheduler, no",
+    "timer and no vault-open hook, so it never runs on its own.",
+    "",
+    "It attaches to an Outlook that is already running and reads mail items. It",
+    "makes no network connection, writes no file, changes nothing in the mailbox,",
+    "and exits in about a second under a hard timeout.",
+    "",
+    "COMMAND LINE",
+    "",
+    `  powershell.exe ${SWITCHES.join(" ")} -EncodedCommand <UTF-16LE base64 of one script below>`,
+    "",
+    "ENVIRONMENT VARIABLES (the only parameters; nothing is ever placed in the",
+    "script text itself)",
+    "",
+    "  SCDB_FOLDERS   inbox, sent, or both",
+    "  SCDB_SINCE     the oldest date to read, as yyyy-MM-dd HH:mm",
+    "  SCDB_MAX       hard cap on how many items are returned",
+    "  SCDB_MAXBODY   longest message body kept, in characters",
+    "",
+    "SCRIPT 1 of 2 — the version check, run by the settings button. Opens no",
+    "folder and reads no message.",
+    "",
+    PROBE.trim(),
+    "",
+    "SCRIPT 2 of 2 — the reader, run by the command.",
+    "",
+    SCRIPT.trim(),
+    "",
+  ].join("\n");
+}
+
 export interface OutlookProbe {
   running: boolean;
   /** Outlook's version when it answered, else "". */
@@ -363,11 +452,10 @@ export function probeOutlook(timeoutMs = 20_000): Promise<OutlookProbe> {
       resolve(probe);
     };
 
-    const child = spawn(
-      "powershell.exe",
-      ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand", encodeCommand(PROBE)],
-      { shell: false, windowsHide: true },
-    );
+    const child = spawn("powershell.exe", commandLine(PROBE), {
+      shell: false,
+      windowsHide: true,
+    });
 
     const deadline = setTimeout(
       () => {
@@ -447,14 +535,7 @@ export function readOutlook(request: OutlookReadRequest): Promise<BridgeRun> {
 
     const child = spawn(
       "powershell.exe",
-      [
-        "-NoProfile",
-        "-NonInteractive",
-        "-ExecutionPolicy",
-        "Bypass",
-        "-EncodedCommand",
-        encodeCommand(SCRIPT),
-      ],
+      commandLine(SCRIPT),
       {
         // Array arguments and no shell: there is no command string for
         // anything to be appended to, which is the same rule F1 applies to

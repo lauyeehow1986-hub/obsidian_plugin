@@ -5,6 +5,45 @@ clearly marked entry (CLAUDE.md §10).
 
 ## Unreleased
 
+### Changed — the Outlook reader on a monitored machine
+
+The reader starts `powershell.exe` with a base64 argument, which on a managed
+laptop is a shape endpoint monitoring is built to notice — and rightly. Three
+changes, none of them about being quieter.
+
+**`-ExecutionPolicy Bypass` is gone.** Execution policy governs script *files*;
+an encoded command is not one, so the switch achieved nothing — measured on this
+machine, whose LocalMachine policy is `AllSigned`, where the reader runs
+unchanged without it. It was one of the two flags security tooling keys on
+hardest and it bought us nothing. Dropping an argument we never needed is not
+evasion; carrying one we cannot justify is what would be hard to defend. A test
+pins its absence so it cannot drift back in as cargo.
+
+**Settings → Show what runs**, reachable whether or not the reader is switched
+on, and reading no mail. It prints both scripts in full, the command line and
+the four environment variables, with a Copy button. The point is that an alert
+becomes a comparison rather than an argument: decode the base64 from the
+process-creation event, compare, and it matches character for character, because
+the script is a constant assembled from nothing. Built from the same values the
+spawn uses, so it cannot describe something other than what runs — a hand-copied
+script in a document would drift, and a stale one shown to a security team is
+worse than showing nothing.
+
+**`docs/outlook-reader.md`**, a page to hand to whoever asks: what starts it
+(two explicit presses, no scheduler), what it will not do, how to verify an
+alert, and what happens if PowerShell is not permitted at all.
+
+**Feeding the script on stdin was tried first, and does not work.** A legible
+command line would have been better than a base64 blob, so `-Command -` was
+measured rather than reasoned about: on Windows PowerShell 5.1.26100, when stdin
+is a pipe — which is what `spawn` gives it — the process exits 0 having executed
+nothing. No output, no error, empty stderr, three times out of three. That is
+the worst failure this module could have, indistinguishable from a quiet mailbox
+and discoverable months later as "the sync finds nothing". Writing a `.ps1` to
+disk was rejected on rule 8, and would drag execution policy back into scope.
+The finding is recorded in the module so it is not re-attempted as an
+improvement.
+
 ### Added — E2, reading the running Outlook
 
 The last unbuilt track. **Read new mail from Outlook** attaches to the Outlook

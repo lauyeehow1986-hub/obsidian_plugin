@@ -14,7 +14,13 @@
 
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { encodeCommand, MAX_BODY_CHARS, sinceArgument } from "../src/services/outlookBridge";
+import {
+  commandLine,
+  disclosure,
+  encodeCommand,
+  MAX_BODY_CHARS,
+  sinceArgument,
+} from "../src/services/outlookBridge";
 import { readSummary, windowStart } from "../src/services/outlookSync";
 
 const SOURCE = "src/services/outlookBridge.ts";
@@ -99,8 +105,62 @@ describe("nothing from the vault reaches PowerShell source", () => {
     // Windows PowerShell, not pwsh: `Marshal.GetActiveObject` is a .NET
     // Framework API and does not exist in .NET Core.
     expect(text).toContain('"powershell.exe"');
-    expect(text).toContain("-NoProfile");
-    expect(text).toContain("-NonInteractive");
+    expect(commandLine("x")).toContain("-NoProfile");
+    expect(commandLine("x")).toContain("-NonInteractive");
+  });
+
+  it("does not ask to bypass execution policy", () => {
+    // Execution policy governs script *files*, and an encoded command is not
+    // one — checked on a machine set to AllSigned, where the reader runs
+    // unchanged without the switch. So it bought nothing, and it is one of the
+    // shapes endpoint monitoring keys on hardest. A flag we cannot justify is
+    // the one that is hard to defend; this pins its absence so it does not
+    // drift back in as cargo.
+    expect(commandLine("x").join(" ")).not.toContain("ExecutionPolicy");
+  });
+
+  it("spawns both scripts through one argument builder", () => {
+    // Two spawn sites assembling their own arguments are two places for a
+    // switch to reappear in only one of them — and the one that drifts would
+    // be the settings button, which is the one people press first.
+    const text = readFileSync(SOURCE, "utf8");
+    const spawns = text.split("spawn(").length - 1;
+    const built = text.split("commandLine(").length - 1;
+    expect(spawns).toBe(2);
+    // Once per spawn, plus the definition.
+    expect(built).toBe(spawns + 1);
+  });
+});
+
+describe("what a person can show whoever asks", () => {
+  it("carries the plaintext of both scripts, verbatim", () => {
+    // The point of the disclosure is that it matches the encoded argument
+    // exactly. Built from the same constants the spawn uses, so it cannot
+    // describe something other than what runs — a hand-written copy in a
+    // document would drift, and a stale script shown to a security team is
+    // worse than showing nothing.
+    const text = disclosure();
+    for (const line of script().split("\n")) {
+      const trimmed = line.trim();
+      if (trimmed.length > 20) expect(text).toContain(trimmed);
+    }
+  });
+
+  it("states the command line it actually uses", () => {
+    const text = disclosure();
+    expect(text).toContain("powershell.exe -NoProfile -NonInteractive -NoLogo -EncodedCommand");
+    expect(text).not.toContain("ExecutionPolicy");
+  });
+
+  it("names every parameter, so the environment is not a hidden channel", () => {
+    for (const name of ["SCDB_FOLDERS", "SCDB_SINCE", "SCDB_MAX", "SCDB_MAXBODY"]) {
+      expect(disclosure()).toContain(name);
+    }
+  });
+
+  it("says what starts it, because 'never on its own' is the reassurance", () => {
+    expect(disclosure()).toContain("Read new mail from Outlook");
+    expect(disclosure()).toContain("no scheduler");
   });
 });
 
