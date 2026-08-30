@@ -11,18 +11,20 @@ to hand to whoever asks why Obsidian started PowerShell. Together they form a
 GitHub Pages site — see `docs/_config.yml` for the one repository setting that
 turns it on.
 
-**Status: phase B3.** Track A is complete: request tracking end to end (A1),
-the query engine behind the Explore board (A2), core Bases layered on where it
-exists (A2b), the cockpit and its analytics (A3), and encrypted backup with
-restore, verification, a diagnostics self-test and an integrity check (A4).
-B1 adds the daily rhythm — quick capture, a daily briefing, meeting agendas,
-the chase-up composer and outreach ageing. B2 adds the time and effort HUD — a
-crash-safe status-bar timer, the monthly effort log, retroactive editing, and
-roll-ups per person, activity, study and cost centre. B3 adds deadlines and
-recurring obligations — a recurrence engine, the lapsed-obligation alarm, and a
-two-way calendar bridge to Outlook that needs no mailbox access, and reading
-saved `.eml` messages into correspondence threads. Bases is never a dependency:
-on an Obsidian without it, every view still works. Not yet released.
+**Status: 0.2.0, released.**
+[Download it](https://github.com/lauyeehow1986-hub/obsidian_plugin/releases/latest)
+— no build step needed. Every build track in the plan is now implemented:
+requests and governance gates, the query engine and boards, the daily rhythm,
+time and effort, publications, events and obligations, the policy register, the
+variable catalogue, script provenance, reports and the CV, flowcharts, REDCap
+forms, R and Python execution, vault apps, external sources, and reading Outlook.
+
+Three things are deliberately **not** done, and each is waiting on something only
+the target machine can supply: REDCap **project ODM XML** export needs one real
+project XML as a reference, the Outlook read path has **never been run against a
+live mailbox**, and the workflow stages in `_config/workflows/` are
+**placeholders** to be swapped for the real eData ones. See
+[what to test](docs/testing-checklist.md) for the full list and what unblocks each.
 
 The design lives in [CLAUDE.md](CLAUDE.md) — architecture, the vault contract,
 build phases, and the rules that constrain them.
@@ -44,16 +46,30 @@ Settings → Community plugins.
 
 ## Install on another machine
 
-There is no BRAT or community-store listing. Take `dist/scdb-cockpit-<version>.zip`,
-and copy the `scdb-cockpit` folder from it into:
+There is no BRAT or community-store listing, and **cloning this repository is not
+enough** — `main.js` is build output and is not committed. Take it from a release
+instead.
+
+**With a browser:** open
+[the latest release](https://github.com/lauyeehow1986-hub/obsidian_plugin/releases/latest)
+and save `main.js`, `manifest.json` and `styles.css` into:
 
 ```
 <vault>/.obsidian/plugins/scdb-cockpit/
 ```
 
-Restart Obsidian and enable the plugin. The three files it contains —
-`main.js`, `manifest.json`, `styles.css` — are the whole plugin; it downloads
-nothing at runtime.
+The three loose files are attached alongside the zip on purpose: a managed laptop
+is often where a downloaded archive gets quarantined, and three saves need no
+unzip step.
+
+**Without a browser**, or moving it by USB: `npm run package` writes
+`dist/scdb-cockpit-<version>.zip` here, and the `scdb-cockpit` folder inside it
+goes to the same place. Note it is `package`, not `build` — `build` writes the
+three files but no zip.
+
+Either way, restart Obsidian and enable the plugin under Settings → Community
+plugins. Those three files are the whole plugin; it downloads nothing at runtime
+and needs Obsidian 1.6.0 or later.
 
 ## The daily rhythm
 

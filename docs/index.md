@@ -9,6 +9,20 @@ portable if the plugin is uninstalled tomorrow.
 
 ![The cockpit](img/cockpit.png)
 
+## Get it
+
+**[Download the latest release](https://github.com/lauyeehow1986-hub/obsidian_plugin/releases/latest)** — version 0.2.0. Save `main.js`,
+`manifest.json` and `styles.css` into `<vault>/.obsidian/plugins/scdb-cockpit/`,
+then enable it under Settings → Community plugins. There is a zip of the same
+three files if you prefer one download; the loose files are there because a
+managed laptop is often where an archive gets quarantined.
+
+Obsidian 1.6.0 or later, desktop only. Cloning the repository is *not* enough —
+`main.js` is build output and is not committed.
+
+Nothing is switched on that you did not switch on: reading Outlook, external
+sources, the daily briefing and code execution are all off after install.
+
 ## The pages here
 
 | | |

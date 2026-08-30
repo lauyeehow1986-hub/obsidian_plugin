@@ -39,7 +39,11 @@ invented.
 
 Three files — `main.js`, `manifest.json`, `styles.css` — copied into
 `<vault>/.obsidian/plugins/scdb-cockpit/`, then enable it under **Settings → Community
-plugins**. There is nothing to download, no server, no account and no network call.
+plugins**. Take them from [the latest release](https://github.com/lauyeehow1986-hub/obsidian_plugin/releases/latest);
+a zip of the same three is there too. No server, no account, no installer, and nothing
+fetched at runtime.
+
+Obsidian 1.6.0 or later, desktop only.
 
 Nothing is switched on that you did not switch on. Outlook reading, external sources, the
 daily briefing and code execution are all off after a fresh install and after every upgrade.
