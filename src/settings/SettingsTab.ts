@@ -1,6 +1,7 @@
 import { App, Notice, PluginSettingTab, Setting } from "obsidian";
 import { backupAge } from "../domain/backup/snapshots.js";
 import type { AttachmentPolicy } from "../domain/comms/emlThread.js";
+import { OUTLOOK_FOLDERS, type OutlookFolder } from "../domain/comms/outlook.js";
 import { describeAlerts } from "../domain/events/schedule.js";
 import { allModes, modeInfo } from "../domain/settings/mode.js";
 import {
@@ -10,6 +11,7 @@ import {
 } from "../domain/settings/schema.js";
 import { buildMailto, buildTeamsChat, MIN_URI_CEILING } from "../domain/comms/uri.js";
 import { probeHandler, reportLaunch } from "../services/protocol.js";
+import { probeOutlook } from "../services/outlookBridge.js";
 import { LANGUAGE_LABELS, type RunLanguage } from "../domain/compute/block.js";
 import {
   DECLINED_NOTE,
@@ -106,6 +108,7 @@ export class ScdbSettingsTab extends PluginSettingTab {
 
     this.messagesSection(containerEl);
     this.emailImportSection(containerEl);
+    this.outlookSection(containerEl);
     this.briefingSection(containerEl);
     this.effortSection(containerEl);
     this.publicationsSection(containerEl);
@@ -327,6 +330,153 @@ export class ScdbSettingsTab extends PluginSettingTab {
         "It stays on this machine, never enters the plugin's repository, and " +
         "correspondence fields stay out of exports by default.",
     });
+  }
+
+  /**
+   * Reading the running Outlook (§5.10 Tier 2, §7 E2).
+   *
+   * The screen's job is to make three things unmissable before the switch is
+   * flipped: it reads a mailbox, it never starts Outlook, and it changes
+   * nothing in Outlook. A person turning this on is granting a plugin sight of
+   * their mail, and a one-line toggle label is not enough to grant that on.
+   */
+  private outlookSection(containerEl: HTMLElement): void {
+    const outlook = this.plugin.settings.outlook;
+    containerEl.createEl("h3", { text: "Reading Outlook directly" });
+
+    containerEl.createEl("p", {
+      cls: "setting-item-description",
+      text:
+        "Reads new mail out of the Outlook you already have open, so threads fill " +
+        "themselves in without dragging files about. There are no credentials, no API and " +
+        "nothing over a network — it talks to the copy of Outlook running on this machine. " +
+        "It never starts Outlook, never sends, moves, deletes or marks anything as read, " +
+        "and it always shows you every message before a single note is written. " +
+        "Attachments stay in the mailbox; drag a message into the vault when you need one.",
+    });
+
+    new Setting(containerEl)
+      .setName("Read the running Outlook")
+      .setDesc(
+        "Off until you turn it on, and nothing runs on its own even then — only when you " +
+          "run the command yourself. Needs classic Outlook: the new Outlook and the web " +
+          "app cannot be read this way.",
+      )
+      .addToggle((toggle) =>
+        toggle.setValue(outlook.enabled).onChange(async (value) => {
+          this.plugin.settings.outlook.enabled = value;
+          await this.plugin.saveSettings();
+          this.display();
+        }),
+      );
+
+    // Offered whether or not the reader is switched on: §11's whole point is
+    // that the target machine answers this in ten seconds rather than being
+    // guessed at from here, and someone deciding whether to enable it at all
+    // should be able to find out first. It reads no mail — it asks Outlook its
+    // version and lets go.
+    new Setting(containerEl)
+      .setName("Check this machine")
+      .setDesc(
+        "Asks the running Outlook for its version and nothing else. No folder is opened and " +
+          "no message is read. Tells you in one press whether reading directly can work here.",
+      )
+      .addButton((button) =>
+        button.setButtonText("Check Outlook").onClick(async () => {
+          button.setDisabled(true);
+          button.setButtonText("Checking…");
+          try {
+            const probe = await probeOutlook();
+            new Notice(`SCDB: ${probe.detail}`, 12000);
+          } finally {
+            button.setDisabled(false);
+            button.setButtonText("Check Outlook");
+          }
+        }),
+      );
+
+    if (!outlook.enabled) return;
+
+    new Setting(containerEl)
+      .setName("Folders")
+      .setDesc(
+        "Sent Items matters as much as the Inbox: a thread you are waiting on is only " +
+          "visibly unanswered if the plugin can see that you wrote.",
+      )
+      .addDropdown((dropdown) =>
+        dropdown
+          .addOptions({
+            "inbox,sent": "Inbox and Sent Items",
+            inbox: "Inbox only",
+            sent: "Sent Items only",
+          })
+          .setValue(outlook.folders.join(","))
+          .onChange(async (value) => {
+            this.plugin.settings.outlook.folders = value
+              .split(",")
+              .filter((entry): entry is OutlookFolder =>
+                (OUTLOOK_FOLDERS as readonly string[]).includes(entry),
+              );
+            await this.plugin.saveSettings();
+          }),
+      );
+
+    new Setting(containerEl)
+      .setName("How far back to look")
+      .setDesc(
+        "In days, counted from midnight. Messages already on a thread are skipped however " +
+          "far back you reach, so a wide window costs time rather than duplicates.",
+      )
+      .addText((text) =>
+        text.setValue(String(outlook.sinceDays)).onChange(async (value) => {
+          const parsed = Number.parseInt(value, 10);
+          if (!Number.isFinite(parsed)) return;
+          this.plugin.settings.outlook.sinceDays = Math.min(365, Math.max(1, parsed));
+          await this.plugin.saveSettings();
+        }),
+      );
+
+    new Setting(containerEl)
+      .setName("Most messages to read at once")
+      .setDesc("A ceiling, so a quiet fortnight and a busy one take a similar amount of time.")
+      .addText((text) =>
+        text.setValue(String(outlook.maxMessages)).onChange(async (value) => {
+          const parsed = Number.parseInt(value, 10);
+          if (!Number.isFinite(parsed)) return;
+          this.plugin.settings.outlook.maxMessages = Math.min(2000, Math.max(1, parsed));
+          await this.plugin.saveSettings();
+        }),
+      );
+
+    new Setting(containerEl)
+      .setName("Give up after")
+      .setDesc(
+        "In seconds. Outlook can stop answering for minutes at a time when it is showing a " +
+          "dialog behind another window, so the reader is a separate process and is stopped " +
+          "when it runs out of time. This is what keeps Obsidian responsive; raise it only " +
+          "if a genuinely large mailbox needs longer.",
+      )
+      .addText((text) =>
+        text.setValue(String(outlook.timeoutSeconds)).onChange(async (value) => {
+          const parsed = Number.parseInt(value, 10);
+          if (!Number.isFinite(parsed)) return;
+          this.plugin.settings.outlook.timeoutSeconds = Math.min(600, Math.max(5, parsed));
+          await this.plugin.saveSettings();
+        }),
+      );
+
+    new Setting(containerEl)
+      .setName("Last read")
+      .setDesc(
+        outlook.lastSynced === ""
+          ? "Outlook has not been read yet."
+          : `Outlook was last read at ${outlook.lastSynced}. Every read is in the audit ledger.`,
+      )
+      .addButton((button) =>
+        button.setButtonText("Read Outlook now").onClick(() => {
+          void this.plugin.syncOutlook();
+        }),
+      );
   }
 
   /** The daily briefing (§7 B1). Off until asked for, like everything else. */

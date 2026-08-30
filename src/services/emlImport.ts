@@ -92,6 +92,23 @@ export interface ThreadAction {
   plans: EmlPlan[];
 }
 
+/**
+ * A parsed message waiting to be planned, whichever route it arrived by.
+ *
+ * `sourcePath` is a file path for an import and a folder label for a sync; it
+ * is shown in the review and never resolved as a path.
+ */
+export interface ReadyMessage {
+  message: EmlMessage;
+  sourcePath: string;
+  /** How this message is named when a problem is reported against it. */
+  label: string;
+  /** Used when the message itself carries no readable date. */
+  fallbackAt: number;
+  /** Attachments left where they were, with the reason, for the review list. */
+  skipped?: readonly string[];
+}
+
 export interface EmlPreview {
   actions: ThreadAction[];
   /** Messages already recorded on their thread, skipped. */
@@ -102,6 +119,16 @@ export interface EmlPreview {
   attachmentCount: number;
   problems: string[];
 }
+
+/**
+ * Which route wrote these threads.
+ *
+ * Only the ledger cares. `bulk-edit` is the action either way — the write is
+ * the same write — but an auditor reading the detail cell should not have to
+ * guess whether a batch came off the disk or out of the mailbox. The read
+ * itself is a separate `mailbox-read` row; see `services/outlookSync`.
+ */
+export type ImportOrigin = "import" | "sync";
 
 export interface EmlOutcome {
   threadsCreated: number;
@@ -176,6 +203,39 @@ export class EmlImport {
    * user approves is the work that runs.
    */
   async preview(files: readonly TFile[]): Promise<EmlPreview> {
+    const sources: ReadyMessage[] = [];
+    const unreadable: string[] = [];
+
+    for (const file of files) {
+      const message = await this.read(file);
+      if (message === null) {
+        unreadable.push(file.path);
+        continue;
+      }
+      sources.push({
+        message,
+        sourcePath: file.path,
+        label: file.name,
+        fallbackAt: file.stat.mtime,
+      });
+    }
+
+    const preview = this.previewMessages(sources);
+    preview.unreadable.push(...unreadable);
+    return preview;
+  }
+
+  /**
+   * The same work, starting from messages that are already parsed.
+   *
+   * Extracted so the live-session reader (§7 E2) shares every decision below
+   * rather than growing a second copy of them. A message out of the mailbox and
+   * the same message dragged in as a file must land on one thread, be deduped
+   * by the same rule and be reviewed in the same dialog — and the only way to
+   * be sure of that is for there to be one implementation. The file path is the
+   * only thing the two paths disagree about, and it is a label.
+   */
+  previewMessages(sources: readonly ReadyMessage[]): EmlPreview {
     const preview: EmlPreview = {
       actions: [],
       duplicates: 0,
@@ -192,15 +252,11 @@ export class EmlImport {
     const takenIds = existing.map((entry) => entry.thread.id);
     const year = new Date().getFullYear();
 
-    for (const file of files) {
-      const message = await this.read(file);
-      if (message === null) {
-        preview.unreadable.push(file.path);
-        continue;
-      }
-
-      const plan = planMessage(message, file.path, this.planOptions(file.stat.mtime));
-      preview.problems.push(...plan.problems.map((problem) => `${file.name}: ${problem}`));
+    for (const source of sources) {
+      const { message } = source;
+      const plan = planMessage(message, source.sourcePath, this.planOptions(source.fallbackAt));
+      plan.skipped.push(...(source.skipped ?? []));
+      preview.problems.push(...plan.problems.map((problem) => `${source.label}: ${problem}`));
 
       const match = threadForMessage(
         existing.map((entry) => entry.thread),
@@ -214,7 +270,7 @@ export class EmlImport {
 
       // Group on the thread key so a chain of replies imported together lands
       // in one note rather than opening a thread per message.
-      const key = plan.threadKey === "" ? `file:${file.path}` : plan.threadKey;
+      const key = plan.threadKey === "" ? `source:${source.sourcePath}` : plan.threadKey;
       const grouped = byThreadKey.get(key);
 
       if (grouped !== undefined) {
@@ -281,7 +337,7 @@ export class EmlImport {
    * Attachments are written before the note that links them, so a link never
    * points at a file that is not there yet.
    */
-  async apply(actions: readonly ThreadAction[]): Promise<EmlOutcome> {
+  async apply(actions: readonly ThreadAction[], origin: ImportOrigin = "import"): Promise<EmlOutcome> {
     const outcome: EmlOutcome = {
       threadsCreated: 0,
       threadsUpdated: 0,
@@ -320,10 +376,11 @@ export class EmlImport {
           ts: toVaultMinute(Date.now()),
           actor,
           action: "bulk-edit",
-          subject: "correspondence-import",
+          subject: origin === "sync" ? "correspondence-sync" : "correspondence-import",
           // Counts and ids only — never a subject, an address or a body.
           detail:
-            `${outcome.messages} message${outcome.messages === 1 ? "" : "s"} imported from saved mail ` +
+            `${outcome.messages} message${outcome.messages === 1 ? "" : "s"} ` +
+            `${origin === "sync" ? "read from the Outlook session" : "imported from saved mail"} ` +
             `into ${outcome.threadsCreated} new and ${outcome.threadsUpdated} existing thread` +
             `${outcome.threadsUpdated === 1 ? "" : "s"}, ${outcome.attachments} attachment` +
             `${outcome.attachments === 1 ? "" : "s"} saved`,

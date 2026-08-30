@@ -85,6 +85,19 @@ export const AUDIT_ACTIONS = [
   // still left, and a ledger holding only the successful ones would be a
   // flattering record rather than a true one.
   "source-fetch",
+  // The plugin read the live Outlook session (§5.10 Tier 2, §7 E2). §5.6's
+  // list did not name it because nothing touched a mailbox until E2, and it
+  // earns its own action on the same argument as `source-fetch`: reading a
+  // mailbox is a thing that happened whether or not a single message was
+  // kept, and "when did this plugin last read my mail" has to be findable by
+  // action rather than by reading every detail cell.
+  //
+  // Deliberately *not* `bulk-edit`. That records a write; a sync that finds
+  // nothing new writes nothing at all and would then leave no trace of having
+  // looked — which is precisely the silence rule 9 forbids. Nothing leaves the
+  // machine here, so it is not `source-fetch` either: the row says the vault
+  // read something local, not that it sent anything.
+  "mailbox-read",
   "correction",
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];

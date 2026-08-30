@@ -5,6 +5,99 @@ clearly marked entry (CLAUDE.md §10).
 
 ## Unreleased
 
+### Added — E2, reading the running Outlook
+
+The last unbuilt track. **Read new mail from Outlook** attaches to the Outlook
+session already open on the machine, reads mail through COM, and offers it in
+the same review dialog the file import uses. No credentials, no API, no app
+registration, nothing over a network. Off on a fresh install and after every
+upgrade; it never runs on its own.
+
+**Not verified against a real mailbox.** The dev machine has classic Outlook
+installed and profiled but no session anyone is willing to have read, so the
+read path is built and unit-tested and has never seen a message. What *has* been
+run: the whole out-of-process plumbing end to end — encoded command, environment
+parameters, base64 reply, JSON decode — against a machine with Outlook closed,
+returning the "Outlook is not running" refusal in 533 ms. The parsing, the
+identity rules and the refusals are covered by 50 new tests. Everything else is
+the user's to find, and the failure messages are written to be repeatable back
+to somebody who cannot see the screen.
+
+**It reuses Tier 1's pipeline entire.** `EmlImport.preview` was split so both
+routes share one implementation of threading, deduplication, id allocation and
+note writing. That is the whole design rather than tidiness: a conversation half
+dragged in as `.msg` files and half read from the mailbox has to land in **one**
+thread, and it only does if both derive identity the same way. `syntheticId` and
+the Exchange conversation token are now shared with the `.msg` reader, and a
+test builds the same message both ways and asserts the ids and thread key match.
+
+**Four boundaries, each enforced by a test that reads the reader's own source.**
+The PowerShell is a string handed to another process, so nothing type-checks it
+and a comment claiming it is read-only is worth nothing:
+
+- **It attaches; it never launches.** `GetActiveObject` binds to a running
+  instance. `New-Object -ComObject Outlook.Application` would *start* Outlook —
+  mail downloading, notifications firing, possibly a password prompt — which is
+  the surprise rule 12 forbids. The guard was checked by introducing the
+  violation and watching two tests go red.
+- **It never sends, moves, deletes, saves or marks as read.** Every MailItem
+  method that would change a mailbox is banned by name.
+- **It never reaches a network.** Rule 3 holds inside the script too.
+- **Nothing is interpolated into PowerShell source.** The script is a constant
+  and every parameter arrives through the environment, so a folder name or a
+  date has no route into executable text. `String.raw` with a `${` fails the
+  test.
+
+**The timeout is the feature, not garnish.** §7 E2 named the hazard: Outlook COM
+blocks for minutes behind a modal dialog. In process that is a frozen editor. So
+the reader is a child process on a deadline, killed when it misses it, and the
+user is told to go and clear whatever Outlook is asking.
+
+**The reply comes back base64-encoded.** PowerShell 5.1 writes stdout in the
+console codepage, and a mailbox is precisely the text full of smart quotes, £
+signs and accented names that the `.eml` reader already had to learn about the
+hard way. Base64 is ASCII, so no codepage can touch it.
+
+`powershell.exe`, not `pwsh`: `Marshal.GetActiveObject` is a .NET Framework API
+absent from .NET Core. And classic Outlook, not the new one — new Outlook and
+the web app expose no automation at all, which is why Tier 1 exists and stays.
+
+**Attachments are named and left in the mailbox.** Pulling the bytes would mean
+writing outside the vault, which rule 8 forbids, or shipping megabytes of
+regulated content through a pipe. The note says which files were on the message
+and where they still are — an attachment nobody mentions is an attachment
+somebody assumes was saved. Drag the message in when you need the file.
+
+**Ledger: a new `mailbox-read` action**, logged for every completed read
+**including one that finds nothing**. Deliberately not `bulk-edit`, which
+records a write that a fruitless sync never makes — leaving no trace of the
+plugin having read a mailbox at all, the silence rule 9 forbids. Deliberately
+not `source-fetch` either: nothing left the machine. The row carries counts,
+folder names, timing and Outlook's build number, never a subject or an address
+(rule 7). The build number is there on purpose: this feature is used on a
+machine nobody developing it can see, and it is the first question any report of
+odd behaviour needs answered.
+
+**A "Check Outlook" button in settings that reads no mail.** It asks Outlook its
+version and lets go — no folder opened, no item touched. §11 asks the mailto and
+Teams questions the same way and for the same reason: the dev laptop cannot
+answer for the work laptop, so the answer has to be obtainable there in one
+press.
+
+Settings schema v12 → v13. Reading Outlook is off, and an upgrade from v12
+leaves it off; a stored `"yes"` or `1` is not consent to read a mailbox, and an
+unrecognised folder name is dropped rather than passed to PowerShell. Verified
+against the real v12 `data.json` on this machine, not only in a unit test.
+
+**The smoke run now renders the settings tab, twice.** Found while adding the
+Outlook section: the smoke harness stubbed Obsidian's `Setting` as an empty
+class, so the tab could "load" without a single row ever being built and a
+section that threw would have passed every gate — which matters most for the
+one screen that carries the switch you would use to turn a broken feature off.
+It is now a real stand-in, and the tab is rendered once as shipped and once
+with every optional feature switched on, because half the sections only draw
+their controls after their feature is enabled.
+
 ### Added — cardiac guideline feeds (E1)
 
 Two more sources, and the reason there are only two. The societies asked for were ESC,

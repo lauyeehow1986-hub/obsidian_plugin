@@ -270,6 +270,16 @@ describe("action vocabulary", () => {
     }
   });
 
+  it("keeps reading a mailbox distinct from writing and from fetching", () => {
+    // §7 E2. Not `bulk-edit`, which records a write a fruitless sync never
+    // makes — leaving no trace of the plugin having read a mailbox at all.
+    // Not `source-fetch` either: nothing left the machine, and a row implying
+    // otherwise would be as misleading as one claiming a send.
+    expect(AUDIT_ACTIONS).toContain("mailbox-read");
+    expect(AUDIT_ACTIONS).toContain("source-fetch");
+    expect(AUDIT_ACTIONS).toContain("bulk-edit");
+  });
+
   it("keeps a recorded run distinct from a run the plugin watched", () => {
     // §5.12 logs `code-run` for an execution the plugin performed. A run typed
     // in afterwards is hearsay, and `run-recorded` says so — the same

@@ -572,13 +572,30 @@ function referencesOf(
   if (inReplyTo !== "") return [];
 
   const index = props.bin(TAG.conversationIndex);
-  if (index === null || index.length < CONVERSATION_HEADER) return [];
+  const token = conversationToken(index, hasRealId);
+  return token === null ? [] : [token];
+}
+
+/**
+ * The Exchange conversation token, or null when there is nothing to take.
+ *
+ * Exported because the live-session reader (§7 E2) must derive **exactly** this
+ * token from the same property read over COM. A message synced out of Outlook
+ * and the same message dragged out as a `.msg` have to land on one thread, and
+ * they only do if both compute the key the same way. Two implementations of a
+ * thread key is two threads.
+ */
+export function conversationToken(
+  index: Uint8Array | null,
+  hasRealId: boolean,
+): string | null {
+  if (index === null || index.length < CONVERSATION_HEADER) return null;
 
   // Exactly the header and no response level means this message opened the
   // conversation, so its own id — if it has a real one — is the root.
-  if (index.length === CONVERSATION_HEADER && hasRealId) return [];
+  if (index.length === CONVERSATION_HEADER && hasRealId) return null;
 
-  return [`msg-conv:${hex(index.subarray(6, CONVERSATION_HEADER))}`];
+  return `msg-conv:${hex(index.subarray(6, CONVERSATION_HEADER))}`;
 }
 
 /**
@@ -593,7 +610,7 @@ function referencesOf(
  * the mail system issued. FNV-1a is used because this is a dedupe key, not a
  * security boundary — there is nothing here for a collision to gain.
  */
-function syntheticId(
+export function syntheticId(
   subject: string,
   date: number | null,
   from: readonly EmlAddress[],

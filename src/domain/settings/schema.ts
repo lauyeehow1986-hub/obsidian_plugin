@@ -6,9 +6,10 @@
  */
 
 import type { AttachmentPolicy } from "../comms/emlThread";
+import type { OutlookFolder } from "../comms/outlook";
 import type { TimerState } from "../effort/timer";
 
-export const CURRENT_SETTINGS_VERSION = 12;
+export const CURRENT_SETTINGS_VERSION = 13;
 
 /** The three hats. Mode is the organising metaphor, not a cosmetic filter (§7 A3). */
 export const MODES = ["biostat", "hod", "research-core"] as const;
@@ -64,6 +65,7 @@ export interface ScdbSettings {
   apps: AppsConfig;
   compute: ComputeConfig;
   sources: SourcesConfig;
+  outlook: OutlookConfig;
   /** Unrecognised keys are preserved verbatim — see rule 8, never destroy data. */
   [extra: string]: unknown;
 }
@@ -449,6 +451,52 @@ export function defaultSources(): SourcesConfig {
   };
 }
 
+/**
+ * Reading the live Outlook session (§5.10 Tier 2, §7 E2).
+ *
+ * **Off, and it stays off until the user turns it on** — the same stance every
+ * other module that reaches outside the vault takes, for the same reason.
+ * Nothing here touches a network; what it touches is a mailbox, which on this
+ * project is the more sensitive of the two.
+ */
+export interface OutlookConfig {
+  /** Nothing runs while this is false. Not set by any migration, ever. */
+  enabled: boolean;
+  /** Which default folders are read. Empty means nothing is read. */
+  folders: OutlookFolder[];
+  /** How far back a sync looks. Days, from midnight local. */
+  sinceDays: number;
+  /** Hard cap on messages one sync will bring back. */
+  maxMessages: number;
+  /**
+   * How long Outlook gets to answer before the reader is killed.
+   *
+   * §7 E2's hard requirement. Outlook COM blocks for minutes behind a modal
+   * dialog, so this is not a nicety — it is what keeps Obsidian responsive
+   * when Outlook is sitting on a password prompt nobody has noticed.
+   */
+  timeoutSeconds: number;
+  /**
+   * When the last sync completed, as an ISO minute. Written by the sync.
+   *
+   * Advisory only: the window is what bounds a read, and dedupe is on
+   * `message_id`. This exists so the settings tab and the diagnostics report
+   * can say when the mailbox was last looked at.
+   */
+  lastSynced: string;
+}
+
+export function defaultOutlook(): OutlookConfig {
+  return {
+    enabled: false,
+    folders: ["inbox", "sent"],
+    sinceDays: 14,
+    maxMessages: 200,
+    timeoutSeconds: 60,
+    lastSynced: "",
+  };
+}
+
 export function defaultSettings(): ScdbSettings {
   return {
     schemaVersion: CURRENT_SETTINGS_VERSION,
@@ -466,6 +514,7 @@ export function defaultSettings(): ScdbSettings {
     apps: defaultApps(),
     compute: defaultCompute(),
     sources: defaultSources(),
+    outlook: defaultOutlook(),
   };
 }
 

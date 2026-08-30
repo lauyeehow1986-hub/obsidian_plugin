@@ -162,6 +162,60 @@ full message bodies and attachments makes the vault a **regulated data store**,
 not a notebook. It stays on the machine, and correspondence fields stay out of
 exports by default.
 
+### Reading Outlook directly
+
+If dragging files about is the tedious part, **Read new mail from Outlook**
+skips it: the plugin reads the Outlook you already have open and offers you the
+messages, in exactly the same review dialog, feeding exactly the same threads.
+Off until you switch it on in settings, and it never runs on its own.
+
+Still no credentials, no API, no app registration and nothing over a network —
+it talks to the copy of Outlook running on this machine, through the automation
+interface Outlook has always had.
+
+Four things it will not do, and none of them are a matter of intention:
+
+- **It never starts Outlook.** It attaches to a session that is already open,
+  and says "Outlook is not running" when there is not one. A sync that launches
+  your mail client is a surprise, and this plugin does not do surprises.
+- **It never sends, moves, deletes or marks anything as read.** Nothing in the
+  mailbox changes. A test reads the reader's own source and fails if a method
+  that would change something ever appears in it.
+- **It cannot freeze Obsidian.** Outlook can stop answering for minutes when it
+  is sitting behind a dialog nobody has noticed, so the reader is a separate
+  process on a deadline. When it runs out of time it is killed and you are told
+  to go and clear whatever Outlook is asking.
+- **It reads no attachments.** They are named in the note and left in the
+  mailbox. When you need the file itself, drag that message into the vault and
+  the import above saves it properly.
+
+**It needs classic Outlook.** New Outlook and the web app expose no automation
+at all, so on a machine with only those this is not available — use the drag-in
+import instead. Settings has a **Check Outlook** button that answers this in one
+press: it asks Outlook its version and nothing else, opening no folder and
+reading no message.
+
+A message read this way and the same message dragged in as a `.msg` land in
+**one** thread, not two. They derive identity the same way, on purpose, because
+two implementations of a thread key would be two threads.
+
+Every read is written to the audit ledger as `mailbox-read` — counts and folder
+names, timing and Outlook's build number, never a subject or an address —
+**including a read that finds nothing**. A sync that looked and found nothing
+new still looked, and the ledger answers "when did this plugin last read my
+mail".
+
+**On the first run, set the window short.** The default reaches back a
+fortnight, and on a first run every thread is new — so a fortnight of
+institutional email arrives at once. Start at a day or two, see what the review
+dialog offers, and widen it when you are happy with what comes through.
+
+**This has not been run against a real mailbox yet.** It is built and its
+refusals are tested, but the dev machine has no Outlook session to read, so the
+read path is unverified. Expect to find something the first time; the failure
+messages and the ledger row are written to be repeatable back to someone who
+cannot see your screen.
+
 ## Time and effort
 
 `Ctrl+Alt+T` starts a timer bound to a request, a study, or whatever you are

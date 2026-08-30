@@ -683,13 +683,18 @@ export interface EmlMessage {
   /**
    * Which file format this came out of.
    *
-   * Recorded because the two are not equally trustworthy about identity: an
+   * Recorded because the three are not equally trustworthy about identity: an
    * `.eml` carries the real `Message-ID` and `References` chain, while a `.msg`
    * sometimes has neither and has to fall back on a synthesised id. The note
    * says which, so a thread built on synthesised identity is legible as such
    * rather than looking like the real thing.
+   *
+   * `"outlook"` is a message read out of the live Outlook session (§7 E2). It
+   * sits with `.msg` rather than with `.eml`: the same MAPI properties, read
+   * through COM instead of out of a compound file, with the same fallbacks
+   * when the item never crossed the internet.
    */
-  format: "eml" | "msg";
+  format: "eml" | "msg" | "outlook";
   /** Plain-English notes on anything that could not be read. Never swallowed. */
   problems: string[];
 }

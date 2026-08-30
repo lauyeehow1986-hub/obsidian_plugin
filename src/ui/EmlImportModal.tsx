@@ -40,11 +40,13 @@ function senderOf(action: ThreadAction, index: number): string {
 function Review({
   preview,
   attachmentsFolder,
+  lede,
   onSubmit,
   onCancel,
 }: {
   preview: EmlPreview;
   attachmentsFolder: string;
+  lede: string;
   onSubmit: (choice: EmlImportChoice) => void;
   onCancel: () => void;
 }) {
@@ -73,9 +75,13 @@ function Review({
   return (
     <div class="scdb-modal__body scdb-eml">
       <p class="scdb-modal__lede">
-        Read from files already in this vault. Nothing was fetched and nothing will be sent.
-        Untick anything you do not want; the message text goes into the thread note, and
-        attachments into <code>{attachmentsFolder}</code>.
+        {lede}
+        {attachments > 0 && (
+          <>
+            {" "}
+            Attachments go into <code>{attachmentsFolder}</code>.
+          </>
+        )}
       </p>
 
       <div class="scdb-eml__list">
@@ -213,7 +219,12 @@ class EmlImportModal extends PreactModal {
 
   constructor(
     app: App,
-    private readonly config: { preview: EmlPreview; attachmentsFolder: string },
+    private readonly config: {
+      preview: EmlPreview;
+      attachmentsFolder: string;
+      title: string;
+      lede: string;
+    },
     private readonly resolve: (choice: EmlImportChoice | null) => void,
   ) {
     super(app);
@@ -224,6 +235,7 @@ class EmlImportModal extends PreactModal {
       <Review
         preview={this.config.preview}
         attachmentsFolder={this.config.attachmentsFolder}
+        lede={this.config.lede}
         onSubmit={(choice) => this.finish(choice)}
         onCancel={() => this.finish(null)}
       />
@@ -232,7 +244,7 @@ class EmlImportModal extends PreactModal {
 
   override onOpen(): void {
     this.modalEl.addClass("scdb-modal--wide");
-    this.titleEl.setText("Import saved email");
+    this.titleEl.setText(this.config.title);
     super.onOpen();
   }
 
@@ -250,13 +262,42 @@ class EmlImportModal extends PreactModal {
   }
 }
 
+/**
+ * The review, whichever route the messages arrived by.
+ *
+ * One dialog for the file import and the Outlook sync deliberately: they show
+ * the same facts, they are approved on the same terms, and a second dialog
+ * would be a second place for the "every line can be unticked" rule to drift.
+ * Only the title differs, because what the user is agreeing to differs.
+ */
+/** What the file import is asking the user to agree to. */
+export const FILE_LEDE =
+  "Read from files already in this vault. Nothing was fetched and nothing will be sent. " +
+  "Untick anything you do not want; the message text goes into the thread note, and " +
+  "attachments are saved alongside it.";
+
+/**
+ * What a sync is asking, which is not the same thing.
+ *
+ * It names the two facts a reader of a mailbox import needs and cannot see:
+ * that Outlook was read rather than a file, and that the attachments are still
+ * sitting in the mailbox. An attachment nobody mentions is an attachment
+ * somebody assumes was saved.
+ */
+export const OUTLOOK_LEDE =
+  "Read from the Outlook session already open on this machine. Nothing left the machine and " +
+  "nothing was sent, moved or marked as read. Untick anything you do not want; message text " +
+  "goes into the thread note, and any attachments stay in Outlook.";
+
 export function reviewEmlImport(
   app: App,
   preview: EmlPreview,
   attachmentsFolder: string,
+  title = "Import saved email",
+  lede = FILE_LEDE,
 ): Promise<EmlImportChoice | null> {
   return new Promise((resolve) =>
-    new EmlImportModal(app, { preview, attachmentsFolder }, resolve).open(),
+    new EmlImportModal(app, { preview, attachmentsFolder, title, lede }, resolve).open(),
   );
 }
 

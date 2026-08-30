@@ -174,7 +174,8 @@ import { planExtraction } from "./domain/extract/plan.js";
 import { reviewExtraction } from "./ui/ExtractModal.js";
 import { ExtractWriter } from "./services/extractWriter.js";
 import { EmlImport } from "./services/emlImport.js";
-import { reviewEmlImport, sizeLabel } from "./ui/EmlImportModal.js";
+import { OutlookSync, readSummary } from "./services/outlookSync.js";
+import { OUTLOOK_LEDE, reviewEmlImport, sizeLabel } from "./ui/EmlImportModal.js";
 import { copyToClipboard, launchUri, reportLaunch } from "./services/protocol.js";
 import {
   agendaCandidates,
@@ -284,6 +285,7 @@ export default class ScdbCockpitPlugin extends Plugin {
   events!: EventStore;
   /** Reading saved `.eml` and `.msg` files into correspondence threads (§5.10, Tier 1). */
   emlImport!: EmlImport;
+  outlookSync!: OutlookSync;
   /** Flowchart notes, and the SVG/PNG they export to (§7 D1). */
   diagrams!: DiagramWriter;
   /** The variable catalogue and its version chain (§5.8, §7 C2). */
@@ -569,6 +571,17 @@ export default class ScdbCockpitPlugin extends Plugin {
       attachmentPolicy: () => this.settings.comms.emlAttachments,
       maxAttachmentKb: () => this.settings.comms.emlMaxAttachmentKb,
       actor: () => this.settings.actor,
+    });
+
+    this.outlookSync = new OutlookSync({
+      imports: this.emlImport,
+      audit: this.audit,
+      settings: () => this.settings.outlook,
+      actor: () => this.settings.actor,
+      recordSync: async (isoMinute) => {
+        this.settings.outlook.lastSynced = isoMinute;
+        await this.saveSettings();
+      },
     });
 
     this.basesFiles = new BasesFiles(
@@ -1251,6 +1264,12 @@ export default class ScdbCockpitPlugin extends Plugin {
       id: "import-eml",
       name: "Import saved email files",
       callback: () => void this.importEml(),
+    });
+
+    this.addCommand({
+      id: "sync-outlook",
+      name: "Read new mail from Outlook",
+      callback: () => void this.syncOutlook(),
     });
 
     this.addCommand({
@@ -4367,6 +4386,81 @@ export default class ScdbCockpitPlugin extends Plugin {
         parts.push(`${files.length - CAP} older file${files.length - CAP === 1 ? "" : "s"} not read`);
       }
       this.notify(`Imported: ${parts.join(", ")}. The message files were left where they are.`, 10000);
+
+      for (const problem of outcome.problems) this.notify(problem, 10000);
+    } catch (error) {
+      reportError(error, "could not write those threads.");
+    }
+  }
+
+  /**
+   * Read new mail out of the running Outlook (§5.10 Tier 2, §7 E2).
+   *
+   * The same shape as `importEml` and deliberately so — read, review, write —
+   * because it is the same pipeline. What differs is where the messages came
+   * from and what has to be said about that: Outlook was **read**, not
+   * started; nothing was sent, moved or marked as read; and attachments are
+   * still in the mailbox.
+   *
+   * Every refusal comes back as a sentence rather than an exception. "Outlook
+   * is not running" is the most likely outcome on any given morning and is not
+   * a fault, and a reader that has been stopped on its deadline needs to say
+   * so plainly enough that the user knows to go and clear the dialog Outlook is
+   * sitting on.
+   */
+  async syncOutlook(): Promise<void> {
+    const working = new Notice("SCDB: reading Outlook…", 0);
+    let result;
+    try {
+      result = await this.outlookSync.preview();
+    } catch (error) {
+      working.hide();
+      reportError(error, "could not read Outlook.");
+      return;
+    }
+    working.hide();
+
+    if ("why" in result) {
+      this.notify(result.why, 14000);
+      return;
+    }
+
+    const { preview } = result;
+    if (preview.actions.length === 0) {
+      this.notify(
+        preview.duplicates > 0
+          ? `Nothing new in ${result.folders.join(" or ")}: all ${preview.duplicates} message` +
+              `${preview.duplicates === 1 ? " is" : "s are"} already on a thread.`
+          : `Nothing to import — ${readSummary(result)}.`,
+        12000,
+      );
+      return;
+    }
+
+    const choice = await reviewEmlImport(
+      this.app,
+      preview,
+      this.emlImport.attachmentsFolder(),
+      "Read new mail from Outlook",
+      // The summary rides along with the lede so the numbers are in front of
+      // the person deciding, not only in the ledger afterwards.
+      `${OUTLOOK_LEDE} (${readSummary(result)}.)`,
+    );
+    if (choice === null) return;
+
+    try {
+      const outcome = await this.outlookSync.apply(choice.actions);
+      this.refreshViews();
+
+      const parts = [
+        `${outcome.messages} message${outcome.messages === 1 ? "" : "s"}`,
+        `${outcome.threadsCreated} new thread${outcome.threadsCreated === 1 ? "" : "s"}`,
+      ];
+      if (outcome.threadsUpdated > 0) parts.push(`${outcome.threadsUpdated} updated`);
+      this.notify(
+        `Read from Outlook: ${parts.join(", ")}. Nothing in Outlook was changed.`,
+        10000,
+      );
 
       for (const problem of outcome.problems) this.notify(problem, 10000);
     } catch (error) {

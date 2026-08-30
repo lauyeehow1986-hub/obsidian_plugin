@@ -55,6 +55,31 @@ function fakeEl() {
     createSpan() {
       return el.createEl();
     },
+    createDiv() {
+      return el.createEl();
+    },
+    // The settings tab builds prose out of `appendText` and `createEl("a")`
+    // as well as through `Setting`, so a stand-in that only knows the latter
+    // renders half a screen and then throws.
+    appendText(text) {
+      el.text = `${el.text ?? ""}${String(text)}`;
+      return el;
+    },
+    setText(text) {
+      el.text = String(text);
+      return el;
+    },
+    appendChild(child) {
+      el.children.push(child);
+      return child;
+    },
+    removeClass(name) {
+      el.classes = el.classes.filter((entry) => entry !== name);
+    },
+    toggleClass() {},
+    detach() {},
+    remove() {},
+    focus() {},
     addEventListener() {},
     setAttribute() {},
     // The backup nag hides itself when there is nothing to nag about, so a
@@ -82,7 +107,9 @@ class Plugin extends Component {
   addStatusBarItem() {
     return fakeEl();
   }
-  addSettingTab() {}
+  addSettingTab(tab) {
+    registeredSettingTabs.push(tab);
+  }
   registerView(type) {
     registeredPanes.push(type);
   }
@@ -124,6 +151,85 @@ class PluginSettingTab {
     this.plugin = plugin;
   }
 }
+/**
+ * Obsidian's fluent settings row, enough of it to render the whole tab.
+ *
+ * Worth the twenty lines: the settings tab is the door to nearly every feature
+ * in this plugin, and a throw anywhere in it takes the *whole* screen out —
+ * including the switch you were going to use to turn the broken thing off.
+ * Nothing else in the smoke run exercises it, so until this existed a settings
+ * section could ship unrenderable and pass every gate.
+ *
+ * Every method returns the thing the real one returns, so `.setName(…).addToggle(…)`
+ * chains, and each `add*` callback is invoked with a control that answers the
+ * setters the tab actually calls.
+ */
+class Setting {
+  constructor(containerEl) {
+    this.containerEl = containerEl;
+    this.settingEl = fakeEl();
+    this.controlEl = fakeEl();
+  }
+  setName() {
+    return this;
+  }
+  setDesc() {
+    return this;
+  }
+  setHeading() {
+    return this;
+  }
+  setClass() {
+    return this;
+  }
+  addToggle(build) {
+    build({ setValue: () => ({ onChange: () => undefined }), setDisabled: () => undefined });
+    return this;
+  }
+  addText(build) {
+    build(this.textControl());
+    return this;
+  }
+  addTextArea(build) {
+    build(this.textControl());
+    return this;
+  }
+  addDropdown(build) {
+    const dropdown = {
+      addOption: () => dropdown,
+      addOptions: () => dropdown,
+      setValue: () => dropdown,
+      onChange: () => dropdown,
+      setDisabled: () => dropdown,
+    };
+    build(dropdown);
+    return this;
+  }
+  addButton(build) {
+    const button = {
+      setButtonText: () => button,
+      setTooltip: () => button,
+      setCta: () => button,
+      setWarning: () => button,
+      setDisabled: () => button,
+      onClick: () => button,
+      buttonEl: fakeEl(),
+    };
+    build(button);
+    return this;
+  }
+  textControl() {
+    const text = {
+      inputEl: fakeEl(),
+      setPlaceholder: () => text,
+      setValue: () => text,
+      setDisabled: () => text,
+      onChange: () => text,
+    };
+    return text;
+  }
+}
+
 class Modal {
   constructor(app) {
     this.app = app;
@@ -140,6 +246,7 @@ class TFolder extends TAbstractFile {}
 
 const stub = {
   Plugin,
+  Setting,
   ItemView,
   PluginSettingTab,
   Component,
@@ -151,7 +258,9 @@ const stub = {
   TFile,
   TFolder,
   Notice: class {},
-  Setting: class {},
+  // `Setting` is a real stand-in above, not an empty class: an empty one let
+  // the settings tab "load" without a single row ever being built, which is
+  // exactly the failure the render check exists to catch.
   App: class {},
   MarkdownRenderer: class {},
   apiVersion: "1.6.0",
@@ -169,6 +278,7 @@ const stub = {
 const created = [];
 const registeredCommands = [];
 const registeredPanes = [];
+const registeredSettingTabs = [];
 const registeredPostProcessors = [];
 
 function stubApp() {
@@ -269,7 +379,7 @@ const checks = [
   // Pinned deliberately: this line failing means the schema moved, which is
   // the moment to check a migration step went with it (§10 — an upgrade must
   // never lose settings). Bump it only after writing that step.
-  ["settings carry a schema version", instance.settings.schemaVersion === 12],
+  ["settings carry a schema version", instance.settings.schemaVersion === 13],
   ["the hat filter defaults to the mode you are wearing", instance.settings.hatFilter === "mode"],
   // §7 B2. No timer on a fresh install, and every timer action reachable from
   // the keyboard — the status-bar segment is a shortcut, not the only door.
@@ -332,6 +442,61 @@ const checks = [
     instance.settings.sources.eacts === false &&
     instance.settings.sources.esc === false],
   ["no contact address is invented", instance.settings.sources.contactEmail === ""],
+  // The settings tab is the door to nearly every feature here, and a throw in
+  // one section takes the whole screen out — including the switch you would
+  // have used to turn the broken thing off. Rendered twice, because half the
+  // sections only draw their controls once their feature is switched on.
+  [
+    "the settings tab renders",
+    (() => {
+      const tab = registeredSettingTabs[0];
+      if (tab === undefined) return false;
+      tab.containerEl = fakeEl();
+      tab.display();
+      return tab.containerEl.children.length > 0;
+    })(),
+  ],
+  [
+    "the settings tab renders with every optional feature switched on",
+    (() => {
+      const tab = registeredSettingTabs[0];
+      if (tab === undefined) return false;
+      const before = JSON.stringify(instance.settings);
+      instance.settings.outlook.enabled = true;
+      instance.settings.sources.pubmed = true;
+      instance.settings.briefing.enabled = true;
+      instance.settings.backup.enabled = true;
+      tab.containerEl = fakeEl();
+      tab.display();
+      const drew = tab.containerEl.children.length > 0;
+      instance.settings = JSON.parse(before);
+      return drew;
+    })(),
+  ],
+  // §7 E2. The one switch in this plugin that would let it read a mailbox.
+  // Off on a fresh install like everything else, and the command is present
+  // and refuses rather than absent — a missing command reads as a broken
+  // build, a refusing one reads as a setting.
+  ["reading Outlook is off on a fresh install", instance.settings.outlook.enabled === false],
+  ["no Outlook read is claimed to have happened", instance.settings.outlook.lastSynced === ""],
+  ["reading Outlook is reachable from the palette", commands.includes("sync-outlook")],
+  [
+    "a mailbox read is refused while the reader is off",
+    (await instance.outlookSync.preview()).why?.includes("switched off") === true,
+  ],
+  [
+    "a mailbox read is refused with no addresses of your own",
+    await (async () => {
+      // The refusal that matters most: direction decides `awaiting`, and a
+      // guess inverts every follow-up. Restored afterwards so the rest of the
+      // smoke run sees the settings it expects.
+      const before = instance.settings.outlook.enabled;
+      instance.settings.outlook.enabled = true;
+      const refusal = await instance.outlookSync.preview();
+      instance.settings.outlook.enabled = before;
+      return refusal.why?.includes("own email addresses") === true;
+    })(),
+  ],
   ["the gateway exists but is enabled by nothing", typeof instance.gateway?.fetch === "function"],
   ["searching an external source is reachable", commands.includes("search-source")],
   ["filling a publication in from PubMed is reachable", commands.includes("enrich-publication")],

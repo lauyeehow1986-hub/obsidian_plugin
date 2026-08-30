@@ -432,7 +432,7 @@ Logged actions: `stage-change`, `gate-override`, `identifier-scope`, `evidence-a
 where the setting is governance-relevant, `correction`, and — added by later tracks, each
 for the reason below — `message-composed` (§5.11), `code-run` and `run-recorded` (§5.12),
 `policy-revision` (§7 C1), `variable-revision` (§5.8), `app-granted` and `app-write`
-(§5.13), and `source-fetch` (§7 E1).
+(§5.13), `source-fetch` (§7 E1), and `mailbox-read` (§7 E2).
 
 **Each of those is its own action rather than a borrowed one**, on the same argument that
 earns `export` its place: an auditor asks *when did this happen and who did it*, and has to
@@ -441,6 +441,14 @@ are deliberate and worth keeping: `message-composed` never claims a send we cann
 `code-run` is the plugin executing something, `run-recorded` is a person saying they ran it
 elsewhere; and `source-fetch` is logged **whether the request succeeded or not**, because a
 failed request still left the machine.
+
+`mailbox-read` is the fourth such distinction and the same argument once more. It is **not**
+`bulk-edit`: that records a write, and a sync that finds nothing new writes nothing and would
+then leave no trace of the plugin having read a mailbox at all. It is **not** `source-fetch`
+either: nothing left the machine, and a row implying otherwise would be as misleading as one
+claiming a send. It records that this vault read local mail, with counts and folder names and
+nothing else — the question "when did this plugin last look at my email" has to be answerable
+by action.
 
 **A gate override always requires a typed reason.** Refusing to give one cancels the override.
 That single rule is most of the audit value.
@@ -554,11 +562,27 @@ Because of that, **correspondence fields are excluded from export templates by d
 HTML export stays as simple as specified, but a board carrying thread excerpts will not quietly
 carry clinical content out of the vault. Re-enable per template when you mean to.
 
-**Tier 2 (later, opt-in) — Outlook COM bridge.** A local PowerShell reader against the
+**Tier 2 (opt-in) — Outlook COM bridge, as built.** A local PowerShell reader against the
 already-authenticated Outlook session; no credentials, no API, no app registration. The schema
-above is designed so a sync populates it without migrating anything. Two hard requirements
-when it is built: it runs **out of process with a hard timeout** — Outlook COM can block for
-~3 minutes on a modal dialog and must never freeze Obsidian — and it is **off by default**.
+above did populate without migrating anything, as intended. Both hard requirements are met: it
+runs **out of process with a hard timeout** — Outlook COM can block for minutes on a modal
+dialog and must never freeze Obsidian — and it is **off by default**.
+
+Four decisions the build settled, recorded so they are not re-argued:
+
+- **It attaches; it never launches.** `GetActiveObject` binds to a running Outlook and fails
+  with `MK_E_UNAVAILABLE` when there is none. Constructing the COM object would *start*
+  Outlook — mail downloading, notifications firing, possibly a password prompt — which is the
+  surprise rule 12 forbids. "Outlook is not running" is a sentence, not a fault.
+- **It needs classic Outlook.** New Outlook and the web app expose no COM automation at all,
+  so on a machine with only those, Tier 1 (drag the message in) is the whole story. A settings
+  button answers this on the target machine in one press, without reading any mail.
+- **Attachments stay in the mailbox.** Pulling the bytes would mean writing outside the vault
+  (rule 8) or shipping megabytes of regulated content through a pipe. They are named in the
+  note, and Tier 1 remains the way to save one.
+- **The script is a constant and its parameters are environment variables.** Nothing from a
+  note, a mailbox or a setting is ever interpolated into PowerShell source, and a test reads
+  the module and fails if that changes.
 
 ### 5.11 Composing messages — protocol handlers
 
@@ -985,8 +1009,11 @@ because omitting it would be the misleading part.
 **E2 · Outlook COM bridge (email Tier 2).** Populate correspondence threads from the live
 Outlook session via a local PowerShell/COM reader — no credentials, no API. Off by default,
 **out of process with a hard timeout** (COM blocks for minutes on a modal dialog; Obsidian must
-never freeze), incremental by thread key, and every sync logged. Prior art exists in an earlier
-project of the user's; reuse the lessons rather than rediscovering them.
+never freeze), incremental by thread key, and every sync logged. See §5.10 for the decisions
+the build settled. It reuses Tier 1's pipeline entire — threading, dedupe, the review dialog
+and note writing — so a conversation half dragged in as files and half synced from the mailbox
+lands in one thread; `syntheticId` and the Exchange conversation token are shared with the
+`.msg` reader for exactly that reason, and a test pins it.
 
 ### Track F — Compute and apps
 

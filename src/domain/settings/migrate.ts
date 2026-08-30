@@ -20,6 +20,7 @@ import {
   defaultApps,
   defaultCompute,
   defaultSources,
+  defaultOutlook,
   defaultPublications,
   defaultSettings,
   isMode,
@@ -33,10 +34,12 @@ import {
   type AppsConfig,
   type ComputeConfig,
   type SourcesConfig,
+  type OutlookConfig,
   type PublicationsConfig,
   type ScdbSettings,
 } from "./schema.js";
 import { ATTACHMENT_POLICIES, type AttachmentPolicy } from "../comms/emlThread.js";
+import { OUTLOOK_FOLDERS, type OutlookFolder } from "../comms/outlook.js";
 import { MIN_IDLE_MINUTES, type TimerState } from "../effort/timer.js";
 // The one value the sources block shares with the gateway. Imported rather
 // than duplicated because a settings cap higher than the gateway's would be a
@@ -193,6 +196,7 @@ export function migrateSettings(raw: unknown): MigrationResult {
   merged.apps = repairApps(merged.apps, notes);
   merged.compute = repairCompute(merged.compute, notes);
   merged.sources = repairSources(merged.sources, notes);
+  merged.outlook = repairOutlook(merged.outlook, notes);
 
   // Folders: fill gaps, keep customised values, drop nothing.
   const folders: Record<string, unknown> = isRecord(merged.folders) ? { ...merged.folders } : {};
@@ -295,6 +299,14 @@ export function migrateSettings(raw: unknown): MigrationResult {
     notes.push(
       "Migrated v11 -> v12: added the EACTS guideline feed and the ESC sitemap. " +
         "Both are off, like every other source.",
+    );
+  }
+
+  if (storedVersion > 0 && storedVersion < 13) {
+    notes.push(
+      "Migrated v12 -> v13: added reading the running Outlook session. It is off, " +
+        "and it never starts Outlook — it reads the session you already have open, " +
+        "and only when you ask it to.",
     );
   }
 
@@ -544,6 +556,54 @@ function repairCompute(value: unknown, notes: string[]): ComputeConfig {
  *
  * There is deliberately no repair for a host, because settings hold none.
  */
+/**
+ * The Outlook reader's settings.
+ *
+ * `enabled` uses `=== true` for the same reason the network sources do: a
+ * stored `"yes"`, a `1` or a stray truthy value must not switch on something
+ * that reads a mailbox. Everything else is clamped rather than reset, so a
+ * hand-typed number keeps its intent.
+ */
+function repairOutlook(value: unknown, notes: string[]): OutlookConfig {
+  const base = defaultOutlook();
+  if (!isRecord(value)) {
+    if (value !== undefined) {
+      notes.push("Outlook reader settings were not readable; it was left off.");
+    }
+    return base;
+  }
+
+  base.enabled = value["enabled"] === true;
+
+  const folders = value["folders"];
+  if (Array.isArray(folders)) {
+    // An empty list is a real choice — "read nothing" — and is kept.
+    base.folders = folders.filter((entry): entry is OutlookFolder =>
+      (OUTLOOK_FOLDERS as readonly string[]).includes(entry as string),
+    );
+  }
+
+  const since = value["sinceDays"];
+  if (typeof since === "number" && Number.isFinite(since)) {
+    base.sinceDays = Math.min(365, Math.max(1, Math.round(since)));
+  }
+
+  const max = value["maxMessages"];
+  if (typeof max === "number" && Number.isFinite(max)) {
+    base.maxMessages = Math.min(2000, Math.max(1, Math.round(max)));
+  }
+
+  const timeout = value["timeoutSeconds"];
+  if (typeof timeout === "number" && Number.isFinite(timeout)) {
+    base.timeoutSeconds = Math.min(600, Math.max(5, Math.round(timeout)));
+  }
+
+  const last = value["lastSynced"];
+  if (typeof last === "string") base.lastSynced = last.trim();
+
+  return base;
+}
+
 function repairSources(value: unknown, notes: string[]): SourcesConfig {
   const base = defaultSources();
   if (!isRecord(value)) {

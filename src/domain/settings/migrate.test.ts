@@ -616,7 +616,7 @@ describe("migrateSettings", () => {
         timeoutSeconds: 20,
         maxResults: 20,
       });
-      expect(result.settings.schemaVersion).toBe(12);
+      expect(result.settings.schemaVersion).toBe(CURRENT_SETTINGS_VERSION);
       expect(result.settings.actor).toBe("yh");
     });
 
@@ -630,8 +630,52 @@ describe("migrateSettings", () => {
       expect(result.settings.sources.pubmed).toBe(true);
       expect(result.settings.sources.eacts).toBe(false);
       expect(result.settings.sources.esc).toBe(false);
-      expect(result.settings.schemaVersion).toBe(12);
+      expect(result.settings.schemaVersion).toBe(CURRENT_SETTINGS_VERSION);
       expect(result.notes.join(" ")).toContain("v11 -> v12");
+    });
+
+    it("leaves the Outlook reader off on an upgrade from v12", () => {
+      // The same rule again, and this one reads a mailbox rather than a web
+      // service — so an upgrade granting it silently would be the worst
+      // version of the mistake rule 3 is written to prevent.
+      const result = migrateSettings({
+        schemaVersion: 12,
+        sources: { pubmed: true, contactEmail: "a@b.org" },
+      });
+      expect(result.settings.outlook.enabled).toBe(false);
+      expect(result.settings.outlook.lastSynced).toBe("");
+      expect(result.settings.sources.pubmed).toBe(true);
+      expect(result.notes.join(" ")).toContain("v12 -> v13");
+    });
+
+    it("refuses a stored Outlook flag that is not exactly true", () => {
+      // A hand-edited `data.json` carrying "yes" or 1 is not consent to read
+      // a mailbox either.
+      for (const value of ["true", 1, "yes", {}]) {
+        const result = migrateSettings({ schemaVersion: 12, outlook: { enabled: value } });
+        expect(result.settings.outlook.enabled).toBe(false);
+      }
+    });
+
+    it("keeps an Outlook window the user typed, clamped to something sane", () => {
+      const result = migrateSettings({
+        schemaVersion: 12,
+        outlook: { enabled: true, sinceDays: 9999, maxMessages: 0, timeoutSeconds: 3 },
+      });
+      expect(result.settings.outlook.enabled).toBe(true);
+      expect(result.settings.outlook.sinceDays).toBe(365);
+      expect(result.settings.outlook.maxMessages).toBe(1);
+      expect(result.settings.outlook.timeoutSeconds).toBe(5);
+    });
+
+    it("drops a folder name it does not recognise rather than passing it on", () => {
+      // The folder list reaches PowerShell through the environment, so an
+      // unknown value must never survive the settings layer.
+      const result = migrateSettings({
+        schemaVersion: 12,
+        outlook: { enabled: true, folders: ["inbox", "drafts", 7] },
+      });
+      expect(result.settings.outlook.folders).toEqual(["inbox"]);
     });
 
     it("refuses a stored value that is not exactly true", () => {

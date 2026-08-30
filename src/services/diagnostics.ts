@@ -526,6 +526,7 @@ async function integrations(plugin: ScdbCockpitPlugin): Promise<ReportSection> {
       clipboardProbe(),
       protocolCheck(plugin),
       emailImportCheck(plugin),
+      outlookReaderCheck(plugin),
       check(
         "R and Python interpreters",
         "unavailable",
@@ -564,6 +565,39 @@ function protocolCheck(plugin: ScdbCockpitPlugin): Check {
     reachable
       ? 'Whether Outlook is the registered mailto: handler is a question only this machine can answer — "Test mailto:" in settings opens a throwaway draft so you can see.'
       : "Nothing is lost: the composer still copies. This is expected on anything that is not desktop Obsidian.",
+  );
+}
+
+/**
+ * Whether reading the running Outlook is switched on, and when it last ran.
+ *
+ * Deliberately does **not** attach to Outlook. A diagnostics report should be
+ * safe to run at any moment, and touching a mailbox while producing one is
+ * exactly the surprise rule 12 forbids — so this reports the configuration and
+ * points at the settings button that does the live check on purpose.
+ */
+function outlookReaderCheck(plugin: ScdbCockpitPlugin): Check {
+  const outlook = plugin.settings.outlook;
+
+  if (!outlook.enabled) {
+    return check(
+      "Reading Outlook directly",
+      "unavailable",
+      "Off. No mailbox is read.",
+      "Settings → Reading Outlook directly. It needs classic Outlook running, and it never starts it.",
+    );
+  }
+
+  const where = outlook.folders.length === 0 ? "no folder" : outlook.folders.join(" and ");
+  return check(
+    "Reading Outlook directly",
+    outlook.folders.length === 0 ? "warn" : "ok",
+    `On, reading ${where} back ${outlook.sinceDays} day${outlook.sinceDays === 1 ? "" : "s"}, ` +
+      `giving up after ${outlook.timeoutSeconds}s. ` +
+      (outlook.lastSynced === "" ? "Never read yet." : `Last read ${outlook.lastSynced}.`),
+    outlook.folders.length === 0
+      ? "No folder is selected, so a read would return nothing."
+      : "Settings → Check Outlook tests the connection without reading any mail.",
   );
 }
 
