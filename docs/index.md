@@ -17,7 +17,7 @@ notes, and one command opens the record a note is *about* in the system that own
 
 ## Get it
 
-**[Download the latest release](https://github.com/lauyeehow1986-hub/obsidian_plugin/releases/latest)** — version 0.3.2. Save `main.js`,
+**[Download the latest release](https://github.com/lauyeehow1986-hub/obsidian_plugin/releases/latest)** — version 0.3.3. Save `main.js`,
 `manifest.json` and `styles.css` into `<vault>/.obsidian/plugins/scdb-cockpit/`,
 then enable it under Settings → Community plugins. There is a zip of the same
 three files if you prefer one download; the loose files are there because a
@@ -28,6 +28,31 @@ Obsidian 1.6.0 or later, desktop only. Cloning the repository is *not* enough �
 
 Nothing is switched on that you did not switch on: reading Outlook, external
 sources, the daily briefing and code execution are all off after install.
+
+## First run
+
+Set **Actor** in settings — a short handle, recorded against every ledger row —
+and then run **Create starter workflow specs** from the command palette. The
+engine reads its stages from `_config/workflows/` and has no opinion about what a
+stage is called, so until a spec is there the request core is inert: intake
+refuses and no stage can move. The command writes the placeholders that ship in
+the bundle, confirms first, and never overwrites one you have edited to your real
+stage names.
+
+After that, folders appear as they are needed. Nothing scaffolds the vault —
+`10 Requests/` arrives with the first request, `82 Audit/` with the first logged
+action — so a vault that still looks empty is behaving correctly. **Create the
+vault folders** builds the whole structure up front instead, empty, naming every
+folder before it makes one.
+
+Notes are created the same way. Requests and projects have their own intake
+dialogs; studies, people, policies, meeting notes, profile items and publications
+each have a **New …** command, also reachable from **New note** in the cockpit
+header and from the boards that have nothing to show. Each writes the frontmatter
+its board reads — a publication's first `history` entry stamped with today, a
+meeting note seeded with the marker words extraction looks for — and leaves out
+every field you left blank, because an absent key and an empty one do not mean
+the same thing here. [The guide](guide.md) has the full map.
 
 ## The pages here
 

@@ -14,6 +14,7 @@ import { stageLabelOf } from "../domain/request/workflow";
 import { allModes, modeInfo, unhatted } from "../domain/settings/mode";
 import type ScdbCockpitPlugin from "../main.js";
 import { boardTitle, type BoardId } from "../domain/report/boards";
+import { NewNoteMenuButton } from "./NewNoteButton";
 import { AnalyticsBoard } from "./AnalyticsBoard";
 import { OverviewBoard } from "./OverviewBoard";
 import { count, displayName, duration, presentState } from "./format";
@@ -541,6 +542,7 @@ export function CockpitPanel({
               Export board
             </button>
           )}
+          <NewNoteMenuButton plugin={plugin} />
           <button type="button" class="mod-cta" onClick={() => plugin.startIntake()}>
             New request
           </button>

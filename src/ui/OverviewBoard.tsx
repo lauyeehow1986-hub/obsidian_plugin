@@ -2,6 +2,7 @@ import type { Overview } from "../domain/overview/overview";
 import type { RequestView } from "../domain/request/holdup";
 import type ScdbCockpitPlugin from "../main.js";
 import { count, duration } from "./format";
+import { NewNoteButton } from "./NewNoteButton";
 
 /**
  * The cockpit overview (CLAUDE.md §7 A3).
@@ -178,11 +179,16 @@ export function OverviewBoard({
           <span class="scdb-group__sub">soonest decision first</span>
         </h3>
         {overview.publications.length === 0 ? (
-          <Empty>
-            Nothing in flight. A note with <code>type: publication</code> in{" "}
-            {plugin.settings.folders.publications}/ appears here until it is published,
-            rejected or shelved.
-          </Empty>
+          <>
+            <Empty>
+              Nothing in flight. A note with <code>type: publication</code> in{" "}
+              {plugin.settings.folders.publications}/ appears here until it is published,
+              rejected or shelved.
+            </Empty>
+            <div class="scdb-modal__actions">
+              <NewNoteButton plugin={plugin} kind="publication" />
+            </div>
+          </>
         ) : (
           <ul class="scdb-list">
             {overview.publications.map((publication) => (

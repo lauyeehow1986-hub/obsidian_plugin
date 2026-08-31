@@ -16,6 +16,7 @@
  */
 
 import { useState } from "preact/hooks";
+import { NewNoteButton } from "./NewNoteButton";
 import { CITATION_FORMATS, formatList, type CitationFormat } from "../domain/publication/citation";
 import { impactReport } from "../domain/publication/metrics";
 import {
@@ -179,11 +180,18 @@ function FlightPanel({
         {rest.length === 0 ? (
           // Two different emptinesses. Saying "nothing is in flight" while the
           // section above lists two overdue manuscripts is simply untrue.
-          <Empty>
-            {overdue.length > 0
-              ? "Everything in flight is in the overdue list above."
-              : `No manuscript is in drafting, review or press. Add a note with type: publication in ${plugin.settings.folders.publications}/ to track one.`}
-          </Empty>
+          <>
+            <Empty>
+              {overdue.length > 0
+                ? "Everything in flight is in the overdue list above."
+                : `No manuscript is in drafting, review or press. Add a note with type: publication in ${plugin.settings.folders.publications}/ to track one.`}
+            </Empty>
+            {overdue.length === 0 && (
+              <div class="scdb-modal__actions">
+                <NewNoteButton plugin={plugin} kind="publication" primary />
+              </div>
+            )}
+          </>
         ) : (
           <ul class="scdb-cards">
             {rest.map((publication) => (

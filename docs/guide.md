@@ -606,6 +606,28 @@ refusal. A launch is the only thing this plugin does that leaves no other trace,
 so without that row there would be no way to answer "when did this vault send me
 to that record".
 
+## Making the notes and the folders
+
+Nothing scaffolds the vault. Every folder below is created the first time
+something is written into it, so an empty vault after install is behaving
+correctly. **Create the vault folders** builds the whole structure up front
+instead — empty, naming every folder before it makes one, writing nothing inside.
+
+Requests and projects have their own intake dialogs. The rest of the note types
+§5 names have a **New …** command each — *New study*, *New person*, *New policy*,
+*New meeting note*, *New profile item*, *New publication* — also reachable from
+**New note** in the cockpit header and from the boards that have nothing to show
+yet.
+
+Each writes the frontmatter its board actually reads, which is the point: a
+policy without the `version` printed on the document cannot have a revision
+frozen under a name, a publication without a first `history` entry has no
+measurable time in any stage, and a service item written as `position:` never
+reaches the CV at all, because Obsidian's metadata cache overwrites that key. A
+field left blank writes **no key**, never an empty one — a study with no recorded
+identifier scope is not a study scoped to `none`, and every check against it says
+so instead of inventing a pass.
+
 ## Where everything is written
 
 Everything is markdown. If the plugin were uninstalled tomorrow the vault would still read.

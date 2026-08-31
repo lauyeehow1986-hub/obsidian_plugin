@@ -3,7 +3,49 @@
 All notable changes to SCDB Cockpit. Governance-gate changes get their own
 clearly marked entry (CLAUDE.md §10).
 
-## Unreleased
+## [0.3.3] — 2026-08-31
+
+### Added — commands for the note kinds nothing else created
+
+Six of §5's folders had no command behind them: studies, people, policies,
+meetings, profile items and publications. Since folders are created lazily by
+whichever writer first needs one, and no writer needed those, the only route in
+was to make the folder by hand and type the frontmatter from memory — which is
+the failure mode that produces a board silently showing nothing, because the
+board is reading a key the note does not carry.
+
+**New study**, **New person**, **New policy**, **New meeting note**, **New
+profile item** and **New publication**, plus a **New note** menu in the cockpit
+header and a button on the boards that have nothing to show yet. One declarative
+spec per kind in `domain/notes/newNote.ts` and one dialog that renders it, rather
+than six dialogs that would have drifted apart within a month.
+
+The specs import their vocabularies from the readers on the other side —
+`PUBLICATION_STAGES`, `POLICY_STATUSES`, `IDENTIFIER_SCOPES`, §5.9's six profile
+types — never retype them, and the tests round-trip every kind through its own
+parser. Three of those round trips exist because the naive spelling is wrong:
+
+- **A blank field writes no key at all**, not an empty one. A study with no
+  recorded identifier scope is not a study scoped to `none`, and reading it as
+  one would be a governance instrument approving by silence.
+- **A publication is stamped with its first `history` entry** on creation. Time
+  to first decision is computed from `history`, and a manuscript created without
+  one has a number nobody can recover afterwards.
+- **A service item's position is written as `role`.** Obsidian's metadata cache
+  overwrites `position` with the frontmatter block's own line range, so a
+  `position:` typed into a profile note never reaches the CV.
+
+No ledger entry, deliberately: §5.6's list is closed, creating a note is not on
+it, and this is the reading the catalogue writer already applies — `create`
+logs nothing, `revise` logs a `variable-revision`. Everything consequential that
+happens to the note afterwards still logs.
+
+### Added — "Create the vault folders"
+
+The counterpart, for anyone who would rather see the structure than discover it.
+It names every folder it is about to create, creates them **empty**, and writes
+nothing into them. Delete the ones you do not want and they stay deleted, since
+nothing recreates a folder until a feature writes into it.
 
 ### Fixed — the diagnostics report said R and Python were not built
 

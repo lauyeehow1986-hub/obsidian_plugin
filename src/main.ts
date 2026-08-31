@@ -75,6 +75,14 @@ import {
   RevisionRefused as VariableRevisionRefused,
   type NewVariable,
 } from "./services/catalogueWriter.js";
+import { NoteWriter, NoteRefused } from "./services/noteWriter.js";
+import {
+  NEW_NOTE_KINDS,
+  NOTE_KIND_SPECS,
+  type NewNoteKind,
+  type NoteValues,
+} from "./domain/notes/newNote.js";
+import { NewNoteModal } from "./ui/NewNoteModal.js";
 import {
   VARIABLE_TYPE,
   parseVariable,
@@ -310,6 +318,8 @@ export default class ScdbCockpitPlugin extends Plugin {
   diagrams!: DiagramWriter;
   /** The variable catalogue and its version chain (§5.8, §7 C2). */
   catalogueWriter!: CatalogueWriter;
+  /** Studies, people, policies, meetings, profile items and publications (§5). */
+  noteWriter!: NoteWriter;
   scriptWriter!: ScriptWriter;
   redcap!: RedcapWriter;
   /** Vault apps: reading their notes, recording consent, exporting them (§5.13, §7 F3). */
@@ -439,6 +449,12 @@ export default class ScdbCockpitPlugin extends Plugin {
       audit: this.audit,
       actor: () => this.settings.actor,
       catalogueFolder: () => this.settings.folders.catalogue,
+      reindex: (file) => this.notes.update(file),
+    });
+
+    this.noteWriter = new NoteWriter({
+      app: this.app,
+      folder: (key) => this.settings.folders[key],
       reindex: (file) => this.notes.update(file),
     });
 
@@ -849,6 +865,25 @@ export default class ScdbCockpitPlugin extends Plugin {
       name: "Create starter workflow specs",
       callback: () => void this.installStarterWorkflows(),
     });
+
+    this.addCommand({
+      id: "create-vault-folders",
+      name: "Create the vault folders",
+      callback: () => void this.createVaultFolders(),
+    });
+
+    // One command per note kind rather than one "New note" with a picker: the
+    // palette is the picker, and "New policy" is what somebody types when they
+    // want a policy. `NEW_NOTE_KINDS` is the single list, so a seventh kind is
+    // a spec and nothing else.
+    for (const kind of NEW_NOTE_KINDS) {
+      const spec = NOTE_KIND_SPECS[kind];
+      this.addCommand({
+        id: `new-${kind}`,
+        name: spec.commandName,
+        callback: () => this.newNote(kind),
+      });
+    }
 
     this.addCommand({
       id: "migrate-requests",
@@ -2292,6 +2327,64 @@ export default class ScdbCockpitPlugin extends Plugin {
   }
 
   /** Create a variable note from the dialog, then open it. */
+  /**
+   * Create every folder in §5's vault contract that is not there yet.
+   *
+   * Folders otherwise appear the first time a writer needs one, which is the
+   * right default — nothing scaffolds a vault you did not ask it to scaffold —
+   * but it leaves six of them with no command behind them at all, and a folder
+   * that only exists once you have written the note you needed the folder for
+   * is a chicken-and-egg a person should not have to solve.
+   *
+   * Empty directories and nothing else: no notes, no templates, no README
+   * files. Delete any you do not want and they stay deleted, because nothing
+   * recreates a folder until a feature actually writes into it.
+   */
+  async createVaultFolders(): Promise<void> {
+    const missing = this.noteWriter.missingFolders();
+    if (missing.length === 0) {
+      this.notify("Every folder in the vault contract is already there.", 6000);
+      return;
+    }
+
+    const one = missing.length === 1;
+    const ok = await confirm(
+      this.app,
+      `Create ${missing.length} folder${one ? "" : "s"}?\n\n` +
+        `${missing.join("\n")}\n\n` +
+        `${one ? "It is" : "They are"} created empty. Nothing is written into ` +
+        `${one ? "it" : "them"}, and nothing already in the vault is touched.`,
+      one ? "Create it" : "Create them",
+    );
+    if (!ok) return;
+
+    try {
+      const created = await this.noteWriter.createFolders(missing);
+      this.notify(`Created ${created.length} folder${created.length === 1 ? "" : "s"}.`, 6000);
+    } catch (error) {
+      reportError(error, "could not create the folders.");
+    }
+  }
+
+  /** Create one of the note kinds §5 names but nothing else creates. */
+  newNote(kind: NewNoteKind): void {
+    const spec = NOTE_KIND_SPECS[kind];
+    new NewNoteModal(this.app, spec, async (values: NoteValues) => {
+      try {
+        const file = await this.noteWriter.create(spec, values);
+        this.refreshViews();
+        await this.app.workspace.getLeaf(true).openFile(file);
+        this.notify(`${file.basename} created in ${this.settings.folders[spec.folderKey]}.`, 6000);
+      } catch (error) {
+        if (error instanceof NoteRefused) {
+          this.notify(`Not created — ${error.message}`, 8000);
+          return;
+        }
+        reportError(error, `could not create the ${spec.id} note.`);
+      }
+    }).open();
+  }
+
   newVariable(): void {
     new NewVariableModal(this.app, async (input: NewVariable) => {
       try {

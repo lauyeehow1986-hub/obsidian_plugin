@@ -12,7 +12,7 @@ to hand to whoever asks why Obsidian started PowerShell. Together they form a
 GitHub Pages site — see `docs/_config.yml` for the one repository setting that
 turns it on.
 
-**Status: 0.3.2, released.**
+**Status: 0.3.3, released.**
 [Download it](https://github.com/lauyeehow1986-hub/obsidian_plugin/releases/latest)
 — no build step needed. Implemented: requests and governance gates, the query
 engine and boards, the daily rhythm, time and effort, publications, events and
@@ -79,6 +79,76 @@ three files but no zip.
 Either way, restart Obsidian and enable the plugin under Settings → Community
 plugins. Those three files are the whole plugin; it downloads nothing at runtime
 and needs Obsidian 1.6.0 or later.
+
+## First run on a new vault
+
+Two commands, in this order, and then one thing to know about folders.
+
+**1. Say who you are.** Settings → SCDB Cockpit → **Actor**: a short handle, not
+a full name. It is written into every audit ledger row and every effort entry,
+and until it is set the ledger has nobody to record — which is why step 2 refuses
+without it.
+
+**2. Run "Create starter workflow specs" from the command palette.** The engine
+reads its stages from `_config/workflows/` and has no opinion about what a stage
+is called, so **with no spec file there the request core is inert**: intake
+refuses, no stage can move, the boards are empty. This command writes the
+placeholder specs that travel inside the bundle. It confirms first and names the
+files, and it **never overwrites** — running it again on a vault whose spec has
+been edited to your real stage names changes nothing.
+
+Those stage names are invented, so that the engine has something to drive. Edit
+them to the real ones before real use; each file says so in its own first line.
+
+**3. Optionally, run "Create the vault folders".** Nothing scaffolds the vault
+by itself: each folder in
+[where everything is written](docs/guide.md#where-everything-is-written) is
+created the first time something is written into it — `10 Requests/` by **New
+request**, `82 Audit/` by the first logged action, `95 Exports/` by the first
+export — so a vault that still looks empty after install is behaving correctly.
+This command creates the whole structure up front instead. It names every folder
+it is about to create, creates them **empty**, and writes nothing into them.
+Delete any you do not want and they stay deleted until a feature actually needs
+one.
+
+## Creating notes
+
+Requests and projects have their own intake dialogs. Everything else §5 names is
+a **New …** command in the palette, each writing the frontmatter the board that
+reads it expects:
+
+| Command | Lands in |
+|---|---|
+| New study | `20 Studies/` |
+| New person | `30 People/` |
+| New policy | `40 Policies/` |
+| New meeting note | `70 Meetings/` |
+| New profile item | `84 Profile/` — grant, service, teaching, supervision, presentation or award |
+| New publication | `85 Publications/` |
+
+The same six sit behind **New note** in the cockpit header, and the boards that
+have nothing to show offer the one they are about — an empty policy register has
+a *New policy* button on it.
+
+The dialogs are thin on purpose. A field left blank writes **no key at all**
+rather than an empty one, because several readers here distinguish the two and
+mean different things by them: a study with no recorded identifier scope is not a
+study scoped to `none`, and every check against it says so rather than inventing
+a pass. What each kind needs beyond a title:
+
+- **A policy** needs the `version` printed on the document — a revision is frozen
+  under it, so the dialog will not save without one. Add a `governs:` list
+  afterwards, each entry naming the `clause:` it depends on; that list is what a
+  revision's impact map is built from, and a dependency with no clause can only
+  ever be reported as "review".
+- **A publication** gets its first `history` entry stamped with today, so time to
+  first decision is measurable from the day you create it rather than from
+  whenever you remember to backfill.
+- **A person** is identified by the filename — that is what every `blocked_on:`
+  and `authors:` wikilink resolves to. Give it a Teams address only when Teams
+  uses a different one from the email.
+- **A meeting note** is seeded with the marker words *Action:*, *Decision:* and
+  *Deadline:* so "Extract actions from these minutes" works on it straight away.
 
 ## The daily rhythm
 

@@ -4,6 +4,7 @@ import { buildRegister, type RegisterRow } from "../domain/policy/register";
 import { presentReview } from "../domain/report/present";
 import type ScdbCockpitPlugin from "../main.js";
 import { count } from "./format";
+import { NewNoteButton } from "./NewNoteButton";
 
 function ReviewBadge({ row }: { row: RegisterRow }) {
   const state = presentReview(row.reviewState);
@@ -96,6 +97,9 @@ export function PolicyBoard({ plugin }: { plugin: ScdbCockpitPlugin }) {
           what a revision's impact map is built from, and a dependency with no clause can only ever
           be reported as “review”.
         </p>
+        <div class="scdb-modal__actions">
+          <NewNoteButton plugin={plugin} kind="policy" primary />
+        </div>
       </div>
     );
   }
