@@ -540,12 +540,7 @@ async function integrations(plugin: ScdbCockpitPlugin): Promise<ReportSection> {
       await launcherCheck(plugin),
       emailImportCheck(plugin),
       outlookReaderCheck(plugin),
-      check(
-        "R and Python interpreters",
-        "unavailable",
-        "Not built yet — running scripts is phase F1.",
-        "Their paths on this machine are an open question in CLAUDE.md §11.",
-      ),
+      await interpreterCheck(plugin),
       check(
         "Network",
         "ok",
@@ -553,6 +548,78 @@ async function integrations(plugin: ScdbCockpitPlugin): Promise<ReportSection> {
       ),
     ],
   };
+}
+
+/**
+ * Whether R and Python are pointed at something that exists (§7 F1).
+ *
+ * This row used to say "not built yet — running scripts is phase F1", and went
+ * on saying it after F1 and F2 shipped. That is the same fault this release
+ * fixed in the settings row: a report meant to be handed to somebody stated
+ * something about the plugin that was not true, in the same report that offers
+ * an interpreter console. A stale constant cannot be caught by a probe, so the
+ * fix is to make the row a probe.
+ *
+ * Deliberately **not** a run, on protocolCheck's argument: a self-test that
+ * starts two interpreters every time it runs is a self-test people stop
+ * running. Existence on disk is what can be established with no side effect;
+ * whether the binary actually executes is what "Test interpreter" in settings
+ * is for, and it reports the version it found.
+ */
+async function interpreterCheck(plugin: ScdbCockpitPlugin): Promise<Check> {
+  const label = "R and Python interpreters";
+  const compute = plugin.settings.compute;
+  const configured = [
+    { language: "R", path: compute.rPath.trim() },
+    { language: "Python", path: compute.pythonPath.trim() },
+  ];
+
+  const set = configured.filter((entry) => entry.path !== "");
+  if (set.length === 0) {
+    return check(
+      label,
+      "unavailable",
+      "Neither is configured, so no block can run. Nothing is broken — a path has just never been set.",
+      "Settings → Running code. Both take an absolute path; a bare name on PATH is not enough (§7 F1).",
+    );
+  }
+
+  const probed = await Promise.all(
+    set.map(async (entry) => ({ ...entry, found: await fileExists(entry.path) })),
+  );
+  const missing = probed.filter((entry) => !entry.found);
+  const absent = configured.filter((entry) => entry.path === "");
+
+  const detail = [
+    probed
+      .map((entry) => `${entry.language}: ${entry.found ? entry.path : `${entry.path} — not found`}`)
+      .join("; "),
+    absent.length === 0
+      ? ""
+      : `${absent.map((entry) => entry.language).join(" and ")} not configured.`,
+  ]
+    .filter((part) => part !== "")
+    .join(" ");
+
+  return check(
+    label,
+    missing.length > 0 ? "warn" : absent.length > 0 ? "warn" : "ok",
+    detail,
+    missing.length > 0
+      ? "A run against a path that is not there refuses with a plain message rather than a stack trace, but it still cannot run. Check the path in settings."
+      : '"Test interpreter" in settings runs it and reports the version — this row only checks the file is there.',
+  );
+}
+
+/** Whether a path outside the vault exists. Read-only, and never throws. */
+async function fileExists(candidate: string): Promise<boolean> {
+  try {
+    const fs: typeof import("node:fs/promises") = await import("node:fs/promises");
+    await fs.access(candidate);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**

@@ -3,6 +3,23 @@
 All notable changes to SCDB Cockpit. Governance-gate changes get their own
 clearly marked entry (CLAUDE.md §10).
 
+## Unreleased
+
+### Fixed — the diagnostics report said R and Python were not built
+
+Found by reading the 0.3.2 report end to end after installing the released
+zip. The interpreter row was a hardcoded *"not built yet — running scripts is
+phase F1"*, written before F1 landed and never revisited, so the report offered
+an interpreter console in one section and denied the feature existed in
+another. That is the same fault 0.3.2 fixed in the settings row, and the same
+lesson: **a constant cannot be caught by a probe**, so the row is now a probe.
+
+It reports the configured paths and whether each one is on disk. Deliberately
+not a run, on the argument that already governs the `mailto:` check — a
+self-test that starts two interpreters every time is a self-test people stop
+running. Whether the binary executes is what "Test interpreter" in settings is
+for, and it reports the version it found.
+
 ## [0.3.2] — 2026-08-31
 
 First real deployment to the work laptop found five things. The plugin loads,
