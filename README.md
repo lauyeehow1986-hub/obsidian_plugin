@@ -12,7 +12,7 @@ to hand to whoever asks why Obsidian started PowerShell. Together they form a
 GitHub Pages site — see `docs/_config.yml` for the one repository setting that
 turns it on.
 
-**Status: 0.3.1, released.**
+**Status: 0.3.2, released.**
 [Download it](https://github.com/lauyeehow1986-hub/obsidian_plugin/releases/latest)
 — no build step needed. Implemented: requests and governance gates, the query
 engine and boards, the daily rhythm, time and effort, publications, events and
@@ -24,11 +24,15 @@ systems and documents that sit beside the vault.
 Four things are deliberately **not** done, and each waits on something only the
 target machine or its owner can supply: REDCap **project ODM XML** export needs
 one real project XML as a reference; the Outlook read path has **never been run
-against a live mailbox**; the workflow stages in `_config/workflows/` — for
-requests and for projects alike — are **placeholders** to be swapped for the real
-ones; and **launching applications and running scripts** is planned but unbuilt,
-because the whole safety argument rests on a config file naming the actual
-executables, and a config written here would be a guess. See
+against a live mailbox**, and on the machine it was written for it cannot be —
+application-control policy refuses to let Obsidian start a shell at all, so
+Tier 1, dragging the message in, is the whole story there; the workflow stages
+in `_config/workflows/` — for requests and for projects alike — are
+**placeholders** to be swapped for the real ones; and **launching applications
+and running scripts** is planned but unbuilt, because the whole safety argument
+rests on a config file naming the actual executables, and a config written here
+would be a guess — the same shell policy makes the script half of it
+unbuildable on that laptop regardless. See
 [what to test](docs/testing-checklist.md) for the full list and what unblocks each.
 
 The design lives in [CLAUDE.md](CLAUDE.md) — architecture, the vault contract,

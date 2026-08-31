@@ -356,3 +356,44 @@ function finish(
     allDay: draft.allDay ?? true,
   });
 }
+
+/**
+ * Free/busy words Outlook substitutes for a real title.
+ *
+ * Not a guess: in an "Availability only" export every `SUMMARY` is set to the
+ * same word as `X-MICROSOFT-CDO-BUSYSTATUS`, and `DESCRIPTION`, `LOCATION`,
+ * `ORGANIZER` and `ATTENDEE` are omitted entirely.
+ */
+const AVAILABILITY_WORDS = new Set([
+  "busy",
+  "free",
+  "tentative",
+  "private",
+  "no title",
+  "out of office",
+  "working elsewhere",
+]);
+
+/**
+ * True when a calendar file carries no real titles, only availability.
+ *
+ * Outlook's "Save Calendar" offers three detail levels, and the default —
+ * **Availability only** — strips every title, description, location and
+ * attendee, leaving each entry named after its free/busy status. Importing that
+ * succeeds perfectly and produces a run of notes all called "Busy", which looks
+ * exactly like a parser that lost the title. It is not: the title was never in
+ * the file.
+ *
+ * Worth detecting rather than importing silently, because the fix is upstream
+ * and thirty seconds long — re-export choosing **Full details** — while the
+ * symptom sends someone hunting through a parser that is working correctly.
+ * It reports; it never refuses. A calendar of genuinely private entries is a
+ * real thing somebody may want in the vault.
+ */
+export function availabilityOnly(events: readonly ParsedIcsEvent[]): boolean {
+  if (events.length === 0) return false;
+  return events.every((event) => {
+    const summary = event.summary.trim().toLowerCase();
+    return summary === "" || AVAILABILITY_WORDS.has(summary);
+  });
+}

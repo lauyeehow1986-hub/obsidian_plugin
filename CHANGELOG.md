@@ -3,6 +3,130 @@
 All notable changes to SCDB Cockpit. Governance-gate changes get their own
 clearly marked entry (CLAUDE.md §10).
 
+## [0.3.2] — 2026-08-31
+
+First real deployment to the work laptop found five things. The plugin loads,
+Bases loads, and composing an email works; what follows is what did not.
+
+### Fixed — a fresh vault could not create a request at all
+
+The engine reads its stages from `_config/workflows/*.yaml` and has no opinion
+about what a stage is called (§5.2). That is the right architecture, and it had
+a consequence nobody saw until the plugin met a vault it had not been developed
+in: **with no spec file present, the entire request core is inert.** Intake
+refuses, no stage can move, the boards are empty, and the diagnostics report
+says only that zero specs loaded. The test vault has always carried spec files
+as fixtures, so every local check passed.
+
+The placeholders now travel in the bundle and are written by a new command,
+**"Create starter workflow specs"** — on explicit action only, never on load or
+install (rule 12), and **never over an existing file** (rule 8), so running it
+on a vault whose spec has been edited to the real stage names changes nothing.
+The intake refusal and the diagnostics row both name the command now instead of
+saying "add one".
+
+They remain placeholders and say so in their own first line, because that is
+the copy somebody reads six months from now. §11's question about the real
+eData stages is unchanged and unanswered.
+
+### Fixed — intake refused on any vault holding two workflow specs
+
+Found by verifying the fix above in Obsidian, and it is the more serious bug of
+the two. B8 added `project.yaml` beside the request spec. Six call sites asked
+the store for *the only workflow installed* and got nothing back, because there
+were now two — so "New request" refused with "more than one workflow is
+installed" on a vault that had exactly one request workflow. Every board that
+needed the spec was affected the same way.
+
+It has been broken since **0.3.0** and shipped again in **0.3.1**. Nothing
+caught it: the unit tests cover the engine, not which spec the app hands it,
+and the test vault's boards looked right because the request notes were already
+there. It took pressing the button.
+
+A spec now declares what it governs — `applies_to:`, defaulting to
+`scdb-request` so a file written before this field keeps working — and the
+lookup counts *within* a note type instead of across all specs. Two specs
+governing two different things is the normal state, not an ambiguity. The
+refusal, when it is genuinely ambiguous, now names the competing specs instead
+of counting them.
+
+The `only()` method is gone rather than fixed in place: it was named for a
+property of the vault ("there is one spec") rather than the question being
+asked ("which spec governs requests"), which is how a second note type
+inherited it silently. `onlyRequestSpec()` cannot be inherited by accident.
+
+### Added — `parked: true` on a workflow stage
+
+The spec format could not say "work rests here without a clock". A holding
+stage such as `on-hold` has no `sla_days` on purpose, which was indistinguishable
+from forgetting one, so every spec with one warned about a deliberate choice —
+and a report that warns about correct config trains the reader to skip it.
+§5.2 asks for the format to be fixed rather than worked around, so it is.
+
+It is **not** `sla_days: 0`: zero is a real target of zero days, so a parked
+request would breach the instant it was parked.
+
+### Fixed — "spawn EPERM" reached the user as a raw Node string
+
+Enabling the Outlook reader on the work laptop produced *"SCDB: could not read
+outlook. spawn EPERM"*. Two faults. `spawn` can throw **synchronously** rather
+than emitting `error`, which is exactly what a policy-locked machine does, so
+the careful message on the `error` handler never ran and the throw escaped the
+promise. And EPERM deserves its own explanation: it is application-control
+policy — AppLocker, WDAC or endpoint security — refusing to let Obsidian start
+a shell, not a broken install. Both spawn sites are now guarded, and the
+message says no setting here can override it and points at Tier 1, which needs
+no PowerShell.
+
+**This answers an open question in §11**: that machine does not permit Obsidian
+to spawn a shell. The same constraint applies to F4's script runner, which
+should be read as unbuildable there until the policy is known to differ.
+
+### Fixed — a Teams chat opened with nobody in it
+
+The deep link's `users=` parameter resolves a **UPN**, and on many tenants that
+is not the SMTP address in a person note's `email:`. Handing Teams an alias it
+cannot resolve opens an empty chat, which reads as a broken link. A person note
+may now declare `teams:` (or `upn:`), used only for the Teams path; the agenda
+dialog says which address Teams will use, and editing the box overrides both.
+
+### Fixed — the diagnostics report contradicted itself
+
+"No settings file yet; running on defaults" is recorded at load and never
+updated, so a fresh install that then enabled a module printed that line in the
+same report that listed the module as On. In a report meant to be handed to
+somebody, two rows disagreeing is worse than either being absent.
+
+### Fixed — an imported calendar whose entries had no titles
+
+Importing an Outlook calendar produced event notes with no meeting titles,
+which looked exactly like a parser dropping `SUMMARY`. It was not. The export
+had been saved at Outlook's default detail level, **Availability only**, which
+sets every `SUMMARY` to the entry's free/busy word and omits `DESCRIPTION`,
+`LOCATION`, `ORGANIZER` and `ATTENDEE` entirely. The titles were never in the
+file, and the import was faithful to it.
+
+Nothing to fix in the parser, then — but silence sent somebody hunting through
+working code, and the real fix is a thirty-second re-export choosing *Full
+details*. The confirm dialog now says so when every entry is a free/busy word.
+It reports and never refuses: a calendar of genuinely private entries is a real
+thing somebody may want in the vault.
+
+The lesson is the `.msg` one again, and it is now recorded twice: a parser
+tested against fixtures you wrote proves only that the fixtures and the parser
+agree. This one was settled in minutes by one real file.
+
+### Fixed — a real calendar file could have been committed to a public repo
+
+`*.eml` and `*.msg` are refused by `.gitignore` because a real one carries real
+content. `*.ics` was not, and a real Outlook export had reached the working
+tree untracked — one `git add .` from publishing meeting titles and a work
+address. It is ignored now, on the identical argument.
+
+The guard that caught it is `tests/fixtures.test.ts`, which scans every file on
+disk rather than every tracked file. That distinction is the whole of its
+value here.
+
 ## [0.3.1] — 2026-08-30
 
 ### Added — the launcher is probed rather than assumed

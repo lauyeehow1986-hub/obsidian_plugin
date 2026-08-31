@@ -49,6 +49,8 @@ interface PanelProps {
   draft: ComposedDraft;
   ceiling: number;
   knownAddress: string;
+  /** UPN for the Teams deep link, when the person note declares one. */
+  knownTeamsAddress: string;
   onSend: (send: AgendaSend) => void;
   onCopyAgenda: (markdown: string) => void;
   onClose: () => void;
@@ -102,11 +104,18 @@ function AgendaPanel({
   draft,
   ceiling,
   knownAddress,
+  knownTeamsAddress,
   onSend,
   onCopyAgenda,
   onClose,
 }: PanelProps) {
   const [addresses, setAddresses] = useState(knownAddress);
+  // Teams resolves a UPN, not an SMTP alias, so the two channels can need
+  // different strings for the same person. While the box is untouched the
+  // Teams button uses the UPN the note declares; the moment it is edited,
+  // what is typed wins for both — an override the user can see beats one
+  // they cannot.
+  const [edited, setEdited] = useState(false);
   const [subject, setSubject] = useState(draft.subject);
   const [body, setBody] = useState(draft.body);
   const [summary, setSummary] = useState(draftSummary(agenda));
@@ -133,7 +142,10 @@ function AgendaPanel({
       channel,
       draft: { subject, body, unknown: draft.unknown },
       agenda,
-      addresses: list,
+      addresses:
+        channel === "teams" && !edited && knownTeamsAddress !== ""
+          ? [knownTeamsAddress]
+          : list,
       summary: summary.trim() === "" ? draftSummary(agenda) : summary.trim(),
     });
 
@@ -184,8 +196,17 @@ function AgendaPanel({
           type="text"
           placeholder="a.tan@hospital.edu.sg"
           value={addresses}
-          onInput={(event) => setAddresses((event.target as HTMLInputElement).value)}
+          onInput={(event) => {
+            setEdited(true);
+            setAddresses((event.target as HTMLInputElement).value);
+          }}
         />
+        {!edited && knownTeamsAddress !== "" && knownTeamsAddress !== knownAddress ? (
+          <span class="scdb-field__hint">
+            Teams will use {knownTeamsAddress} — the UPN this person’s note declares. Editing
+            this box uses what you type for both.
+          </span>
+        ) : null}
       </label>
 
       <label class="scdb-field">
@@ -259,6 +280,7 @@ export interface AgendaModalOptions {
   ceiling: number;
   /** An address already recorded for this person, if the vault holds one. */
   knownAddress?: string;
+  knownTeamsAddress?: string;
   onSend: (send: AgendaSend) => Promise<void>;
   onCopyAgenda: (markdown: string) => Promise<void>;
 }
@@ -288,6 +310,7 @@ export class AgendaModal extends PreactModal {
         draft={this.draft}
         ceiling={this.options.ceiling}
         knownAddress={this.options.knownAddress ?? ""}
+        knownTeamsAddress={this.options.knownTeamsAddress ?? ""}
         onClose={() => this.close()}
         onCopyAgenda={(markdown) => {
           void this.options.onCopyAgenda(markdown);

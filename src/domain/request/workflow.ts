@@ -21,6 +21,20 @@ export interface StageSpec {
   slaDays: number | null;
   /** A terminal stage cannot be left. */
   terminal: boolean;
+  /**
+   * Work rests here without a clock: `on-hold`, `paused`, `parked`.
+   *
+   * Added because the format could not previously say this, and §5.2 asks for
+   * the format to be fixed rather than worked around. A holding stage has no
+   * `sla_days` on purpose, which is indistinguishable from forgetting one — so
+   * every spec with an on-hold stage warned about a deliberate choice, and a
+   * report that warns about correct config trains the reader to skip it.
+   *
+   * It is **not** `sla_days: 0`. Zero is a real target of zero days, so a
+   * parked request would breach the instant it was parked — the opposite of
+   * what parking means.
+   */
+  parked: boolean;
   /** Declaration order. Drives "sent back" detection — see `isBackwardMove`. */
   order: number;
 }
@@ -41,8 +55,26 @@ export interface GateSpec {
   message: string;
 }
 
+/** The note type a spec with no `applies_to` is assumed to govern. */
+export const DEFAULT_APPLIES_TO = "scdb-request";
+
 export interface WorkflowSpec {
   id: string;
+  /**
+   * The `type:` of note this spec governs — `scdb-request`, `project`.
+   *
+   * Added after a real failure. Before it, "which spec governs a request that
+   * does not name one" was answered by *the only spec installed*, which held
+   * exactly as long as there was one. B8 added `project.yaml` beside the
+   * request spec and every such lookup started returning nothing, so intake
+   * refused with "more than one workflow is installed" — on a vault that had
+   * precisely one request workflow. The set of specs has to be partitioned by
+   * what they govern, not counted.
+   *
+   * Defaults to `scdb-request` so a spec written before this field keeps
+   * working; a project spec must say so.
+   */
+  appliesTo: string;
   /** Bumped on any change to stage ids; notes carry the version they were valid under. */
   version: number;
   label: string;
@@ -97,6 +129,11 @@ export function parseWorkflowSpec(raw: unknown): ParsedWorkflowSpec {
   }
 
   const label = typeof raw["label"] === "string" && raw["label"].trim() !== "" ? raw["label"].trim() : id;
+  const rawApplies = raw["applies_to"];
+  const appliesTo =
+    typeof rawApplies === "string" && rawApplies.trim() !== ""
+      ? rawApplies.trim()
+      : DEFAULT_APPLIES_TO;
 
   // --- stages ---------------------------------------------------------------
   const stages: StageSpec[] = [];
@@ -141,6 +178,7 @@ export function parseWorkflowSpec(raw: unknown): ParsedWorkflowSpec {
         owner: typeof entry["owner"] === "string" ? entry["owner"].trim() : "",
         slaDays,
         terminal: entry["terminal"] === true,
+        parked: entry["parked"] === true,
         order: stages.length,
       });
     });
@@ -251,8 +289,17 @@ export function parseWorkflowSpec(raw: unknown): ParsedWorkflowSpec {
         `Stage "${stage.id}" is terminal but has outgoing transitions; the terminal flag wins and they will never fire.`,
       );
     }
-    if (!stage.terminal && stage.slaDays === null) {
-      warn("stages", `Stage "${stage.id}" has no \`sla_days\`, so nothing in it can breach.`);
+    if (stage.parked && stage.slaDays !== null) {
+      warn(
+        "stages",
+        `Stage "${stage.id}" is marked \`parked\` but also sets \`sla_days\`; the target is kept and the parked flag does nothing.`,
+      );
+    }
+    if (!stage.terminal && !stage.parked && stage.slaDays === null) {
+      warn(
+        "stages",
+        `Stage "${stage.id}" has no \`sla_days\`, so nothing in it can breach. Add \`parked: true\` if work is meant to rest there without a clock.`,
+      );
     }
   }
 
@@ -261,7 +308,7 @@ export function parseWorkflowSpec(raw: unknown): ParsedWorkflowSpec {
   }
 
   return {
-    spec: { id, version, label, stages, transitions, gates, retired },
+    spec: { id, appliesTo, version, label, stages, transitions, gates, retired },
     problems,
   };
 }

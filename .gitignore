@@ -87,6 +87,13 @@ Desktop.ini
 *.eml
 *.msg
 
+# Calendar exports, on the identical argument. An `.ics` dragged out of
+# Outlook carries real meeting titles, attendee names and locations — the
+# same class of content as a `.msg`, and it reached this working tree
+# untracked before anyone noticed. The synthetic fixtures the tests use
+# are built in code, so nothing is lost by refusing the file type outright.
+*.ics
+
 # The `.svg` a diagram writes beside its note (§7 D1). Output, not fixture, on
 # the same argument as the `.base` files: the vault ships the diagram note, and
 # the SVG is regenerated from it on demand. Committing one would also mean the

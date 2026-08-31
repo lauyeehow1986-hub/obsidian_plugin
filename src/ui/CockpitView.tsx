@@ -160,7 +160,7 @@ function Empty({ children }: { children: preact.ComponentChildren }) {
 }
 
 function QueueBoard({ views, plugin }: { views: RequestView[]; plugin: ScdbCockpitPlugin }) {
-  const spec = plugin.workflows.only();
+  const spec = plugin.workflows.onlyRequestSpec();
   const groups = groupByStage(views, spec).filter(
     (group) => group.views.length > 0 || spec !== null,
   );
@@ -330,7 +330,7 @@ export function AgeingBoard({ views, plugin }: { views: RequestView[]; plugin: S
 }
 
 function HealthBoard({ views, plugin }: { views: RequestView[]; plugin: ScdbCockpitPlugin }) {
-  const spec = plugin.workflows.only();
+  const spec = plugin.workflows.onlyRequestSpec();
   const stats = stageDwellStats(
     views.map((v) => ({ request: v.request, metrics: v.metrics })),
     spec,

@@ -33,7 +33,7 @@ export function AnalyticsBoard({
   views: RequestView[];
   plugin: ScdbCockpitPlugin;
 }) {
-  const spec = plugin.workflows.only();
+  const spec = plugin.workflows.onlyRequestSpec();
   const now = Date.now();
   const hats = allModes().map((info) => ({ id: info.id, label: info.label }));
 

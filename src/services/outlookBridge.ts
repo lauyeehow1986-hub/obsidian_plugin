@@ -61,7 +61,7 @@
  * install — is the only host this works under.
  */
 
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { parseBridgeReport, type BridgeOutcome, type OutlookFolder } from "../domain/comms/outlook";
 
 /** Anything longer than this from the child is a runaway, not a mailbox. */
@@ -440,6 +440,39 @@ export interface OutlookProbe {
   detail: string;
 }
 
+/**
+ * Why `powershell.exe` would not start, in a sentence somebody can act on.
+ *
+ * Written because a real managed laptop answered `spawn EPERM`, and the raw
+ * Node string reached the user as "SCDB: could not read outlook. spawn EPERM"
+ * — which names no cause and suggests no next step (§8). EPERM here is almost
+ * never a broken install: it is application-control policy (AppLocker, WDAC,
+ * or endpoint security) refusing to let Obsidian start a shell at all. That is
+ * a decision about the machine, not a fault in the vault, and saying so stops
+ * the user hunting for a setting that would fix it.
+ */
+export function spawnFailureMessage(error: unknown): string {
+  const code = (error as { code?: string } | null)?.code ?? "";
+  const detail = error instanceof Error ? error.message : String(error);
+
+  if (code === "EPERM" || code === "EACCES") {
+    return (
+      "Windows refused to let Obsidian start PowerShell on this machine " +
+      `(${detail}). That is usually application-control policy — AppLocker, WDAC or ` +
+      "endpoint security — rather than anything wrong with Outlook or this vault, and " +
+      "no setting here can override it. Reading Outlook directly will not work on this " +
+      "machine; dragging a message into the vault still will, and needs no PowerShell."
+    );
+  }
+  if (code === "ENOENT") {
+    return (
+      "Windows PowerShell could not be found (powershell.exe is part of Windows, so " +
+      "this usually means it is not on PATH for this process). Reading Outlook needs it."
+    );
+  }
+  return `Windows PowerShell could not be started (${detail}).`;
+}
+
 export function probeOutlook(timeoutMs = 20_000): Promise<OutlookProbe> {
   return new Promise((resolve) => {
     let settled = false;
@@ -452,10 +485,19 @@ export function probeOutlook(timeoutMs = 20_000): Promise<OutlookProbe> {
       resolve(probe);
     };
 
-    const child = spawn("powershell.exe", commandLine(PROBE), {
-      shell: false,
-      windowsHide: true,
-    });
+    // `spawn` can throw synchronously rather than emitting "error" — EPERM on
+    // a policy-locked machine does exactly that, and an uncaught throw here
+    // escapes the promise executor and reaches the user as a raw Node string.
+    let child: ChildProcessWithoutNullStreams;
+    try {
+      child = spawn("powershell.exe", commandLine(PROBE), {
+        shell: false,
+        windowsHide: true,
+      });
+    } catch (error) {
+      resolve({ running: false, version: "", detail: spawnFailureMessage(error) });
+      return;
+    }
 
     const deadline = setTimeout(
       () => {
@@ -477,11 +519,7 @@ export function probeOutlook(timeoutMs = 20_000): Promise<OutlookProbe> {
       out += chunk;
     });
     child.on("error", (error: Error) =>
-      done({
-        running: false,
-        version: "",
-        detail: `Windows PowerShell could not be started (${error.message}).`,
-      }),
+      done({ running: false, version: "", detail: spawnFailureMessage(error) }),
     );
     child.on("close", () => {
       const text = out.trim();
@@ -533,7 +571,12 @@ export function readOutlook(request: OutlookReadRequest): Promise<BridgeRun> {
       resolve({ outcome, elapsedMs: Date.now() - started, timedOut });
     };
 
-    const child = spawn(
+    // Same synchronous-throw guard as the probe: on a policy-locked machine
+    // spawn raises EPERM rather than emitting "error", and an escaping throw
+    // here would surface as a raw Node string instead of an explanation.
+    let child: ChildProcessWithoutNullStreams;
+    try {
+      child = spawn(
       "powershell.exe",
       commandLine(SCRIPT),
       {
@@ -550,7 +593,15 @@ export function readOutlook(request: OutlookReadRequest): Promise<BridgeRun> {
           SCDB_MAXBODY: String(MAX_BODY_CHARS),
         },
       },
-    );
+      );
+    } catch (error) {
+      resolve({
+        outcome: { why: spawnFailureMessage(error) },
+        elapsedMs: Date.now() - started,
+        timedOut: false,
+      });
+      return;
+    }
 
     // The point of the whole design. A COM call blocked behind a modal dialog
     // never returns, so the deadline is what guarantees Obsidian carries on.
@@ -586,11 +637,7 @@ export function readOutlook(request: OutlookReadRequest): Promise<BridgeRun> {
     });
 
     child.on("error", (error: Error) => {
-      finish({
-        why:
-          `Windows PowerShell could not be started (${error.message}). ` +
-          "The Outlook reader needs powershell.exe, which is part of Windows.",
-      });
+      finish({ why: spawnFailureMessage(error) });
     });
 
     child.on("close", (code) => {

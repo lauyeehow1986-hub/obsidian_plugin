@@ -304,7 +304,7 @@ async function index(plugin: ScdbCockpitPlugin): Promise<ReportSection> {
         specs.length === 0 ? "problem" : "ok",
         `${specs.length} loaded from ${plugin.settings.folders.config}/workflows/`,
         specs.length === 0
-          ? "Without a spec no request can change stage. Add one and re-run."
+          ? 'Without a spec no request can be created or change stage — the whole request core is inert. Run "Create starter workflow specs" from the command palette to write an editable placeholder, then re-run this report.'
           : undefined,
       ),
       // The spec loader already grades these: an `error` means the spec was

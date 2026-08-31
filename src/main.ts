@@ -37,7 +37,7 @@ import { isStranded } from "./domain/request/migration.js";
 import type { RequestNote, WorkflowNote } from "./domain/request/request.js";
 import type { RequestView } from "./domain/request/holdup.js";
 import { TransitionRefused } from "./domain/request/transition.js";
-import type { WorkflowSpec } from "./domain/request/workflow.js";
+import { DEFAULT_APPLIES_TO, type WorkflowSpec } from "./domain/request/workflow.js";
 import {
   migrateSettings,
   settingsReadState,
@@ -213,7 +213,7 @@ import {
   lapsed,
 } from "./domain/events/schedule.js";
 import { parseDate } from "./domain/events/recurrence.js";
-import { parseCalendar } from "./domain/events/ics.js";
+import { availabilityOnly, parseCalendar } from "./domain/events/ics.js";
 import {
   askObligation,
   emptyDraft,
@@ -605,7 +605,7 @@ export default class ScdbCockpitPlugin extends Plugin {
       effort: this.effort,
       views: (now) => this.visibleRequests(now).views,
       allViews: (now) => this.index.views({ now }),
-      spec: () => this.workflows.only(),
+      spec: () => this.workflows.onlyRequestSpec(),
       publications: () => this.publications(),
       rows: (types, now) => this.rowsFor(types, now),
       fields: (types) => this.catalogueFor(types),
@@ -842,6 +842,12 @@ export default class ScdbCockpitPlugin extends Plugin {
         this.moveProject(entry.project);
         return true;
       },
+    });
+
+    this.addCommand({
+      id: "install-starter-workflows",
+      name: "Create starter workflow specs",
+      callback: () => void this.installStarterWorkflows(),
     });
 
     this.addCommand({
@@ -1675,14 +1681,88 @@ export default class ScdbCockpitPlugin extends Plugin {
 
   // --- actions the UI calls ---------------------------------------------------
 
-  startIntake(): void {
-    const spec = this.workflows.only();
-    if (!spec) {
+  /**
+   * Write the placeholder workflow specs into `_config/workflows/`.
+   *
+   * On an explicit command only. The engine reads its stages from config by
+   * design (§5.2), and the cost of that — invisible until the plugin met a
+   * fresh vault — is that with no spec file the entire request core refuses:
+   * no intake, no stage change, no board. This is the one action that turns a
+   * new vault into a working one.
+   *
+   * It confirms first and names the files, because it writes into the folder
+   * that governs every gate; and it never overwrites, so running it twice on a
+   * vault whose spec has been edited to the real stage names changes nothing.
+   */
+  private async installStarterWorkflows(): Promise<void> {
+    const folder = `${this.settings.folders.config}/workflows`;
+    const actor = this.settings.actor.trim();
+    if (actor === "") {
       new Notice(
-        this.workflows.usable().length === 0
-          ? `SCDB: no usable workflow in ${this.settings.folders.config}/workflows/. Add one, then try again.`
-          : "SCDB: more than one workflow is installed. Intake needs exactly one until workflow choice is added.",
+        "SCDB: set who you are in settings first — the audit ledger records who installed the specs.",
+        9000,
+      );
+      return;
+    }
+
+    const ok = await confirm(
+      this.app,
+      `Write the starter workflow specs into ${folder}/?\n\n` +
+        `They are PLACEHOLDERS: the stage names are invented so the engine has something to drive. ` +
+        `Edit them to your real stages before real use — the file says so at the top.\n\n` +
+        `Any spec already there is left exactly as it is; nothing is overwritten.`,
+      "Write them",
+    );
+    if (!ok) return;
+
+    try {
+      const { created, kept } = await this.workflows.installStarters();
+
+      if (created.length > 0) {
+        // A workflow spec decides what every gate requires, so installing one
+        // is governance-relevant config by any reading of §5.6.
+        await this.audit.append([
+          {
+            ts: toVaultMinute(Date.now()),
+            actor,
+            action: "settings-change",
+            subject: "workflow-specs",
+            detail: `starter workflow specs written: ${created.join(", ")}${
+              kept.length > 0 ? ` (left alone: ${kept.join(", ")})` : ""
+            }`,
+          },
+        ]);
+        this.refreshViews();
+      }
+
+      const parts: string[] = [];
+      if (created.length > 0) parts.push(`${created.length} written`);
+      if (kept.length > 0) parts.push(`${kept.length} already there and left alone`);
+      new Notice(
+        created.length === 0
+          ? `Nothing to do — every starter spec is already in ${folder}/.`
+          : `Starter workflows: ${parts.join(", ")}. Edit them to your real stages.`,
         10000,
+      );
+    } catch (error) {
+      reportError(error, "could not write the starter workflow specs.");
+    }
+  }
+
+  startIntake(): void {
+    const spec = this.workflows.onlyRequestSpec();
+    if (!spec) {
+      // Named specs, not a count. "More than one workflow is installed" was
+      // true and useless on a vault holding a request spec and a project spec:
+      // it pointed at the wrong thing and gave nothing to act on.
+      const candidates = this.workflows.forNoteType(DEFAULT_APPLIES_TO);
+      new Notice(
+        candidates.length === 0
+          ? `SCDB: no usable request workflow in ${this.settings.folders.config}/workflows/. Run "Create starter workflow specs" from the command palette to write a placeholder you can edit.`
+          : `SCDB: ${candidates.length} workflows claim requests (${candidates
+              .map((s) => s.id)
+              .join(", ")}). Intake needs exactly one — set \`applies_to\` on the others, or remove one.`,
+        12000,
       );
       return;
     }
@@ -1869,7 +1949,7 @@ export default class ScdbCockpitPlugin extends Plugin {
    */
   overview(views: readonly RequestView[]): Overview {
     const now = Date.now();
-    const spec = this.workflows.only();
+    const spec = this.workflows.onlyRequestSpec();
 
     // One gate evaluation for the whole board rather than one per request:
     // `governanceRisk` already walks every allowed transition, and doing it
@@ -3212,6 +3292,7 @@ export default class ScdbCockpitPlugin extends Plugin {
       actor: this.settings.actor,
       ceiling: this.settings.comms.uriCeiling,
       knownAddress: this.addressFor(party),
+      knownTeamsAddress: this.addressFor(party, "teams"),
       onSend: (send) => this.sendChase(send),
       onCopyAgenda: async (markdown) => {
         new Notice(
@@ -3252,14 +3333,35 @@ export default class ScdbCockpitPlugin extends Plugin {
    * guessed from a name: a wrong address on a chase-up about a data request is
    * a disclosure, not a typo.
    */
-  private addressFor(party: string): string {
+  /**
+   * The address to compose to, per channel.
+   *
+   * `mailto:` wants an SMTP address; a Teams deep link wants the **UPN**, and
+   * on a great many tenants those are not the same string. Handing Teams an
+   * SMTP alias it cannot resolve is a silent failure — the chat window opens
+   * with nobody in it, which reads as "the link is broken" rather than "that
+   * is not the address Teams knows them by".
+   *
+   * So a person note may declare `teams:` (or `upn:`) alongside `email:`, and
+   * only the Teams path prefers it. Falling back to `email` keeps every note
+   * that does not need the distinction working exactly as before.
+   */
+  private addressFor(party: string, channel: "email" | "teams" = "email"): string {
     const name = party.trim().replace(/^\[\[|\]\]$/g, "").split("|")[0] ?? party;
     const basename = (name.split("/").pop() ?? name).trim().toLowerCase();
 
+    const read = (frontmatter: Record<string, unknown>, key: string): string => {
+      const value = frontmatter[key];
+      return typeof value === "string" ? value.trim() : "";
+    };
+
     for (const entry of this.notes.all()) {
       if (entry.file.basename.trim().toLowerCase() !== basename) continue;
-      const email = entry.frontmatter["email"];
-      if (typeof email === "string" && email.trim() !== "") return email.trim();
+      const keys = channel === "teams" ? ["teams", "upn", "email"] : ["email"];
+      for (const key of keys) {
+        const found = read(entry.frontmatter, key);
+        if (found !== "") return found;
+      }
     }
     return "";
   }
@@ -3541,7 +3643,7 @@ export default class ScdbCockpitPlugin extends Plugin {
     const context: BoardContext = {
       views,
       allViews: this.index.views({ now }),
-      spec: this.workflows.only(),
+      spec: this.workflows.onlyRequestSpec(),
       hats: allModes().map((entry) => ({ id: entry.id, label: entry.label })),
       now,
       generatedAt: toVaultMinute(now).replace("T", " "),
@@ -4053,7 +4155,7 @@ export default class ScdbCockpitPlugin extends Plugin {
     new RequestPicker(
       this.app,
       entries,
-      this.workflows.only(),
+      this.workflows.onlyRequestSpec(),
       (entry: IndexEntry) => {
         const now = Date.now();
         const spec =
@@ -4524,9 +4626,17 @@ export default class ScdbCockpitPlugin extends Plugin {
         return;
       }
 
+      // An "Availability only" export parses perfectly and produces a run
+      // of notes all called "Busy" — which reads as a lost title but is the
+      // file saying so. Warning costs nothing and saves a hunt through a
+      // parser that is working correctly.
+      const noTitles = availabilityOnly(preview.events);
       const ok = await confirm(
         this.app,
         `Create event notes from ${preview.events.length} entr${preview.events.length === 1 ? "y" : "ies"} in ${chosen.path}?\n\n` +
+          (noTitles
+            ? `No entry in this file has a real title — every one is named after its free/busy status, and there are no descriptions or locations either. That is what Outlook's "Availability only" export produces. For the actual meeting titles, re-export from Outlook choosing "Full details".\n\n`
+            : "") +
           `They land in ${this.settings.folders.events}/ as event notes. Anything already imported under the same calendar id is skipped, and nothing already in the vault is changed.`,
         "Import",
       );
@@ -4734,6 +4844,13 @@ export default class ScdbCockpitPlugin extends Plugin {
 
   async saveSettings(): Promise<void> {
     await this.saveData(this.settings);
+    // `settingsRead` records how *load* went, and diagnostics prints it. Left
+    // alone it goes stale the moment anything is saved: a fresh install that
+    // then enables a module reported "no settings file yet; running on
+    // defaults" in the same report that listed the module as On. In a report
+    // meant to be handed to somebody, two rows contradicting each other is
+    // worse than either being absent.
+    if (this.settingsRead === "first-install") this.settingsRead = "loaded";
     this.refreshViews();
   }
 }

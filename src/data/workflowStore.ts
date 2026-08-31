@@ -8,10 +8,13 @@
 
 import { parseYaml, TFile, type App } from "obsidian";
 import {
+  DEFAULT_APPLIES_TO,
   parseWorkflowSpec,
   type SpecProblem,
   type WorkflowSpec,
 } from "../domain/request/workflow";
+import { planStarterInstall, starterSpecs } from "../domain/request/starterSpecs";
+import { ensureFolder } from "./vaultPaths";
 
 export interface LoadedSpec {
   path: string;
@@ -69,6 +72,42 @@ export class WorkflowStore {
     return { path: file.path, ...parseWorkflowSpec(raw) };
   }
 
+  /**
+   * Write the starter specs, skipping any file that already exists.
+   *
+   * Called only from an explicit command — never on load. Returns the paths
+   * created and the paths left alone, so the caller can say which is which
+   * rather than claiming a clean install over somebody's edited spec.
+   *
+   * **Never overwrites** (rule 8). A spec is the file the whole governance
+   * argument rests on; replacing an edited one with a placeholder would throw
+   * away the real stage names and silently re-open every gate the user had
+   * tightened.
+   */
+  async installStarters(): Promise<{ created: string[]; kept: string[] }> {
+    const folder = this.folder();
+
+    // What to write is decided in the pure layer, so the never-overwrite rule
+    // is unit-tested rather than asserted here. This method is left with the
+    // I/O it cannot avoid: make the folder, create the files, re-read.
+    const present = starterSpecs()
+      .map((starter) => `${folder}/${starter.name}`)
+      .filter((path) => this.app.vault.getAbstractFileByPath(path) !== null);
+    const plan = planStarterInstall(folder, present);
+
+    if (plan.create.length === 0) return { created: [], kept: plan.keep };
+
+    await ensureFolder(this.app, folder);
+    const created: string[] = [];
+    for (const spec of plan.create) {
+      await this.app.vault.create(spec.path, spec.yaml);
+      created.push(spec.path);
+    }
+
+    await this.reload();
+    return { created, kept: plan.keep };
+  }
+
   /** True when a path is a workflow spec, so the watcher knows to reload. */
   isSpecPath(path: string): boolean {
     return path.startsWith(`${this.folder()}/`) && WORKFLOW_FILE_RE.test(path);
@@ -87,19 +126,37 @@ export class WorkflowStore {
     return this.usable().find((s) => s.id === id) ?? null;
   }
 
+  /** Every usable spec governing one note type (§5.2 `applies_to`). */
+  forNoteType(noteType: string): WorkflowSpec[] {
+    return this.usable().filter((spec) => spec.appliesTo === noteType);
+  }
+
   /**
-   * The spec to use when a note does not name one. With exactly one spec
-   * installed this is unambiguous; with several, a note without a `workflow`
-   * field is a note we should not guess about.
+   * The single spec governing a note type, or null when that is ambiguous.
+   *
+   * **Counts within a type, never across all specs.** The previous version
+   * counted every spec installed, which was correct while there was only ever
+   * one — and silently wrong the moment B8 added `project.yaml`, because a
+   * vault with exactly one request workflow then reported "more than one
+   * workflow is installed" and refused intake. Two specs governing two
+   * different things is the normal state, not an ambiguity.
    */
-  only(): WorkflowSpec | null {
-    const usable = this.usable();
-    return usable.length === 1 ? usable[0]! : null;
+  onlyFor(noteType: string): WorkflowSpec | null {
+    const matching = this.forNoteType(noteType);
+    return matching.length === 1 ? matching[0]! : null;
+  }
+
+  /**
+   * The single spec governing requests. Named for what it is, so a future
+   * second note type cannot quietly inherit it the way `only()` was inherited.
+   */
+  onlyRequestSpec(): WorkflowSpec | null {
+    return this.onlyFor(DEFAULT_APPLIES_TO);
   }
 
   /** The spec governing a request, or null when it names one we do not have. */
   forRequest(workflowId: string): WorkflowSpec | null {
-    return workflowId === "" ? this.only() : this.get(workflowId);
+    return workflowId === "" ? this.onlyRequestSpec() : this.get(workflowId);
   }
 
   /** Everything wrong across all spec files, for diagnostics and the settings tab. */
