@@ -379,6 +379,17 @@ through Obsidian's **core** Mermaid support — no diagram plugin required.
 - Export: save `.svg` beside the note, rasterise to PNG at 2× or 3×, or **copy the PNG to the
   clipboard** so it goes straight onto a PowerPoint slide.
 
+![The flowchart editor: boxes and arrows as editable rows on the left, the rendered diagram on
+the right, and a chip recording that this one came from the eData request spec at version
+2](img/flowchart.png)
+
+Boxes and arrows are rows in a table rather than shapes you drag, which is what makes a diagram
+diffable in git and editable by hand six months later. The chip beside the direction records
+where this one came from — `workflow · edata-request@2` — and the note keeps the same thing in
+frontmatter as `source`, `generated_from` and `generated_at`. So a diagram generated from a
+spec that has since moved on can be told apart from one somebody drew, which matters as soon as
+the placeholder stages are replaced with the real ones.
+
 The part that beats a general drawing tool is generating diagrams from data you already hold:
 
 - **Draw the workflow lifecycle** — the process, from the spec.
@@ -414,6 +425,16 @@ to `94 Runs/`.
 
 - **Run a code block from this note**, **Open the interpreter console**, **Send a code block
   from this note to the console**.
+
+![An R snippet in the interpreter console: the echoed source, the summary, the printed line,
+the environment on the right and the plot below it](img/console.png)
+
+The console is the exploratory half, and it is deliberately the lesser action: it writes
+**nothing** — no note, no run record, no ledger entry — and says so above the first line of
+output. The session names the interpreter it found, the environment pane lists what is
+currently bound, plots land in the pane beneath it, and each execution reports how long it took
+and how many figures it produced. To keep a result, put the code in a block in a note and run
+it there.
 
 The run record is the point: it names the interpreter version, the **hash of the script that
 actually ran**, the data version, and the variables consumed. Notes get edited, and "the code
